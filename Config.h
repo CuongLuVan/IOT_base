@@ -5,4 +5,9 @@
 // Set to 0 for a simple cooperative scheduler (loop calling Task::run manually).
 #define SUPPORT_RTOS 1
 
+// Simulation mode configuration:
+// - 1: GPU simulation mode (no real sensors; DHT/PMS read skipped)
+// - 0: Real hardware mode (read DHT11, PMS5003, ADC)
+#define SIMULATION_MODE 1
+
 #endif // CONFIG_H

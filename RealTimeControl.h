@@ -42,7 +42,7 @@ using MQTTMessageCallback = std::function<void(const std::string& topic, const s
 
 class RealTimeControl {
 public:
-    RealTimeControl(VirtualGPIO& gpio, WifiNetwork& wifi, bool simulation_mode = true);
+    RealTimeControl(WifiNetwork& wifi);
     
     // Configuration
     void loadConfigFromStorage();
@@ -66,9 +66,7 @@ public:
     void loop();
     
 private:
-    VirtualGPIO& gpio;
     WifiNetwork& wifi;
-    bool simulation_mode;
     
     MQTTConfig config;
     MQTTState current_state;

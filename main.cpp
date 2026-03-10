@@ -1,5 +1,4 @@
 #include "Config.h"
-#include "gpio/VirtualGPIO.h"
 #include "gpio/ChipDefs.h"
 #include "Task.h"
 #include "TaskSensor.h"
@@ -12,9 +11,8 @@
 int main() {
     std::cout << "\n=== GPIO SIMULATOR WITH TASKS ===" << std::endl;
 
-    // Initialize board (ESP32 by default in simulation mode)
-    VirtualGPIO board(ESP32, true);
-    board.printChipInfo();
+    // Configuration
+    const ChipType CHIP_TYPE = ESP32;
 
     // setup pins used by device (pump + aux device), buttons, and sensors
     const int BUTTON_PUMP_PIN = 2;
@@ -22,24 +20,15 @@ int main() {
     const int BUTTON_DEV_PIN  = 4;
     const int DEVICE_PIN      = 5;
 
-    board.pinMode(BUTTON_PUMP_PIN, INPUT);
-    board.pinMode(PUMP_PIN, OUTPUT);
-    board.pinMode(BUTTON_DEV_PIN, INPUT);
-    board.pinMode(DEVICE_PIN, OUTPUT);
-
-    board.pinMode(A0, ANALOG);  // temperature sensor (unused by device now)
-    board.pinMode(A1, ANALOG);  // humidity sensor
-    board.pinMode(A2, ANALOG);  // light sensor
-
-    // create tasks
-    TaskSensor sensor(board, 1000);
-    TaskDevice device(board,
+    // create tasks (each with its own VirtualGPIO instance)
+    TaskSensor sensor(CHIP_TYPE, 1000);
+    TaskDevice device(CHIP_TYPE,
                       BUTTON_PUMP_PIN,
                       PUMP_PIN,
                       BUTTON_DEV_PIN,
                       DEVICE_PIN,
                       1000);
-    TaskNetwork network(board, sensor, device, 2000);
+    TaskNetwork network(CHIP_TYPE, sensor, device, 2000);
 
     // start tasks if RTOS is enabled
 #if SUPPORT_RTOS

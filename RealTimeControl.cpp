@@ -2,43 +2,46 @@
 #include <iostream>
 #include <chrono>
 
-RealTimeControl::RealTimeControl(VirtualGPIO& gpio, WifiNetwork& wifi, bool simulation_mode)
-    : gpio(gpio), wifi(wifi), simulation_mode(simulation_mode),
+RealTimeControl::RealTimeControl(WifiNetwork& wifi)
+    : wifi(wifi),
       current_state(MQTT_DISCONNECTED), previous_state(MQTT_DISCONNECTED),
       reconnect_attempts(0), last_mqtt_reconnect_attempt(0) {
     
-    if (simulation_mode) {
-        std::cout << "[MQTT SIM] RealTimeControl initialized in SIMULATION mode" << std::endl;
-    } else {
-        std::cout << "[MQTT HW] RealTimeControl initialized in REAL HARDWARE mode (PubSubClient)" << std::endl;
-    }
+#if SIMULATION_MODE
+    std::cout << "[MQTT SIM] RealTimeControl initialized in SIMULATION mode" << std::endl;
+#endif
+    // Real hardware mode: no initialization logs (like Arduino)
 }
 
 void RealTimeControl::loadConfigFromStorage() {
     std::lock_guard<std::mutex> lock(state_mutex);
     
-    if (simulation_mode) {
-        // Simulation: use hardcoded MQTT config
-        config.broker_address = "192.168.1.50";
-        config.broker_port = 1883;
-        config.client_id = "esp32-client-001";
-        config.username = "mqtt_user";
-        config.password = "mqtt_pass";
-        config.publish_topic = "home/sensors/room/data";
-        config.subscribe_topic = "home/control/room/cmd";
-        std::cout << "[MQTT SIM] Loaded MQTT config from storage (simulation)" << std::endl;
-    } else {
-        std::cout << "[MQTT HW] Loading MQTT config from ESP32/ESP8266 storage..." << std::endl;
-        // config.broker_address = readFromEEPROM(MQTT_BROKER_ADDR);
-    }
+#if SIMULATION_MODE
+    // Simulation: use hardcoded MQTT config
+    config.broker_address = "192.168.1.50";
+    config.broker_port = 1883;
+    config.client_id = "esp32-client-001";
+    config.username = "mqtt_user";
+    config.password = "mqtt_pass";
+    config.publish_topic = "home/sensors/room/data";
+    config.subscribe_topic = "home/control/room/cmd";
+    std::cout << "[MQTT SIM] Loaded MQTT config from storage (simulation)" << std::endl;
+#else
+    // Real hardware: load from EEPROM/NVS (no logs)
+    // config.broker_address = readFromEEPROM(MQTT_BROKER_ADDR);
+#endif
     
+#if SIMULATION_MODE
     std::cout << "[MQTT] Broker: " << config.broker_address << ":" << config.broker_port << std::endl;
+#endif
 }
 
 void RealTimeControl::setMQTTConfig(const MQTTConfig& cfg) {
     std::lock_guard<std::mutex> lock(state_mutex);
     config = cfg;
+#if SIMULATION_MODE
     std::cout << "[MQTT] Config set: broker=" << config.broker_address << ":" << config.broker_port << std::endl;
+#endif
 }
 
 void RealTimeControl::connect() {
@@ -46,24 +49,32 @@ void RealTimeControl::connect() {
     
     // Check if WiFi is connected first
     if (!wifi.isConnected()) {
+#if SIMULATION_MODE
         std::cout << "[MQTT] WiFi not connected. Cannot connect to MQTT broker." << std::endl;
+#endif
         current_state = MQTT_ERROR;
         return;
     }
     
     if (current_state == MQTT_CONNECTED) {
+#if SIMULATION_MODE
         std::cout << "[MQTT] Already connected" << std::endl;
+#endif
         return;
     }
     
     current_state = MQTT_CONNECTING;
+#if SIMULATION_MODE
     std::cout << "[MQTT] Starting connection to broker " << config.broker_address << std::endl;
+#endif
 }
 
 void RealTimeControl::disconnect() {
     std::lock_guard<std::mutex> lock(state_mutex);
     current_state = MQTT_DISCONNECTED;
+#if SIMULATION_MODE
     std::cout << "[MQTT] Disconnected from broker" << std::endl;
+#endif
 }
 
 void RealTimeControl::reconnect() {
@@ -71,7 +82,9 @@ void RealTimeControl::reconnect() {
     
     // First check if WiFi is still connected
     if (!wifi.isConnected()) {
+#if SIMULATION_MODE
         std::cout << "[MQTT] WiFi disconnected. Starting WiFi reconnection..." << std::endl;
+#endif
         wifi.reconnect();
         current_state = MQTT_ERROR;
         return;
@@ -80,8 +93,10 @@ void RealTimeControl::reconnect() {
     time_t now = std::time(nullptr);
     
     if (reconnect_attempts >= MAX_MQTT_RECONNECT_ATTEMPTS) {
+#if SIMULATION_MODE
         std::cout << "[MQTT] Max MQTT reconnect attempts (" << MAX_MQTT_RECONNECT_ATTEMPTS 
                   << ") reached. Restarting WiFi..." << std::endl;
+#endif
         reconnect_attempts = 0;
         wifi.disconnect();
         wifi.connect();
@@ -97,6 +112,11 @@ void RealTimeControl::reconnect() {
     last_mqtt_reconnect_attempt = now;
     current_state = MQTT_RECONNECTING;
     
+#if SIMULATION_MODE
+    std::cout << "[MQTT] Reconnect attempt " << reconnect_attempts << "/" 
+              << MAX_MQTT_RECONNECT_ATTEMPTS << std::endl;
+#endif
+    
     std::cout << "[MQTT] Reconnect attempt " << reconnect_attempts << "/" 
               << MAX_MQTT_RECONNECT_ATTEMPTS << std::endl;
 }
@@ -105,39 +125,43 @@ void RealTimeControl::publish(const std::string& topic, const std::string& paylo
     std::lock_guard<std::mutex> lock(state_mutex);
     
     if (!isConnected()) {
+#if SIMULATION_MODE
         std::cout << "[MQTT] Not connected. Queueing message for later delivery." << std::endl;
+#endif
         pending_messages.push(payload);
         return;
     }
     
-    if (simulation_mode) {
-        std::cout << "[MQTT SIM] PUBLISH topic=" << topic << " data=" << payload << " qos=" << qos << std::endl;
-    } else {
-        std::cout << "[MQTT HW] Publishing to " << topic << " qos=" << qos << std::endl;
-        // Real hardware: MqttClient.publish(topic.c_str(), payload.c_str(), 1, qos);
-    }
+#if SIMULATION_MODE
+    std::cout << "[MQTT SIM] PUBLISH topic=" << topic << " data=" << payload << " qos=" << qos << std::endl;
+#else
+    // Real hardware: MqttClient.publish(topic.c_str(), payload.c_str(), 1, qos); (no logs)
+#endif
 }
 
 void RealTimeControl::subscribe(const std::string& topic, int qos) {
     std::lock_guard<std::mutex> lock(state_mutex);
     
     if (!isConnected()) {
+#if SIMULATION_MODE
         std::cout << "[MQTT] Not connected. Cannot subscribe to " << topic << std::endl;
+#endif
         return;
     }
     
-    if (simulation_mode) {
-        std::cout << "[MQTT SIM] SUBSCRIBE topic=" << topic << " qos=" << qos << std::endl;
-    } else {
-        std::cout << "[MQTT HW] Subscribing to " << topic << " qos=" << qos << std::endl;
-        // Real hardware: MqttClient.subscribe(topic.c_str(), qos);
-    }
+#if SIMULATION_MODE
+    std::cout << "[MQTT SIM] SUBSCRIBE topic=" << topic << " qos=" << qos << std::endl;
+#else
+    // Real hardware: MqttClient.subscribe(topic.c_str(), qos); (no logs)
+#endif
 }
 
 void RealTimeControl::setOnMessageReceived(MQTTMessageCallback callback) {
     std::lock_guard<std::mutex> lock(state_mutex);
     on_message_callback = callback;
+#if SIMULATION_MODE
     std::cout << "[MQTT] Message callback registered" << std::endl;
+#endif
 }
 
 bool RealTimeControl::isConnected() {
@@ -155,28 +179,31 @@ void RealTimeControl::loop() {
     
     // Check WiFi status
     if (!wifi.isConnected() && current_state != MQTT_ERROR) {
+#if SIMULATION_MODE
         std::cout << "[MQTT] WiFi disconnected. Disconnecting MQTT..." << std::endl;
+#endif
         current_state = MQTT_ERROR;
     }
     
     // State machine
     handleStateTransition();
     
-    if (simulation_mode) {
-        // Simulate MQTT connection for demo
-        static int sim_counter = 0;
-        sim_counter++;
-        if (sim_counter > 30 && current_state == MQTT_CONNECTING) {
-            current_state = MQTT_CONNECTED;
-            resetReconnectCounter();
-            std::cout << "[MQTT SIM] Connected to broker " << config.broker_address << std::endl;
-        }
+#if SIMULATION_MODE
+    // Simulate MQTT connection for demo
+    static int sim_counter = 0;
+    sim_counter++;
+    if (sim_counter > 30 && current_state == MQTT_CONNECTING) {
+        current_state = MQTT_CONNECTED;
+        resetReconnectCounter();
+        std::cout << "[MQTT SIM] Connected to broker " << config.broker_address << std::endl;
     }
+#endif
 }
 
 void RealTimeControl::handleStateTransition() {
     if (current_state == previous_state) return;
     
+#if SIMULATION_MODE
     switch (current_state) {
         case MQTT_CONNECTING:
             std::cout << "[MQTT State] → CONNECTING to " << config.broker_address << std::endl;
@@ -203,25 +230,44 @@ void RealTimeControl::handleStateTransition() {
         default:
             break;
     }
+#else
+    // Real hardware: execute state handlers without logging
+    switch (current_state) {
+        case MQTT_CONNECTING:
+            connectToBroker();
+            break;
+        case MQTT_CONNECTED:
+            // Flush pending messages (no logs)
+            while (!pending_messages.empty()) {
+                pending_messages.pop();
+            }
+            break;
+        case MQTT_DISCONNECTED:
+            handleDisconnect();
+            break;
+        default:
+            break;
+    }
+#endif
     
     previous_state = current_state;
 }
 
 void RealTimeControl::connectToBroker() {
-    if (simulation_mode) {
-        std::cout << "[MQTT SIM] Connecting to broker: " << config.broker_address 
-                  << ":" << config.broker_port << std::endl;
-        std::cout << "[MQTT SIM] Client ID: " << config.client_id << std::endl;
-        std::cout << "[MQTT SIM] Auth: " << config.username << std::endl;
-    } else {
-        std::cout << "[MQTT HW] Connecting to broker (real PubSubClient library)" << std::endl;
-        // Real hardware: MqttClient.setServer(broker, port);
-        //               MqttClient.connect(clientId, username, password);
-    }
+#if SIMULATION_MODE
+    std::cout << "[MQTT SIM] Connecting to broker: " << config.broker_address 
+              << ":" << config.broker_port << std::endl;
+    std::cout << "[MQTT SIM] Client ID: " << config.client_id << std::endl;
+    std::cout << "[MQTT SIM] Auth: " << config.username << std::endl;
+#else
+    // Real hardware: MqttClient.setServer(broker, port); MqttClient.connect(clientId, username, password); (no logs)
+#endif
 }
 
 void RealTimeControl::handleDisconnect() {
+#if SIMULATION_MODE
     std::cout << "[MQTT] MQTT disconnected. Will attempt reconnection..." << std::endl;
+#endif
     reconnect_attempts = 0;
 }
 
@@ -231,7 +277,9 @@ void RealTimeControl::resetReconnectCounter() {
 }
 
 void RealTimeControl::simulateMQTTConnection() {
-    if (!simulation_mode) return;
+#if !SIMULATION_MODE
+    return;
+#endif
     
     // Simulate random MQTT disconnects for testing
     static int sim_mqtt_counter = 0;
@@ -245,7 +293,10 @@ void RealTimeControl::simulateMQTTConnection() {
 }
 
 void RealTimeControl::simulateMessageReceive() {
-    if (!simulation_mode || current_state != MQTT_CONNECTED) return;
+#if !SIMULATION_MODE
+    return;
+#endif
+    if (current_state != MQTT_CONNECTED) return;
     
     static int msg_counter = 0;
     msg_counter++;

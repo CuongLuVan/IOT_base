@@ -11,7 +11,7 @@
 class TaskDevice : public Task {
 public:
     // constructor takes four pin numbers (two inputs, two outputs)
-    TaskDevice(VirtualGPIO& gpio,
+    TaskDevice(ChipType chip_type,
                int buttonPumpPin,
                int pumpPin,
                int buttonDevicePin,
@@ -21,7 +21,7 @@ public:
     virtual void loop() override;
 
 private:
-    VirtualGPIO& gpio;
+    VirtualGPIO gpio;
     int buttonPumpPin;
     int pumpPin;
     int buttonDevicePin;

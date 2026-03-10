@@ -482,7 +482,67 @@ cmake --build build
 
 ---
 
-## 📝 License
+## � Sensor Configuration
+
+### Hardware Sensors Used
+
+**TaskSensor** sử dụng các cảm biến sau:
+
+#### 🌡️ DHT11 Temperature & Humidity Sensor
+- **Library**: `DHT sensor library` by Adafruit
+- **Pin**: GPIO 4 (DHT_PIN trong sensor_config.h)
+- **Usage**: Đo nhiệt độ (°C) và độ ẩm (%)
+
+#### 💡 Light Sensor (ADC)
+- **Pin**: A0 (LIGHT_SENSOR_PIN trong sensor_config.h)  
+- **Type**: Analog light sensor (0-1023 ADC values)
+- **Usage**: Đo cường độ ánh sáng
+
+#### 🌫️ PMS5003 Dust Sensor
+- **Library**: `PMS Library` by Mariusz Kacki (andruno)
+- **UART**: Serial2 (PMS_RX_PIN=16, PMS_TX_PIN=17)
+- **Baud Rate**: 9600
+- **Usage**: Đo nồng độ bụi PM1.0, PM2.5, PM10.0
+
+### Arduino IDE Setup
+
+1. **Install Libraries**:
+   ```arduino
+   // Tools > Manage Libraries
+   - DHT sensor library by Adafruit
+   - PMS Library by Mariusz Kacki
+   ```
+
+2. **Board Configuration**:
+   - Board: ESP32 Dev Module
+   - Upload Speed: 921600
+   - CPU Frequency: 240MHz
+   - Flash Frequency: 80MHz
+   - Flash Mode: QIO
+   - Flash Size: 4MB
+   - Partition Scheme: Default
+   - Core Debug Level: None
+
+3. **Pin Connections**:
+   ```
+   DHT11 Data    -> GPIO 4
+   Light Sensor  -> A0 (ADC)
+   PMS5003 RX    -> GPIO 16
+   PMS5003 TX    -> GPIO 17
+   PMS5003 VCC   -> 5V
+   PMS5003 GND   -> GND
+   ```
+
+### Simulation Mode
+
+Khi `SIMULATION_MODE = true` trong main.cpp:
+- DHT11: Giá trị ngẫu nhiên 20-35°C
+- Light: Giá trị ngẫu nhiên 0-1023
+- PMS5003: Giá trị ngẫu nhiên 5-50 µg/m³
+
+---
+
+## �📝 License
 
 MIT License - Tự do sử dụng và chỉnh sửa
 

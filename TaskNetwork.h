@@ -12,11 +12,10 @@
 
 class TaskNetwork : public Task {
 public:
-    TaskNetwork(VirtualGPIO& gpioRef, TaskSensor& sensorTask, TaskDevice& deviceTask, int period_ms = 2000);
+    TaskNetwork(ChipType chip_type, TaskSensor& sensorTask, TaskDevice& deviceTask, int period_ms = 2000);
     virtual void loop() override;
 
 private:
-    VirtualGPIO& gpio;
     TaskSensor& sensor;
     TaskDevice& device;
 

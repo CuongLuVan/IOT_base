@@ -3,62 +3,69 @@
 #include <chrono>
 #include <ctime>
 
-WifiNetwork::WifiNetwork(VirtualGPIO& gpio, bool simulation_mode)
-    : gpio(gpio), simulation_mode(simulation_mode),
-      current_state(WIFI_INIT), previous_state(WIFI_INIT),
+WifiNetwork::WifiNetwork()
+    : current_state(WIFI_INIT), previous_state(WIFI_INIT),
       reconnect_attempts(0), last_reconnect_attempt(0), last_ntp_sync(0) {
     
-    if (simulation_mode) {
-        std::cout << "[WiFi SIM] WifiNetwork initialized in SIMULATION mode" << std::endl;
-    } else {
-        std::cout << "[WiFi HW] WifiNetwork initialized in REAL HARDWARE mode (ESP32/ESP8266)" << std::endl;
-    }
+#if SIMULATION_MODE
+    std::cout << "[WiFi SIM] WifiNetwork initialized in SIMULATION mode" << std::endl;
+#endif
+    // Real hardware mode: no initialization logs (like Arduino)
 }
 
 void WifiNetwork::loadConfigFromStorage() {
     std::lock_guard<std::mutex> lock(state_mutex);
     
-    if (simulation_mode) {
-        // Simulation: use hardcoded config
-        config.ssid = "MyHomeWiFi";
-        config.password = "MyPassword123";
-        config.hostname = "esp32-device";
-        config.dhcp_enabled = true;
-        std::cout << "[WiFi SIM] Loaded WiFi config from storage (simulation)" << std::endl;
-    } else {
-        // Real hardware: load from EEPROM/NVS
-        std::cout << "[WiFi HW] Loading WiFi config from ESP32/ESP8266 storage..." << std::endl;
-        // config.ssid = readFromEEPROM(SSID_ADDR);
-        // config.password = readFromEEPROM(PASSWORD_ADDR);
-    }
-    
-    current_state = WIFI_LOADING_CONFIG;
+#if SIMULATION_MODE
+    // Simulation: use hardcoded config
+    config.ssid = "MyHomeWiFi";
+    config.password = "MyPassword123";
+    config.hostname = "esp32-device";
+    config.dhcp_enabled = true;
+    std::cout << "[WiFi SIM] Loaded WiFi config from storage (simulation)" << std::endl;
+#else
+    // Real hardware: load from EEPROM/NVS (no logs)
+    // config.ssid = readFromEEPROM(SSID_ADDR);
+    // config.password = readFromEEPROM(PASSWORD_ADDR);
+#endif
+
+#if SIMULATION_MODE
     std::cout << "[WiFi] Config loaded: SSID=" << config.ssid << std::endl;
+#endif
+    current_state = WIFI_LOADING_CONFIG;
 }
 
 void WifiNetwork::setCredentials(const std::string& ssid, const std::string& password) {
     std::lock_guard<std::mutex> lock(state_mutex);
     config.ssid = ssid;
     config.password = password;
+#if SIMULATION_MODE
     std::cout << "[WiFi] Credentials set: SSID=" << ssid << std::endl;
+#endif
 }
 
 void WifiNetwork::connect() {
     std::lock_guard<std::mutex> lock(state_mutex);
     
     if (current_state == WIFI_CONNECTED) {
+#if SIMULATION_MODE
         std::cout << "[WiFi] Already connected" << std::endl;
+#endif
         return;
     }
     
     current_state = WIFI_AUTHENTICATING;
+#if SIMULATION_MODE
     std::cout << "[WiFi] Starting connection sequence..." << std::endl;
+#endif
 }
 
 void WifiNetwork::disconnect() {
     std::lock_guard<std::mutex> lock(state_mutex);
     current_state = WIFI_DISCONNECTED;
+#if SIMULATION_MODE
     std::cout << "[WiFi] Disconnected" << std::endl;
+#endif
 }
 
 void WifiNetwork::reconnect() {
@@ -67,15 +74,19 @@ void WifiNetwork::reconnect() {
     time_t now = std::time(nullptr);
     
     if (reconnect_attempts >= MAX_RECONNECT_ATTEMPTS) {
+#if SIMULATION_MODE
         std::cout << "[WiFi] Max reconnect attempts (" << MAX_RECONNECT_ATTEMPTS 
                   << ") reached. Restarting WiFi..." << std::endl;
+#endif
         reconnect_attempts = 0;
         current_state = WIFI_INIT;
         return;
     }
     
     if (now - last_reconnect_attempt < RECONNECT_INTERVAL_SEC) {
+#if SIMULATION_MODE
         std::cout << "[WiFi] Waiting before next reconnect attempt..." << std::endl;
+#endif
         return;
     }
     
@@ -83,8 +94,10 @@ void WifiNetwork::reconnect() {
     last_reconnect_attempt = now;
     current_state = WIFI_RECONNECTING;
     
+#if SIMULATION_MODE
     std::cout << "[WiFi] Reconnect attempt " << reconnect_attempts << "/" 
               << MAX_RECONNECT_ATTEMPTS << std::endl;
+#endif
 }
 
 bool WifiNetwork::isConnected() {
@@ -94,18 +107,22 @@ bool WifiNetwork::isConnected() {
 
 bool WifiNetwork::hasInternetAccess() {
     std::lock_guard<std::mutex> lock(state_mutex);
-    // In simulation, always return true; otherwise check by pinging
-    if (simulation_mode) {
-        return current_state == WIFI_CONNECTED;
-    }
+#if SIMULATION_MODE
+    // In simulation, always return true if connected
+    return current_state == WIFI_CONNECTED;
+#else
     // Real hardware would verify internet connectivity here
     return current_state == WIFI_CONNECTED;
+#endif
 }
 
 std::string WifiNetwork::getIPAddress() {
-    if (simulation_mode) {
-        return "192.168.1.100";
-    }
+#if SIMULATION_MODE
+    return "192.168.1.100";
+#else
+    // Real hardware returns actual IP
+    return "0.0.0.0";
+#endif
     // Real hardware returns actual IP
     return "0.0.0.0";
 }
@@ -123,15 +140,14 @@ WiFiState WifiNetwork::getState() {
 void WifiNetwork::syncTimeFromNTP() {
     std::lock_guard<std::mutex> lock(state_mutex);
     
-    if (simulation_mode) {
-        std::cout << "[WiFi NTP SIM] Syncing time from NTP server..." << std::endl;
-        last_ntp_sync = std::time(nullptr);
-        std::cout << "[WiFi NTP SIM] Time synced: " << std::ctime(&last_ntp_sync);
-    } else {
-        std::cout << "[WiFi NTP HW] Syncing time from NTP (real hardware)" << std::endl;
-        // Real hardware would call configTime() or similar
-        last_ntp_sync = std::time(nullptr);
-    }
+#if SIMULATION_MODE
+    std::cout << "[WiFi NTP SIM] Syncing time from NTP server..." << std::endl;
+    last_ntp_sync = std::time(nullptr);
+    std::cout << "[WiFi NTP SIM] Time synced: " << std::ctime(&last_ntp_sync);
+#else
+    // Real hardware: sync NTP (no logs)
+    last_ntp_sync = std::time(nullptr);
+#endif
 }
 
 time_t WifiNetwork::getLastNTPSync() {
@@ -155,25 +171,26 @@ void WifiNetwork::loop() {
         state_mutex.lock();
     }
     
-    if (simulation_mode) {
-        // Simulate connection transitions for demo
-        static int sim_counter = 0;
-        sim_counter++;
-        if (sim_counter > 50 && current_state == WIFI_AUTHENTICATING) {
-            current_state = WIFI_ASSOCIATING;
-        } else if (sim_counter > 100 && current_state == WIFI_ASSOCIATING) {
-            current_state = WIFI_OBTAINING_DHCP;
-        } else if (sim_counter > 150 && current_state == WIFI_OBTAINING_DHCP) {
-            current_state = WIFI_CONNECTED;
-            resetReconnectCounter();
-            std::cout << "[WiFi SIM] Connected! IP=" << getIPAddress() << std::endl;
-        }
+#if SIMULATION_MODE
+    // Simulate connection transitions for demo
+    static int sim_counter = 0;
+    sim_counter++;
+    if (sim_counter > 50 && current_state == WIFI_AUTHENTICATING) {
+        current_state = WIFI_ASSOCIATING;
+    } else if (sim_counter > 100 && current_state == WIFI_ASSOCIATING) {
+        current_state = WIFI_OBTAINING_DHCP;
+    } else if (sim_counter > 150 && current_state == WIFI_OBTAINING_DHCP) {
+        current_state = WIFI_CONNECTED;
+        resetReconnectCounter();
+        std::cout << "[WiFi SIM] Connected! IP=" << getIPAddress() << std::endl;
     }
+#endif
 }
 
 void WifiNetwork::handleStateTransition() {
     if (current_state == previous_state) return;
     
+#if SIMULATION_MODE
     switch (current_state) {
         case WIFI_LOADING_CONFIG:
             std::cout << "[WiFi State] → LOADING_CONFIG" << std::endl;
@@ -207,48 +224,69 @@ void WifiNetwork::handleStateTransition() {
         default:
             break;
     }
+#else
+    // Real hardware: execute state handlers without logging
+    switch (current_state) {
+        case WIFI_AUTHENTICATING:
+            authenticate();
+            break;
+        case WIFI_ASSOCIATING:
+            associate();
+            break;
+        case WIFI_OBTAINING_DHCP:
+            obtainDHCP();
+            break;
+        case WIFI_CONNECTED:
+            verifyInternet();
+            break;
+        case WIFI_DISCONNECTED:
+            handleDisconnect();
+            break;
+        default:
+            break;
+    }
+#endif
     
     previous_state = current_state;
 }
 
 void WifiNetwork::authenticate() {
-    if (simulation_mode) {
-        std::cout << "[WiFi SIM] Authentication: sending credentials to AP" << std::endl;
-    } else {
-        std::cout << "[WiFi HW] Authentication with " << config.ssid << std::endl;
-        // Real hardware: WiFi.begin(ssid, password);
-    }
+#if SIMULATION_MODE
+    std::cout << "[WiFi SIM] Authentication: sending credentials to AP" << std::endl;
+#else
+    // Real hardware: WiFi.begin(ssid, password);
+#endif
 }
 
 void WifiNetwork::associate() {
-    if (simulation_mode) {
-        std::cout << "[WiFi SIM] Association: joining network (4-way handshake)" << std::endl;
-    } else {
-        std::cout << "[WiFi HW] Waiting for association..." << std::endl;
-    }
+#if SIMULATION_MODE
+    std::cout << "[WiFi SIM] Association: joining network (4-way handshake)" << std::endl;
+#else
+    // Real hardware: wait for association
+#endif
 }
 
 void WifiNetwork::obtainDHCP() {
-    if (simulation_mode) {
-        std::cout << "[WiFi SIM] DHCP: requesting dynamic IP from DHCP server" << std::endl;
-        std::cout << "[WiFi SIM] DHCP: assigned IP=" << getIPAddress() << std::endl;
-    } else {
-        std::cout << "[WiFi HW] Requesting DHCP lease..." << std::endl;
-        // Real hardware waits for DHCP to complete
-    }
+#if SIMULATION_MODE
+    std::cout << "[WiFi SIM] DHCP: requesting dynamic IP from DHCP server" << std::endl;
+    std::cout << "[WiFi SIM] DHCP: assigned IP=" << getIPAddress() << std::endl;
+#else
+    // Real hardware: wait for DHCP
+#endif
 }
 
 void WifiNetwork::verifyInternet() {
-    if (simulation_mode) {
-        std::cout << "[WiFi SIM] Verifying internet connectivity (ping check)" << std::endl;
-    } else {
-        std::cout << "[WiFi HW] Checking internet connectivity..." << std::endl;
-        // Real hardware: use ping or HTTP request to verify
-    }
+#if SIMULATION_MODE
+    std::cout << "[WiFi SIM] Verifying internet connectivity (ping check)" << std::endl;
+#else
+    // Real hardware: check internet connectivity
+#endif
 }
 
 void WifiNetwork::handleDisconnect() {
+#if SIMULATION_MODE
     std::cout << "[WiFi] WiFi disconnected. Starting reconnection..." << std::endl;
+#endif
     reconnect_attempts = 0;
     reconnect();
 }
@@ -259,7 +297,9 @@ void WifiNetwork::resetReconnectCounter() {
 }
 
 void WifiNetwork::simulateWiFiConnection() {
-    if (!simulation_mode) return;
+#if !SIMULATION_MODE
+    return;
+#endif
     
     // Simulate random disconnects for testing
     static int sim_disconnect_counter = 0;
@@ -273,7 +313,10 @@ void WifiNetwork::simulateWiFiConnection() {
 }
 
 void WifiNetwork::simulateInternetCheck() {
-    if (!simulation_mode) return;
+    #if !SIMULATION_MODE
+        return;
+    #endif
+    
     
     if (current_state == WIFI_CONNECTED) {
         // Periodically verify internet

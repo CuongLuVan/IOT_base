@@ -43,7 +43,7 @@ enum WiFiState {
 
 class WifiNetwork {
 public:
-    WifiNetwork(VirtualGPIO& gpio, bool simulation_mode = true);
+    WifiNetwork();
     
     // Initialization & configuration
     void loadConfigFromStorage();
@@ -69,9 +69,6 @@ public:
     void loop();
     
 private:
-    VirtualGPIO& gpio;
-    bool simulation_mode;
-    
     WiFiConfig config;
     WiFiState current_state;
     WiFiState previous_state;

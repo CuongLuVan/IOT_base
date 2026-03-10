@@ -81,10 +81,13 @@ VirtualGPIO::VirtualGPIO(const std::string& name, bool simulation)
     
     chipConfig = getChipConfig(chipType);
     
-    std::cout << "\n=== GPIO Simulator Initialized ===" << std::endl;
-    std::cout << "Chip: " << chipName << std::endl;
-    std::cout << "Mode: " << (simulationMode ? "SIMULATION" : "REAL HARDWARE") << std::endl;
-    std::cout << "=====================================\n" << std::endl;
+    if (simulationMode) {
+        std::cout << "\n=== GPIO Simulator Initialized ===" << std::endl;
+        std::cout << "Chip: " << chipName << std::endl;
+        std::cout << "Mode: SIMULATION" << std::endl;
+        std::cout << "=====================================\n" << std::endl;
+    }
+    // Real hardware mode: no initialization logs (like Arduino)
 }
 
 VirtualGPIO::VirtualGPIO(ChipType type, bool simulation) 
@@ -93,10 +96,13 @@ VirtualGPIO::VirtualGPIO(ChipType type, bool simulation)
     chipConfig = getChipConfig(type);
     chipName = chipConfig.name;
     
-    std::cout << "\n=== GPIO Simulator Initialized ===" << std::endl;
-    std::cout << "Chip: " << chipName << std::endl;
-    std::cout << "Mode: " << (simulationMode ? "SIMULATION" : "REAL HARDWARE") << std::endl;
-    std::cout << "=====================================\n" << std::endl;
+    if (simulationMode) {
+        std::cout << "\n=== GPIO Simulator Initialized ===" << std::endl;
+        std::cout << "Chip: " << chipName << std::endl;
+        std::cout << "Mode: SIMULATION" << std::endl;
+        std::cout << "=====================================\n" << std::endl;
+    }
+    // Real hardware mode: no initialization logs (like Arduino)
 }
 
 void VirtualGPIO::setSimulationMode(bool enable) {
