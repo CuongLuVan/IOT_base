@@ -16,6 +16,7 @@ add_executable(app main.cpp
     TaskNetwork.cpp
     WifiNetwork.cpp
     RealTimeControl.cpp
+    Memory.cpp
     sensor_config.h)
 
 # Enable pthread for std::thread

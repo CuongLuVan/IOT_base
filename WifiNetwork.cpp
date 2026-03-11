@@ -4,8 +4,9 @@
 #include <ctime>
 
 WifiNetwork::WifiNetwork()
-    : current_state(WIFI_INIT), previous_state(WIFI_INIT),
+    : config(), current_state(WIFI_INIT), previous_state(WIFI_INIT),
       reconnect_attempts(0), last_reconnect_attempt(0), last_ntp_sync(0) {
+    Memory::GetInstance()->initStorage(1024);
     
 #if SIMULATION_MODE
     std::cout << "[WiFi SIM] WifiNetwork initialized in SIMULATION mode" << std::endl;
@@ -15,18 +16,26 @@ WifiNetwork::WifiNetwork()
 
 void WifiNetwork::loadConfigFromStorage() {
     std::lock_guard<std::mutex> lock(state_mutex);
-    
+    Memory *mem = Memory::GetInstance();
+
 #if SIMULATION_MODE
-    // Simulation: use hardcoded config
-    config.ssid = "MyHomeWiFi";
-    config.password = "MyPassword123";
+    config.ssid = mem->readString(WIFI_SSID_ADDR);
+    config.password = mem->readString(WIFI_PASS_ADDR);
+    if (config.ssid.empty()) {
+        config.ssid = "MyHomeWiFi";
+        config.password = "MyPassword123";
+        config.hostname = "esp32-device";
+        config.dhcp_enabled = true;
+        mem->saveWiFiCredentials(WIFI_SSID_ADDR, WIFI_PASS_ADDR, config.ssid, config.password);
+        std::cout << "[WiFi SIM] Created default WiFi config in storage" << std::endl;
+    } else {
+        std::cout << "[WiFi SIM] Loaded WiFi config from storage" << std::endl;
+    }
+#else
+    config.ssid = mem->readString(WIFI_SSID_ADDR);
+    config.password = mem->readString(WIFI_PASS_ADDR);
     config.hostname = "esp32-device";
     config.dhcp_enabled = true;
-    std::cout << "[WiFi SIM] Loaded WiFi config from storage (simulation)" << std::endl;
-#else
-    // Real hardware: load from EEPROM/NVS (no logs)
-    // config.ssid = readFromEEPROM(SSID_ADDR);
-    // config.password = readFromEEPROM(PASSWORD_ADDR);
 #endif
 
 #if SIMULATION_MODE

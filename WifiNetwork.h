@@ -2,6 +2,7 @@
 #define WIFI_NETWORK_H
 
 #include "gpio/VirtualGPIO.h"
+#include "Memory.h"
 #include <string>
 #include <ctime>
 #include <mutex>

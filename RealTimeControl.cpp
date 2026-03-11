@@ -1,4 +1,5 @@
 #include "RealTimeControl.h"
+#include "Memory.h"
 #include <iostream>
 #include <chrono>
 
@@ -15,22 +16,48 @@ RealTimeControl::RealTimeControl(WifiNetwork& wifi)
 
 void RealTimeControl::loadConfigFromStorage() {
     std::lock_guard<std::mutex> lock(state_mutex);
-    
+    Memory* mem = Memory::GetInstance();
+
 #if SIMULATION_MODE
-    // Simulation: use hardcoded MQTT config
-    config.broker_address = "192.168.1.50";
-    config.broker_port = 1883;
-    config.client_id = "esp32-client-001";
-    config.username = "mqtt_user";
-    config.password = "mqtt_pass";
-    config.publish_topic = "home/sensors/room/data";
-    config.subscribe_topic = "home/control/room/cmd";
-    std::cout << "[MQTT SIM] Loaded MQTT config from storage (simulation)" << std::endl;
+    config.broker_address = mem->readString(200);
+    if (config.broker_address.empty()) {
+        config.broker_address = "192.168.1.50";
+        config.broker_port = 1883;
+        config.client_id = "esp32-client-001";
+        config.username = "mqtt_user";
+        config.password = "mqtt_pass";
+        config.publish_topic = "home/sensors/room/data";
+        config.subscribe_topic = "home/control/room/cmd";
+
+        mem->writeString(200, config.broker_address);
+        mem->writeInt(250, config.broker_port);
+        mem->writeString(260, config.client_id);
+        mem->writeString(310, config.username);
+        mem->writeString(360, config.password);
+        mem->writeString(420, config.publish_topic);
+        mem->writeString(520, config.subscribe_topic);
+
+        std::cout << "[MQTT SIM] Stored default MQTT config" << std::endl;
+    } else {
+        config.broker_port = mem->readInt(250);
+        config.client_id = mem->readString(260);
+        config.username = mem->readString(310);
+        config.password = mem->readString(360);
+        config.publish_topic = mem->readString(420);
+        config.subscribe_topic = mem->readString(520);
+        std::cout << "[MQTT SIM] Loaded MQTT config from storage" << std::endl;
+    }
 #else
-    // Real hardware: load from EEPROM/NVS (no logs)
-    // config.broker_address = readFromEEPROM(MQTT_BROKER_ADDR);
+    // Real hardware: load from EEPROM/NVS via Memory wrapper
+    config.broker_address = mem->readString(200);
+    config.broker_port = mem->readInt(250);
+    config.client_id = mem->readString(260);
+    config.username = mem->readString(310);
+    config.password = mem->readString(360);
+    config.publish_topic = mem->readString(420);
+    config.subscribe_topic = mem->readString(520);
 #endif
-    
+
 #if SIMULATION_MODE
     std::cout << "[MQTT] Broker: " << config.broker_address << ":" << config.broker_port << std::endl;
 #endif

@@ -10,4 +10,8 @@
 // - 0: Real hardware mode (read DHT11, PMS5003, ADC)
 #define SIMULATION_MODE 1
 
+// EEPROM/memory address for WiFi credential storage
+#define WIFI_SSID_ADDR 50
+#define WIFI_PASS_ADDR 100
+
 #endif // CONFIG_H
