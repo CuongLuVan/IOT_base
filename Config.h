@@ -13,5 +13,6 @@
 // EEPROM/memory address for WiFi credential storage
 #define WIFI_SSID_ADDR 50
 #define WIFI_PASS_ADDR 100
+#define HOSTPOST_CONFIG_ADDR 150
 
 #endif // CONFIG_H

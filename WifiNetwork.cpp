@@ -7,11 +7,172 @@ WifiNetwork::WifiNetwork()
     : config(), current_state(WIFI_INIT), previous_state(WIFI_INIT),
       reconnect_attempts(0), last_reconnect_attempt(0), last_ntp_sync(0) {
     Memory::GetInstance()->initStorage(1024);
-    
+    hostpost_mode = false;
+    smartconfig_active = false;
+    ble_provision_active = false;
+    ota_active = false;
+    ota_pending = false;
+    hostpost_thread_running = false;
+
 #if SIMULATION_MODE
     std::cout << "[WiFi SIM] WifiNetwork initialized in SIMULATION mode" << std::endl;
+#else
+    web_server = nullptr;
 #endif
     // Real hardware mode: no initialization logs (like Arduino)
+}
+
+bool WifiNetwork::hasSavedConfig() {
+    Memory *mem = Memory::GetInstance();
+    return !mem->readString(WIFI_SSID_ADDR).empty();
+}
+
+void WifiNetwork::saveConfigToStorage() {
+    Memory *mem = Memory::GetInstance();
+    mem->saveWiFiCredentials(WIFI_SSID_ADDR, WIFI_PASS_ADDR, config.ssid, config.password);
+    // Also keep a JSON backup if available
+    if (!pending_config_json.empty()) {
+        mem->writeString(HOSTPOST_CONFIG_ADDR, pending_config_json);
+    }
+
+#if SIMULATION_MODE
+    std::cout << "[WiFi SIM] Configuration saved to storage" << std::endl;
+#endif
+}
+
+void WifiNetwork::handleJSONConfig(const std::string& jsonPayload) {
+    pending_config_json = jsonPayload;
+
+    // Minimal JSON parser supports {"ssid":"X","password":"Y","hostname":"Z"}
+    auto getValue = [&](const std::string &key) -> std::string {
+        std::string pattern = std::string("\"") + key + "\"";
+        size_t pos = jsonPayload.find(pattern);
+        if (pos == std::string::npos) return "";
+        size_t colon = jsonPayload.find(':', pos);
+        if (colon == std::string::npos) return "";
+        size_t start = jsonPayload.find('"', colon);
+        if (start == std::string::npos) return "";
+        size_t end = jsonPayload.find('"', start + 1);
+        if (end == std::string::npos) return "";
+        return jsonPayload.substr(start + 1, end - start - 1);
+    };
+
+    std::string parsed_ssid = getValue("ssid");
+    std::string parsed_password = getValue("password");
+    std::string parsed_hostname = getValue("hostname");
+
+    if (!parsed_ssid.empty()) {
+        config.ssid = parsed_ssid;
+    }
+    if (!parsed_password.empty()) {
+        config.password = parsed_password;
+    }
+    if (!parsed_hostname.empty()) {
+        config.hostname = parsed_hostname;
+    }
+
+    saveConfigToStorage();
+    hostpost_mode = false;
+    current_state = WIFI_LOADING_CONFIG;
+    connect();
+
+#if SIMULATION_MODE
+    std::cout << "[WiFi SIM] Received hostpost JSON config: " << jsonPayload << std::endl;
+#endif
+}
+
+void WifiNetwork::processHostPostRequest(const std::string &jsonPayload) {
+    handleJSONConfig(jsonPayload);
+}
+
+void WifiNetwork::startHostPostServer() {
+    hostpost_mode = true;
+#if SIMULATION_MODE
+    if (hostpost_thread_running) return;
+    hostpost_thread_running = true;
+    hostpost_thread = std::thread([this]() {
+        while (hostpost_thread_running) {
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+            if (!hostpost_mode) continue;
+            std::cout << "[WiFi SIM] HostPost server active. POST JSON to processHostPostRequest()." << std::endl;
+        }
+    });
+#else
+    if (web_server) return;
+    web_server = new AsyncWebServer(80);
+    web_server->on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+        request->send(200, "application/json", "{\"status\":\"ok\"}");
+    });
+    web_server->on("/config", HTTP_POST, [this](AsyncWebServerRequest *request) {
+        if (request->hasParam("body", true)) {
+            String body = request->getParam("body", true)->value();
+            processHostPostRequest(std::string(body.c_str()));
+            request->send(200, "application/json", "{\"success\":true}\n");
+        } else {
+            request->send(400, "application/json", "{\"error\":\"no body\"}");
+        }
+    });
+    web_server->on("/ota", HTTP_POST, [this](AsyncWebServerRequest *request) {
+        triggerOTAUpdate();
+        request->send(200, "application/json", "{\"ota\":\"started\"}");
+    });
+    web_server->begin();
+#endif
+}
+
+void WifiNetwork::stopHostPostServer() {
+    hostpost_mode = false;
+#if SIMULATION_MODE
+    hostpost_thread_running = false;
+    if (hostpost_thread.joinable()) {
+        hostpost_thread.join();
+    }
+#else
+    if (web_server) {
+        web_server->end();
+        delete web_server;
+        web_server = nullptr;
+    }
+#endif
+}
+
+void WifiNetwork::triggerSmartConfig() {
+    smartconfig_active = true;
+    hostpost_mode = false;
+#if SIMULATION_MODE
+    std::cout << "[WiFi SIM] SmartConfig trigger started" << std::endl;
+#endif
+}
+
+void WifiNetwork::triggerBLEProvisioning() {
+    ble_provision_active = true;
+    hostpost_mode = false;
+#if SIMULATION_MODE
+    std::cout << "[WiFi SIM] BLE provisioning trigger started" << std::endl;
+#endif
+}
+
+void WifiNetwork::triggerOTAUpdate() {
+    ota_active = true;
+#if SIMULATION_MODE
+    std::cout << "[WiFi SIM] OTA update requested" << std::endl;
+#else
+    // ESP32 OTA flow handled in upload handler
+#endif
+}
+
+void WifiNetwork::applyConfigAndReboot() {
+    saveConfigToStorage();
+    std::cout << "[WiFi] Applying config and rebooting" << std::endl;
+#if SIMULATION_MODE
+    std::cout << "[WiFi SIM] Simulated reboot (no real restart on PC)" << std::endl;
+#else
+    ESP.restart();
+#endif
+}
+
+bool WifiNetwork::isHostPostMode() {
+    return hostpost_mode;
 }
 
 void WifiNetwork::loadConfigFromStorage() {
@@ -62,7 +223,12 @@ void WifiNetwork::connect() {
 #endif
         return;
     }
-    
+
+#if !SIMULATION_MODE
+    if (!config.ssid.empty()) {
+        WiFi.begin(config.ssid.c_str(), config.password.c_str());
+    }
+#endif
     current_state = WIFI_AUTHENTICATING;
 #if SIMULATION_MODE
     std::cout << "[WiFi] Starting connection sequence..." << std::endl;
@@ -179,11 +345,43 @@ void WifiNetwork::loop() {
         syncTimeFromNTP();
         state_mutex.lock();
     }
-    
+
+    if (hostpost_mode) {
+        // In hostpost mode server is already running; just keep loop moving
+#if SIMULATION_MODE
+        std::cout << "[WiFi SIM] HostPost mode active" << std::endl;
+#endif
+    }
+
 #if SIMULATION_MODE
     // Simulate connection transitions for demo
     static int sim_counter = 0;
     sim_counter++;
+    if (smartconfig_active && sim_counter % 20 == 0) {
+        config.ssid = "AutoSmartSSID";
+        config.password = "AutoSmartPass";
+        smartconfig_active = false;
+        std::cout << "[WiFi SIM] SmartConfig complete, SSID=" << config.ssid << std::endl;
+        saveConfigToStorage();
+        connect();
+    }
+
+    if (ble_provision_active && sim_counter % 30 == 0) {
+        config.ssid = "BLENet";
+        config.password = "BLEPass";
+        ble_provision_active = false;
+        std::cout << "[WiFi SIM] BLE Provisioning complete, SSID=" << config.ssid << std::endl;
+        saveConfigToStorage();
+        connect();
+    }
+
+    if (ota_active && sim_counter % 50 == 0) {
+        ota_pending = true;
+        ota_active = false;
+        std::cout << "[WiFi SIM] OTA firmware simulated applied" << std::endl;
+    }
+
+    // Simulate connection transitions based on state
     if (sim_counter > 50 && current_state == WIFI_AUTHENTICATING) {
         current_state = WIFI_ASSOCIATING;
     } else if (sim_counter > 100 && current_state == WIFI_ASSOCIATING) {
@@ -193,7 +391,17 @@ void WifiNetwork::loop() {
         resetReconnectCounter();
         std::cout << "[WiFi SIM] Connected! IP=" << getIPAddress() << std::endl;
     }
+
+    if (ota_pending) {
+        ota_pending = false;
+        std::cout << "[WiFi SIM] OTA done, simulating reboot" << std::endl;
+        applyConfigAndReboot();
+    }
 #endif
+
+    // Real-time connection monitoring and fallback
+    simulateWiFiConnection();
+    simulateInternetCheck();
 }
 
 void WifiNetwork::handleStateTransition() {

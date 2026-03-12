@@ -6,6 +6,19 @@
 #include <string>
 #include <ctime>
 #include <mutex>
+#include <thread>
+#include <atomic>
+#include <functional>
+
+#if !SIMULATION_MODE
+#include <WiFi.h>
+#include <ESPAsyncWebServer.h>
+#include <AsyncTCP.h>
+#include <ArduinoJson.h>
+#include <Update.h>
+#include <esp_smartconfig.h>
+#include <BLEDevice.h>
+#endif
 
 /**
  * WifiNetwork - Manages WiFi connectivity
@@ -48,13 +61,28 @@ public:
     
     // Initialization & configuration
     void loadConfigFromStorage();
+    void saveConfigToStorage();
     void setCredentials(const std::string& ssid, const std::string& password);
-    
+    bool hasSavedConfig();
+
     // Connection management
     void connect();
     void disconnect();
     void reconnect();
-    
+
+    // HostPost / Web setup mode
+    void startHostPostServer();
+    void stopHostPostServer();
+    void processHostPostRequest(const std::string& jsonPayload);
+    void handleJSONConfig(const std::string& jsonPayload);
+    void applyConfigAndReboot();
+    bool isHostPostMode();
+
+    // SmartConfig / BLE / OTA
+    void triggerSmartConfig();
+    void triggerBLEProvisioning();
+    void triggerOTAUpdate();
+
     // Status checking
     bool isConnected();
     bool hasInternetAccess();
@@ -99,6 +127,22 @@ private:
     // Simulation helpers
     void simulateWiFiConnection();
     void simulateInternetCheck();
+
+    // Mode management
+    std::atomic<bool> hostpost_mode;
+    std::atomic<bool> smartconfig_active;
+    std::atomic<bool> ble_provision_active;
+    std::atomic<bool> ota_active;
+    std::atomic<bool> ota_pending;
+
+    std::thread hostpost_thread;
+    std::atomic<bool> hostpost_thread_running;
+
+    std::string pending_config_json;
+
+#if !SIMULATION_MODE
+    AsyncWebServer *web_server;
+#endif
 };
 
 #endif // WIFI_NETWORK_H
