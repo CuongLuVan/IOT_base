@@ -3,15 +3,11 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <Arduino.h>
+#include <freertos/queue.h>
+#include "Common.h"
 
-struct InfoDeviceControl
-{
-    unsigned char device_port;
-    unsigned char button_click;
-    unsigned char button_status;
-    unsigned int count_info;
-    /* data */
-};
+extern QueueHandle_t deviceCommandQueue;
+extern QueueHandle_t deviceStatusQueue;
 
 InfoDeviceControl control;
 #define INPUT_PULLUP 1
@@ -44,6 +40,34 @@ void TaskDevice::taskRun(void * parameter) {
       TaskDevice::readButton();
       TaskDevice::controlPump();
       TaskDevice::controlDevice();
+
+      // Report current device status to network
+      if (deviceStatusQueue != NULL) {
+          xQueueSend(deviceStatusQueue, &control, pdMS_TO_TICKS(50));
+      }
+
+      // Receive command from network if available
+      if (deviceCommandQueue != NULL) {
+          DeviceCommand cmd;
+          if (xQueueReceive(deviceCommandQueue, &cmd, 0) == pdTRUE) {
+              // apply command locally
+              switch (cmd.commandType) {
+                  case 1:
+                      // e.g, toggle pump
+                      control.device_port = cmd.commandValue;
+                      break;
+                  case 2:
+                      // custom device setting
+                      control.button_status = cmd.commandValue;
+                      break;
+                  default:
+                      break;
+              }
+              control.count_info++;
+              Serial.printf("[TaskDevice] Exec command type=%d value=%d\n", cmd.commandType, cmd.commandValue);
+          }
+      }
+
         vTaskDelay(1000);
     }
 }

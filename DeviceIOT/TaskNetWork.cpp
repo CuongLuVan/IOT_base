@@ -8,9 +8,14 @@
 #include <freertos/task.h>
 #include "driver/uart.h"
 #include "esp_log.h"
+#include "Common.h"
 
 NetWork_Wifi netWork_Wifi;
 NetWork_Mqtt netWork_Mqtt;
+InfoSensor sensorValue;
+QueueHandle_t sensorDataQueue = NULL;
+QueueHandle_t deviceStatusQueue = NULL;
+QueueHandle_t deviceCommandQueue = NULL;
 
 
 #define UART_NUM        UART_NUM_0   // UART0
@@ -18,14 +23,7 @@ NetWork_Mqtt netWork_Mqtt;
 #define RXD_PIN         GPIO_NUM_3   // RXD0 (m?c d?nh l� GPIO3)
 #define BUF_SIZE        1024
 
-struct TestTimeData
-{
-    unsigned long timeStart;
-    unsigned char state;
-    unsigned char numberCheck;
-    unsigned long countNetWorkWorng;
-    /* data */
-};
+
 
 unsigned char modeStatus = 0;
 TestTimeData testTimeData;
@@ -84,6 +82,26 @@ void TaskNetWork::setup(void){
           loopNetWork();
         }
         netWork_Wifi.startWebServer();
+
+        if (sensorDataQueue == NULL) {
+            sensorDataQueue = xQueueCreate(10, sizeof(InfoSensor));
+            if (sensorDataQueue == NULL) {
+                Serial.println("[TaskNetWork] Failed to create sensorDataQueue");
+            }
+        }
+        if (deviceStatusQueue == NULL) {
+            deviceStatusQueue = xQueueCreate(10, sizeof(InfoDeviceControl));
+            if (deviceStatusQueue == NULL) {
+                Serial.println("[TaskNetWork] Failed to create deviceStatusQueue");
+            }
+        }
+        if (deviceCommandQueue == NULL) {
+            deviceCommandQueue = xQueueCreate(10, sizeof(DeviceCommand));
+            if (deviceCommandQueue == NULL) {
+                Serial.println("[TaskNetWork] Failed to create deviceCommandQueue");
+            }
+        }
+        
         netWork_Mqtt.getAllDataSetup();
         netWork_Mqtt.setupInfoMQTT();
         if(netWork_Mqtt.checkStatusMqtt()) netWork_Mqtt.sendMessageInfo("mqtt");
@@ -306,6 +324,46 @@ void TaskNetWork::loopNetWork(void) {
     }
     checkButton();  
      updateStatusUART();
+    // Process sensor queue data if any
+    if (sensorDataQueue != NULL) {
+        while (xQueueReceive(sensorDataQueue, &sensorValue, 0) == pdTRUE) {
+            if (netWork_Mqtt.checkStatusMqtt()) {
+                char payload[256];
+                snprintf(payload, sizeof(payload), "{\"humi\":%d,\"temp\":%d,\"pm2_5\":%d,\"pm10\":%d}",
+                         sensorValue.valueHumi,
+                         sensorValue.valueTemp,
+                         sensorValue.valueDust_PM2_5,
+                         sensorValue.valueDust_PM10);
+                netWork_Mqtt.sendMessageInfo(payload);
+            }
+            Serial.printf("[TaskNetWork] Sensor data sent queued: H=%d T=%d PM2.5=%d PM10=%d\n",
+                          sensorValue.valueHumi,
+                          sensorValue.valueTemp,
+                          sensorValue.valueDust_PM2_5,
+                          sensorValue.valueDust_PM10);
+        }
+    }
+
+    // Process device status updates from TaskDevice
+    if (deviceStatusQueue != NULL) {
+        InfoDeviceControl status;
+        while (xQueueReceive(deviceStatusQueue, &status, 0) == pdTRUE) {
+            if (netWork_Mqtt.checkStatusMqtt()) {
+                char devPayload[256];
+                snprintf(devPayload, sizeof(devPayload), "{\"device_port\":%d,\"button_click\":%d,\"button_status\":%d,\"count_info\":%d}",
+                         status.device_port,
+                         status.button_click,
+                         status.button_status,
+                         status.count_info);
+                netWork_Mqtt.sendMessageInfo(devPayload);
+            }
+            Serial.printf("[TaskNetWork] Device status: port=%d click=%d status=%d count=%d\n",
+                          status.device_port,
+                          status.button_click,
+                          status.button_status,
+                          status.count_info);
+        }
+    }
 }
 
 void TaskNetWork::taskRun(void * parameter) {

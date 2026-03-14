@@ -14,6 +14,7 @@
 
 #include <DHT.h>
 #include "PMS.h"
+#include "Common.h"
 
 #define DHTPIN 7 // what digital 
 #define DHTTYPE DHT11  //DHT 11
@@ -24,28 +25,9 @@ PMS pms(Serial);
 PMS::DATA data;
 
 
-struct InfoSensor
-{
-    int valueHumi;
-    int valueTemp;
-    int valueDust;
-    int valueDust_PM2_5;
-    int valueDust_PM10;
-    int valueDust_PM1;
-    int valueControl;
-    /* data */
-};
 InfoSensor dataSensor; 
-struct BlockMemony {
-    uint8_t rxbuf1[256];
-    uint8_t rxbuf2[256];
-    uint8_t flag=0;
-};
-
-BlockMemony blockMemony;
 
 void TaskSensor::setup(void){
-    blockMemony.flag=0;
     dataSensor.valueHumi =0;
     dataSensor.valueTemp =0;
     dataSensor.valueDust =0;
@@ -101,6 +83,8 @@ void TaskSensor::readSensorHumi(void){
     dataSensor.valueHumi =(int) dht.readHumidity()*100;
 }
 
+extern QueueHandle_t sensorDataQueue;
+
 void TaskSensor::taskRun(void * parameter) {
     for(;;)
     { 
@@ -108,6 +92,10 @@ void TaskSensor::taskRun(void * parameter) {
         TaskSensor::readSensorDust();
         TaskSensor::readSensorTemp();
         TaskSensor::readSensorHumi();
-        vTaskDelay(1000);
+        if (sensorDataQueue != NULL) {
+            xQueueSend(sensorDataQueue, &dataSensor, pdMS_TO_TICKS(100));
+        }
+
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }

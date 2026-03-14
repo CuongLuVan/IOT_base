@@ -1,5 +1,6 @@
 #include "NetWork_Mqtt.h"
 #include "NetWork_config.h"
+#include "Common.h"
 #include <PubSubClient.h>  
 #include <ArduinoJson.h>
 #include <WiFiClient.h>
@@ -24,11 +25,30 @@ struct SYSCFG {
   char          mqtt_grptopic[33];         // 2B1
   char          web_password[33];          // 4A9
 } Settings;
-
+extern QueueHandle_t deviceCommandQueue;
 
 void MqttDataCallback(char* topic, byte* data, unsigned int data_len)
 {
-    //decodeMessange()
+    if (deviceCommandQueue == NULL) return;
+
+    String payload = String((char*)data).substring(0, data_len);
+    StaticJsonDocument<128> doc; // smaller docs for commands
+    DeserializationError err = deserializeJson(doc, payload);
+    if (err) {
+        Serial.printf("[MQTT] JSON parse error: %s\n", err.f_str());
+        return;
+    }
+
+    DeviceCommand cmd;
+    cmd.commandType = doc["commandType"] | 0;
+    cmd.commandValue = doc["commandValue"] | 0;
+    cmd.reserved = 0;
+
+    if (xQueueSend(deviceCommandQueue, &cmd, pdMS_TO_TICKS(50)) != pdTRUE) {
+        Serial.println("[MQTT] Failed to queue device command");
+    } else {
+        Serial.printf("[MQTT] Queued command type=%d value=%d\n", cmd.commandType, cmd.commandValue);
+    }
 }
 
 
