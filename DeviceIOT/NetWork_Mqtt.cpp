@@ -31,8 +31,6 @@ extern QueueHandle_t deviceCommandQueue;
 
 void MqttDataCallback(char* topic, byte* data, unsigned int data_len)
 {
-    if (deviceCommandQueue == NULL) return;
-
     String payload = String((char*)data).substring(0, data_len);
     StaticJsonDocument<128> doc; // smaller docs for commands
     DeserializationError err = deserializeJson(doc, payload);
@@ -46,11 +44,16 @@ void MqttDataCallback(char* topic, byte* data, unsigned int data_len)
     cmd.commandValue = doc["commandValue"] | 0;
     cmd.reserved = 0;
 
+#if SUPPORT_RTOS
+    if (deviceCommandQueue == NULL) return;
     if (xQueueSend(deviceCommandQueue, &cmd, pdMS_TO_TICKS(50)) != pdTRUE) {
         Serial.println("[MQTT] Failed to queue device command");
     } else {
         Serial.printf("[MQTT] Queued command type=%d value=%d\n", cmd.commandType, cmd.commandValue);
     }
+#else
+    
+#endif
 }
 
 

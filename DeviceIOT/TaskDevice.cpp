@@ -1,14 +1,18 @@
 
 #include "TaskDevice.h"
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
 #include <Arduino.h>
-#include <freertos/queue.h>
 #include "Common.h"
 #include "define_All.h"
 
+#if SUPPORT_RTOS
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <freertos/queue.h>
 extern QueueHandle_t deviceCommandQueue;
 extern QueueHandle_t deviceStatusQueue;
+#else
+
+#endif
 
 InfoDeviceControl control;
 #define INPUT_PULLUP 1
@@ -42,6 +46,7 @@ void TaskDevice::taskRun(void * parameter) {
       TaskDevice::controlPump();
       TaskDevice::controlDevice();
 
+#if SUPPORT_RTOS
       // Report current device status to network
       if (deviceStatusQueue != NULL) {
           xQueueSend(deviceStatusQueue, &control, pdMS_TO_TICKS(50));
@@ -69,6 +74,10 @@ void TaskDevice::taskRun(void * parameter) {
           }
       }
 
-        vTaskDelay(1000);
+      vTaskDelay(1000);
+#else
+     
+      delay(1000);
+#endif
     }
 }

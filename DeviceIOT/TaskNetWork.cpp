@@ -4,8 +4,12 @@
 #include "NetWork_config.h"
 #include "define_All.h"
 #include "Memory.h"
+
+#if SUPPORT_RTOS
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#endif
+
 #include "driver/uart.h"
 #include "esp_log.h"
 #include "Common.h"
@@ -15,9 +19,13 @@
 NetWork_Wifi netWork_Wifi;
 NetWork_Mqtt netWork_Mqtt;
 InfoSensor sensorValue;
+#if SUPPORT_RTOS
 QueueHandle_t sensorDataQueue = NULL;
 QueueHandle_t deviceStatusQueue = NULL;
 QueueHandle_t deviceCommandQueue = NULL;
+#else
+
+#endif
 
 
 #define UART_NUM        UART_NUM_0   // UART0
@@ -85,6 +93,7 @@ void TaskNetWork::setup(void){
         }
         netWork_Wifi.startWebServer();
 
+#if SUPPORT_RTOS
         if (sensorDataQueue == NULL) {
             sensorDataQueue = xQueueCreate(10, sizeof(InfoSensor));
             if (sensorDataQueue == NULL) {
@@ -103,6 +112,9 @@ void TaskNetWork::setup(void){
                 Serial.println("[TaskNetWork] Failed to create deviceCommandQueue");
             }
         }
+#else
+
+#endif
         
         netWork_Mqtt.getAllDataSetup();
         netWork_Mqtt.setupInfoMQTT();
@@ -326,6 +338,7 @@ void TaskNetWork::loopNetWork(void) {
     }
     checkButton();  
      updateStatusUART();
+#if SUPPORT_RTOS
     // Process sensor queue data if any
     if (sensorDataQueue != NULL) {
         while (xQueueReceive(sensorDataQueue, &sensorValue, 0) == pdTRUE) {
@@ -366,24 +379,23 @@ void TaskNetWork::loopNetWork(void) {
                           status.count_info);
         }
     }
+#else
+    // Non-RTOS mode: use simple flags for latest data
+  
+#endif
 }
 
 void TaskNetWork::taskRun(void * parameter) {
+#if SUPPORT_RTOS
     Serial.print("Task2 is running on core ");
-    Serial.println(xPortGetCoreID());  
+    Serial.println(xPortGetCoreID());
 
-    
-        for(;;)
-        {   
-          loopNetWork();
-          vTaskDelay(200);
-         
-        }
-
-    for(;;)
-    {   
-      netWork_Wifi.handerHospost();
-        vTaskDelay(1000);
-
+    for(;;) {
+        loopNetWork();
+        vTaskDelay(200);
     }
+#else
+    // In non-RTOS mode, this function is called from loop() and should not block.
+    loopNetWork();
+#endif
 }

@@ -1,8 +1,12 @@
 
 #include "TaskSensor.h"
+
+#if SUPPORT_RTOS
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
+#endif
+
 #include "driver/uart.h"
 #include "esp_log.h"
 #include "driver/gpio.h"
@@ -83,7 +87,9 @@ void TaskSensor::readSensorHumi(void){
     dataSensor.valueHumi =(int) dht.readHumidity()*100;
 }
 
+#if SUPPORT_RTOS
 extern QueueHandle_t sensorDataQueue;
+#endif
 
 void TaskSensor::taskRun(void * parameter) {
     for(;;)
@@ -92,10 +98,15 @@ void TaskSensor::taskRun(void * parameter) {
         TaskSensor::readSensorDust();
         TaskSensor::readSensorTemp();
         TaskSensor::readSensorHumi();
+
+#if SUPPORT_RTOS
         if (sensorDataQueue != NULL) {
             xQueueSend(sensorDataQueue, &dataSensor, pdMS_TO_TICKS(100));
         }
-
         vTaskDelay(1000 / portTICK_PERIOD_MS);
+#else
+ 
+        delay(1000);
+#endif
     }
 }
