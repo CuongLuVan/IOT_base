@@ -5,6 +5,7 @@
 #include <Arduino.h>
 #include <freertos/queue.h>
 #include "Common.h"
+#include "define_All.h"
 
 extern QueueHandle_t deviceCommandQueue;
 extern QueueHandle_t deviceStatusQueue;

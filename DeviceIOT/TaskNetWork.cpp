@@ -9,6 +9,8 @@
 #include "driver/uart.h"
 #include "esp_log.h"
 #include "Common.h"
+#include "define_All.h"
+
 
 NetWork_Wifi netWork_Wifi;
 NetWork_Mqtt netWork_Mqtt;

@@ -14,7 +14,7 @@
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <Update.h>
-
+#include "define_All.h"
 #include <WiFiProv.h>
 
 uint32_t      ip_address[4] ={192,168,0,1};             // 544

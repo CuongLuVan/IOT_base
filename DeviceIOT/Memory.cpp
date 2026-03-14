@@ -1,7 +1,7 @@
 
 #include "Memory.h"
 #include <EEPROM.h>
-
+#include "define_All.h"
 
 
 

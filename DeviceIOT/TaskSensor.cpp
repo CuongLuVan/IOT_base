@@ -11,7 +11,7 @@
 #include "soc/uart_reg.h"
 #include "soc/uart_struct.h"
 #include "esp_task_wdt.h"
-
+#include "define_All.h"
 #include <DHT.h>
 #include "PMS.h"
 #include "Common.h"

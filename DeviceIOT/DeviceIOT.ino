@@ -1,8 +1,8 @@
 #include "TaskNetWork.h"
 #include "TaskSensor.h"
 #include "TaskDevice.h"
+#include "define_All.h"
 
-#define SUPPORT_RTOS true
 
 TaskNetWork task_NetWork;
 TaskSensor taskSensor;

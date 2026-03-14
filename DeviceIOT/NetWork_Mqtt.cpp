@@ -6,6 +6,8 @@
 #include <WiFiClient.h>
 #include <StreamString.h>                   // Webserver, Updater                  // WifiManager
 #include "Memory.h" 
+#include "define_All.h"
+
 
 WiFiClient EspClient;
 PubSubClient MqttClient(EspClient);         // MQTT Client
