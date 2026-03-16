@@ -1,5 +1,6 @@
 
 #include "TaskSensor.h"
+#include "MemoryData.h"
 
 #if SUPPORT_RTOS
 #include "freertos/FreeRTOS.h"
@@ -105,7 +106,7 @@ void TaskSensor::taskRun(void * parameter) {
         }
         vTaskDelay(1000 / portTICK_PERIOD_MS);
 #else
- 
+        MemoryData::GetInstance().sensorData_=(&dataSensor);
         delay(1000);
 #endif
     }

@@ -19,6 +19,7 @@
 NetWork_Wifi netWork_Wifi;
 NetWork_Mqtt netWork_Mqtt;
 InfoSensor sensorValue;
+InfoDeviceControl statusDevice;
 #if SUPPORT_RTOS
 QueueHandle_t sensorDataQueue = NULL;
 QueueHandle_t deviceStatusQueue = NULL;
@@ -361,27 +362,27 @@ void TaskNetWork::loopNetWork(void) {
 
     // Process device status updates from TaskDevice
     if (deviceStatusQueue != NULL) {
-        InfoDeviceControl status;
+        
         while (xQueueReceive(deviceStatusQueue, &status, 0) == pdTRUE) {
             if (netWork_Mqtt.checkStatusMqtt()) {
                 char devPayload[256];
                 snprintf(devPayload, sizeof(devPayload), "{\"device_port\":%d,\"button_click\":%d,\"button_status\":%d,\"count_info\":%d}",
-                         status.device_port,
-                         status.button_click,
-                         status.button_status,
-                         status.count_info);
+                         statusDevice.device_port,
+                         statusDevice.button_click,
+                         statusDevice.button_status,
+                         statusDevice.count_info);
                 netWork_Mqtt.sendMessageInfo(devPayload);
             }
             Serial.printf("[TaskNetWork] Device status: port=%d click=%d status=%d count=%d\n",
-                          status.device_port,
-                          status.button_click,
-                          status.button_status,
-                          status.count_info);
+                          statusDevice.device_port,
+                          statusDevice.button_click,
+                          statusDevice.button_status,
+                          statusDevice.count_info);
         }
     }
 #else
     // Non-RTOS mode: use simple flags for latest data
-  
+   // MemoryData::GetInstance().sensorData_=(&dataSensor);
 #endif
 }
 

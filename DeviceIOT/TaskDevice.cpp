@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include "Common.h"
 #include "define_All.h"
+#include "MemoryData.h"
 
 #if SUPPORT_RTOS
 #include <freertos/FreeRTOS.h>
@@ -76,7 +77,7 @@ void TaskDevice::taskRun(void * parameter) {
 
       vTaskDelay(1000);
 #else
-     
+     MemoryData::GetInstance().deviceStatus_ = &control;
       delay(1000);
 #endif
     }

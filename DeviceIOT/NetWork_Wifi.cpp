@@ -16,6 +16,7 @@
 #include <Update.h>
 #include "define_All.h"
 #include <WiFiProv.h>
+#include "Common.h"
 
 uint32_t      ip_address[4] ={192,168,0,1};             // 544
 WebServer *webServer;
@@ -25,6 +26,9 @@ static  String ssid;                        //string variable to store ssid
 static  String password;                         //string variable to store password
 static  SmartConfigStatus enableSmartConfig = SmartConfigStatus::DISABLE_SMARTCONFIG;
 static  SmartProvisioningBle enableProvisioningBle = SmartProvisioningBle::DISABLE_BLE;
+extern InfoSensor sensorValue;
+extern InfoDeviceControl statusDevice;
+
 
 void NetWork_Wifi::setHeader()
 {
@@ -60,9 +64,7 @@ void NetWork_Wifi::handleControl(){
 }
 
 void NetWork_Wifi::handleUpdate(){
-    String data = webServer->arg("data");
-    deserializeJson(jsonBuffer, data);
-    webServer->send(200, "application/json", "{'data':true}");
+    webServer->send(200, "application/json", getInfoDevice(sensorValue,statusDevice));
 }
 
 

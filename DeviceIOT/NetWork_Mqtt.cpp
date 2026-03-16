@@ -6,13 +6,15 @@
 #include <WiFiClient.h>
 #include <StreamString.h>                   // Webserver, Updater                  // WifiManager
 #include "Memory.h" 
+#include "MemoryData.h"
 #include "define_All.h"
 
 
 WiFiClient EspClient;
 PubSubClient MqttClient(EspClient);         // MQTT Client
 
-
+extern InfoSensor sensorValue;
+extern InfoDeviceControl statusDevice;
 StaticJsonDocument<512> jsonBufferMqtt;
 
 struct SYSCFG {
@@ -29,6 +31,15 @@ struct SYSCFG {
 } Settings;
 extern QueueHandle_t deviceCommandQueue;
 
+void sendMessageInfoPublish(String data){
+  char *p = new char[data.length() + 1];
+  strcpy(p, data.c_str());
+  if (MqttClient.publish(Settings.subcribe_topic, p, 1)) {
+      
+  }
+   
+}
+
 void MqttDataCallback(char* topic, byte* data, unsigned int data_len)
 {
     String payload = String((char*)data).substring(0, data_len);
@@ -40,9 +51,14 @@ void MqttDataCallback(char* topic, byte* data, unsigned int data_len)
     }
 
     DeviceCommand cmd;
-    cmd.commandType = doc["commandType"] | 0;
-    cmd.commandValue = doc["commandValue"] | 0;
+    cmd.commandType = doc["com"] | 0;
+    cmd.commandValue = doc["value"] | 0;
     cmd.reserved = 0;
+    if(cmd.commandType == 0x02) {
+        sendMessageInfoPublish(getInfoDevice(sensorValue,statusDevice));
+    } else {
+        
+    }
 
 #if SUPPORT_RTOS
     if (deviceCommandQueue == NULL) return;
@@ -52,7 +68,8 @@ void MqttDataCallback(char* topic, byte* data, unsigned int data_len)
         Serial.printf("[MQTT] Queued command type=%d value=%d\n", cmd.commandType, cmd.commandValue);
     }
 #else
-    
+    //MemoryData::GetInstance().setDeviceCommand(cmd);
+    //Serial.printf("[MQTT] Queued (non-RTOS) command type=%d value=%d\n", cmd.commandType, cmd.commandValue);
 #endif
 }
 
@@ -118,6 +135,8 @@ void NetWork_Mqtt::sendMessageInfo(char * data){
   }
    
 }
+
+
 void NetWork_Mqtt::decodeMessange(char * data){
    
 }

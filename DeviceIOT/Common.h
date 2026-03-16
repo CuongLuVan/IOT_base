@@ -1,5 +1,6 @@
+#pragma once
 #include <cstdint>
-
+#include <Arduino.h>
 
 struct InfoSensor {
     int valueHumi;
@@ -32,3 +33,5 @@ struct TestTimeData
     unsigned long countNetWorkWorng;
     /* data */
 };
+
+String getInfoDevice(InfoSensor sensorValue, InfoDeviceControl statusDevice);
