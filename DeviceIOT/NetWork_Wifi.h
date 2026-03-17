@@ -56,8 +56,8 @@ class NetWork_Wifi {
         void loopOTA(void);
         void connectWifi(void);
         unsigned char checkWifi();
+        uint32_t getNetworkTimestamp();
         unsigned char pingNetWork();
-        void getRTCInfo();
         void disconnetWifi();
         void handerHospost();
         void handerClient();

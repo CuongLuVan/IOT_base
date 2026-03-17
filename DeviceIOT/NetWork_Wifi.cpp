@@ -17,6 +17,7 @@
 #include "define_All.h"
 #include <WiFiProv.h>
 #include "Common.h"
+#include <time.h>
 
 uint32_t      ip_address[4] ={192,168,0,1};             // 544
 WebServer *webServer;
@@ -28,6 +29,7 @@ static  SmartConfigStatus enableSmartConfig = SmartConfigStatus::DISABLE_SMARTCO
 static  SmartProvisioningBle enableProvisioningBle = SmartProvisioningBle::DISABLE_BLE;
 extern InfoSensor sensorValue;
 extern InfoDeviceControl statusDevice;
+
 
 
 void NetWork_Wifi::setHeader()
@@ -105,7 +107,7 @@ void NetWork_Wifi::setupHostPost(void){
 }
 
 void NetWork_Wifi::loopHostPost(void){
-
+    webServer->handleClient();
 }
 
 bool NetWork_Wifi::checkModeHostPost(void){
@@ -260,12 +262,55 @@ void NetWork_Wifi::connectWifi(void){
 unsigned char NetWork_Wifi::checkWifi(){
     return WiFi.status();
 }
+
+uint32_t NetWork_Wifi::getNetworkTimestamp(){
+    if (WiFi.status() != WL_CONNECTED) {
+        return 0;
+    }
+
+    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+    struct tm timeinfo;
+    if (!getLocalTime(&timeinfo, 5000)) {
+        return 0;
+    }
+
+    return (uint32_t)mktime(&timeinfo);
+}
+
 unsigned char NetWork_Wifi::pingNetWork(){
+    if (WiFi.status() != WL_CONNECTED) {
+        return 0;
+    }
+
+    WiFiClient client;
+    const char *host = "clients3.google.com";
+    const uint16_t port = 80;
+    const char *path = "/generate_204";
+
+    if (!client.connect(host, port)) {
+        return 0;
+    }
+
+    client.print(String("GET ") + path + " HTTP/1.1\r\n" +
+                 "Host: " + host + "\r\n" +
+                 "Connection: close\r\n\r\n");
+
+    unsigned long timeout = millis();
+    while (client.connected() && millis() - timeout < 2000) {
+        if (client.available()) {
+            String line = client.readStringUntil('\n');
+            if (line.startsWith("HTTP/1.1 204") || line.startsWith("HTTP/1.0 204")) {
+                client.stop();
+                return 1;
+            }
+        }
+    }
+
+    client.stop();
     return 0;
 }
-void NetWork_Wifi::getRTCInfo(){
 
-}
+
 void NetWork_Wifi::disconnetWifi(){
     
 }

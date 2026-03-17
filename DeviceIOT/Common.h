@@ -29,8 +29,11 @@ struct DeviceCommand {
 struct TestTimeData
 {
     unsigned long timeStart;
-    unsigned char state;
+    unsigned long time_counter_start;
+    unsigned long time_counter_end;  
     unsigned char numberCheck;
+    unsigned long timestamp;
+    unsigned char state;
     unsigned long countNetWorkWorng;
     /* data */
 };

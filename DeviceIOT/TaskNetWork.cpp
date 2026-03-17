@@ -79,7 +79,18 @@ void updateStatusUART(void){
 }
 
 
-
+void getRTCInfo(){
+    testTimeData.time_counter_end = millis();
+    if (testTimeData.time_counter_end <= testTimeData.time_counter_start) {
+        testTimeData.timestamp = testTimeData.timeStart + ((testTimeData.time_counter_end - testTimeData.time_counter_start) / 1000);
+    } else {
+        // Horizontal rollover due millis() (32-bit unsigned overflow)
+        unsigned long elapsed = (0xFFFFFFFFUL - testTimeData.time_counter_start + testTimeData.time_counter_end + 1UL);
+        testTimeData.timestamp = testTimeData.timeStart + (elapsed / 1000);
+        testTimeData.time_counter_start = testTimeData.time_counter_end;
+        testTimeData.timeStart = testTimeData.timestamp;
+    }
+}
 
 void TaskNetWork::setup(void){
     
@@ -89,8 +100,14 @@ void TaskNetWork::setup(void){
 
     if(WIFI_START_CONNECT==modeStatus){
         netWork_Wifi.connectWifi();
-        if(netWork_Wifi.checkWifi() != WL_CONNECTED){
-          loopNetWork();
+        if (netWork_Wifi.checkWifi() == WL_CONNECTED) {
+            uint32_t netTs = netWork_Wifi.getNetworkTimestamp();
+            if (netTs > 0) {
+                testTimeData.timeStart = netTs;
+            }
+            testTimeData.time_counter_start = millis();
+        } else {
+            loopNetWork();
         }
         netWork_Wifi.startWebServer();
 
@@ -154,8 +171,11 @@ unsigned long compaireTimeInfo(unsigned long time){
 }
 
 bool checkNetWorkInConnect(void){  
+    static bool networkTimeInitialized = false;
+
     if(!netWork_Wifi.checkModeHostPost()){
-        if(!netWork_Wifi.checkWifi()||!netWork_Mqtt.checkStatusMqtt()){
+
+        if((netWork_Wifi.checkWifi()!= WL_CONNECTED)||(!netWork_Mqtt.checkStatusMqtt())){
           if(!netWork_Wifi.pingNetWork()){
               testTimeData.numberCheck=0;;
               testTimeData.state =1;
@@ -206,7 +226,7 @@ bool checkNetWorkReConnect(void){
 
 bool checkNetWorkRealTimeServer(void){
       testTimeData.numberCheck++;
-      if(netWork_Wifi.checkWifi()){
+      if(netWork_Wifi.checkWifi()== WL_CONNECTED){
           testTimeData.state==4;
       }
       else
@@ -393,10 +413,11 @@ void TaskNetWork::taskRun(void * parameter) {
 
     for(;;) {
         loopNetWork();
-        vTaskDelay(200);
+        getRTCInfo();
     }
 #else
     // In non-RTOS mode, this function is called from loop() and should not block.
     loopNetWork();
+    getRTCInfo();
 #endif
 }
