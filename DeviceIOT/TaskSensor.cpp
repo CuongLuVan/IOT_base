@@ -29,8 +29,14 @@ DHT dht (DHTPIN, DHTTYPE); //Initialize DHT sensor.
 PMS pms(Serial);
 PMS::DATA data;
 
+InfoSensor dataSensor;
 
-InfoSensor dataSensor; 
+#if SUPPORT_RTOS
+static SemaphoreHandle_t sensorDataMutex = NULL;
+#endif
+
+static const uint32_t SENSOR_TASK_INTERVAL_MS = 1000; // Adjustable interval (ms)
+static uint8_t sensorReadStep = 0; // 0..3 read schedule
 
 void TaskSensor::setup(void){
     dataSensor.valueHumi =0;
@@ -44,8 +50,17 @@ void TaskSensor::setup(void){
     dht.begin();
     Serial1.begin(9600);   // GPIO1, GPIO3 (TX/RX pin on ESP-12E Development Board)
         //Configuro la porta Serial2 (tutti i parametri hanno anche un get per effettuare controlli)
-    
+
+#if SUPPORT_RTOS
+    if (sensorDataMutex == NULL) {
+        sensorDataMutex = xSemaphoreCreateMutex();
+        if (sensorDataMutex == NULL) {
+            Serial.println("TaskSensor: ERROR create sensorDataMutex");
+        }
+    }
+#endif
 }
+
 void TaskSensor::readSensor(void){
     dataSensor.valueControl =0;
 }
@@ -93,21 +108,54 @@ extern QueueHandle_t sensorDataQueue;
 #endif
 
 void TaskSensor::taskRun(void * parameter) {
+    using SensorReadFn = void (*)();
+    static SensorReadFn readOps[4] = {
+        TaskSensor::readSensor,
+        TaskSensor::readSensorDust,
+        TaskSensor::readSensorTemp,
+        TaskSensor::readSensorHumi
+    };
+
     for(;;)
-    { 
-        TaskSensor::readSensor();
-        TaskSensor::readSensorDust();
-        TaskSensor::readSensorTemp();
-        TaskSensor::readSensorHumi();
+    {
+        // Chu kỳ 1 giây / step: 0..3
+        if (sensorReadStep >= 4) {
+            sensorReadStep = 0;
+        }
+
+#if SUPPORT_RTOS
+        if (sensorDataMutex != NULL) {
+            if (xSemaphoreTake(sensorDataMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+                readOps[sensorReadStep]();
+                xSemaphoreGive(sensorDataMutex);
+            }
+        } else {
+            readOps[sensorReadStep]();
+        }
+#else
+        readOps[sensorReadStep]();
+#endif
 
 #if SUPPORT_RTOS
         if (sensorDataQueue != NULL) {
+            // Luôn gửi bản ghi hiện tại mỗi lúc sau khi cập nhật ô cùng
             xQueueSend(sensorDataQueue, &dataSensor, pdMS_TO_TICKS(100));
         }
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        if (sensorDataMutex != NULL) {
+            // có thể dùng mutex nếu cần đọc dataSensor ở nơi khác, có thể for dữ liệu trên queue
+            if (xSemaphoreTake(sensorDataMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+                MemoryData::GetInstance().sensorData_ = &dataSensor;
+                xSemaphoreGive(sensorDataMutex);
+            }
+        } else {
+            MemoryData::GetInstance().sensorData_ = &dataSensor;
+        }
+        vTaskDelay(SENSOR_TASK_INTERVAL_MS / portTICK_PERIOD_MS);
 #else
-        MemoryData::GetInstance().sensorData_=(&dataSensor);
-        delay(1000);
+        MemoryData::GetInstance().sensorData_ = &dataSensor;
+        delay(SENSOR_TASK_INTERVAL_MS);
 #endif
+
+        sensorReadStep++;
     }
 }

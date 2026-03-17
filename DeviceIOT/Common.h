@@ -17,6 +17,7 @@ struct InfoDeviceControl {
     uint8_t button_click;
     uint8_t button_status;
     uint16_t count_info;
+    uint8_t device_port_last;
 };
 
 struct DeviceCommand {

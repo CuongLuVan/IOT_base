@@ -109,7 +109,28 @@ void NetWork_Wifi::loopHostPost(void){
 }
 
 bool NetWork_Wifi::checkModeHostPost(void){
-  return true;
+    // Kiểm tra nếu đang ở AP mode và SSID trùng HOST_POST_INFO
+    wifi_mode_t mode = WiFi.getMode();
+    if (mode != WIFI_AP && mode != WIFI_AP_STA) {
+        return false;
+    }
+
+    String apSsid = WiFi.softAPSSID();
+    if (apSsid == String(HOST_POST_INFO)) {
+        return true;
+    }
+
+    // Nếu có vẻ ở STA và không chạy AP thì không phải hostpost
+    if (mode == WIFI_STA) {
+        return false;
+    }
+
+    // Tình huống fallback: kiểm tra số client đang kết nối AP > 0
+    if (WiFi.softAPgetStationNum() > 0) {
+        return true;
+    }
+
+    return false;
 }
 
 

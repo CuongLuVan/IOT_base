@@ -363,7 +363,7 @@ void TaskNetWork::loopNetWork(void) {
     // Process device status updates from TaskDevice
     if (deviceStatusQueue != NULL) {
         
-        while (xQueueReceive(deviceStatusQueue, &status, 0) == pdTRUE) {
+        while (xQueueReceive(deviceStatusQueue, &statusDevice, 0) == pdTRUE) {
             if (netWork_Mqtt.checkStatusMqtt()) {
                 char devPayload[256];
                 snprintf(devPayload, sizeof(devPayload), "{\"device_port\":%d,\"button_click\":%d,\"button_status\":%d,\"count_info\":%d}",
