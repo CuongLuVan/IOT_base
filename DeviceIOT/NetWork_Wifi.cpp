@@ -18,6 +18,7 @@
 #include <WiFiProv.h>
 #include "Common.h"
 #include <time.h>
+#include "MemoryData.h"
 
 uint32_t      ip_address[4] ={192,168,0,1};             // 544
 WebServer *webServer;
