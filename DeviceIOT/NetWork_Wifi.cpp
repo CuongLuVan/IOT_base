@@ -58,11 +58,31 @@ void NetWork_Wifi::handleSetUp(){
     delay(2000);
     ESP.restart();            // Restart ESP
 }
-
+extern DeviceCommand cmd;
+extern QueueHandle_t deviceCommandQueue;
 void NetWork_Wifi::handleControl(){
     String data = webServer->arg("data");
-    deserializeJson(jsonBuffer, data);
-    webServer->send(200, "application/json", "{'data':true}");
+   
+    cmd.commandType = webServer->arg("com").toInt();
+    cmd.commandValue = webServer->arg("value").toInt();
+   
+    if(cmd.commandType == 0x02) {
+        cmd.reserved = 0;
+    } else if(cmd.commandType == 0x01)  {
+        cmd.reserved = 1;
+        #if SUPPORT_RTOS
+            if (deviceCommandQueue == NULL) return;
+            if (xQueueSend(deviceCommandQueue, &cmd, pdMS_TO_TICKS(50)) != pdTRUE) {
+                Serial.println("[MQTT] Failed to queue device command");
+            } else {
+                Serial.printf("[MQTT] Queued command type=%d value=%d\n", cmd.commandType, cmd.commandValue);
+            }
+        #else
+            MemoryData::GetInstance().deviceCommand_ = &cmd;
+            //Serial.printf("[MQTT] Queued (non-RTOS) command type=%d value=%d\n", cmd.commandType, cmd.commandValue);
+        #endif
+    }
+    webServer->send(200, "application/json", getInfoDevice(sensorValue,statusDevice));
 }
 
 void NetWork_Wifi::handleUpdate(){
@@ -312,15 +332,30 @@ unsigned char NetWork_Wifi::pingNetWork(){
 
 
 void NetWork_Wifi::disconnetWifi(){
-    
+    if (webServer != nullptr) {
+        webServer->close();
+        delete webServer;
+        webServer = nullptr;
+    }
+
+    if (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA) {
+        WiFi.softAPdisconnect(true);
+    }
+
+    if (WiFi.getMode() == WIFI_STA || WiFi.getMode() == WIFI_AP_STA) {
+        WiFi.disconnect(true, true);
+    }
+
+    //WiFi.mode(WIFI_OFF);
+    delay(100);
 }
 
 void NetWork_Wifi::handerHospost(){
-    
+     webServer->handleClient();
 }
 
 void NetWork_Wifi::handerClient(){
-    
+     webServer->handleClient();
 }
 
 void NetWork_Wifi::startSmartConfig(){

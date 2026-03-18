@@ -104,27 +104,26 @@ void TaskDevice::taskRun(void * parameter) {
 
                 // Receive command from network if available
                 if (deviceCommandQueue != NULL) {
-                    DeviceCommand cmd;
-                    if (xQueueReceive(deviceCommandQueue, &cmd, 0) == pdTRUE) {
+                    DeviceCommand cmd_to_device;
+                    if (xQueueReceive(deviceCommandQueue, &cmd_to_device, 0) == pdTRUE) {
                         // apply command locally
-                        switch (cmd.commandType) {
-                            case 1:
-                                // e.g, toggle pump
-                                control.device_port = cmd.commandValue;
-                                break;
-                            case 2:
-                                // custom device setting
-                                control.button_status = cmd.commandValue;
-                                break;
-                            default:
-                                break;
+                        if(cmd_to_device.commandType == 0x01) {
+                            control.device_port = cmd_to_device.commandValue;
                         }
                         control.count_info++;
-                        Serial.printf("[TaskDevice] Exec command type=%d value=%d\n", cmd.commandType, cmd.commandValue);
+                        Serial.printf("[TaskDevice] Exec command type=%d value=%d\n", cmd_to_device.commandType, cmd_to_device.commandValue);
                     }
                 }
             #else
                 MemoryData::GetInstance().deviceStatus_ = &control;
+                if(MemoryData::GetInstance().deviceCommand_ != NULL) {
+                    DeviceCommand* cmd_to_device = MemoryData::GetInstance().deviceCommand_;
+                    if(cmd_to_device->commandType== 0x01) {
+                        control.device_port = cmd_to_device->commandValue;
+                        cmd_to_device->reserved = 0; // Mark as processed
+                        control.count_info++;
+                    }
+                }
             #endif
         }
 

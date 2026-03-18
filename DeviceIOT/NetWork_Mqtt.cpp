@@ -39,7 +39,7 @@ void sendMessageInfoPublish(String data){
   }
    
 }
-
+DeviceCommand cmd;
 void MqttDataCallback(char* topic, byte* data, unsigned int data_len)
 {
     String payload = String((char*)data).substring(0, data_len);
@@ -50,27 +50,29 @@ void MqttDataCallback(char* topic, byte* data, unsigned int data_len)
         return;
     }
 
-    DeviceCommand cmd;
+    
     cmd.commandType = doc["com"] | 0;
     cmd.commandValue = doc["value"] | 0;
-    cmd.reserved = 0;
+   
     if(cmd.commandType == 0x02) {
+        cmd.reserved = 0;
         sendMessageInfoPublish(getInfoDevice(sensorValue,statusDevice));
-    } else {
-        
+    } else if(cmd.commandType == 0x01)  {
+        cmd.reserved = 1;
+        #if SUPPORT_RTOS
+            if (deviceCommandQueue == NULL) return;
+            if (xQueueSend(deviceCommandQueue, &cmd, pdMS_TO_TICKS(50)) != pdTRUE) {
+                Serial.println("[MQTT] Failed to queue device command");
+            } else {
+                Serial.printf("[MQTT] Queued command type=%d value=%d\n", cmd.commandType, cmd.commandValue);
+            }
+        #else
+            MemoryData::GetInstance().deviceCommand_ = &cmd;
+            //Serial.printf("[MQTT] Queued (non-RTOS) command type=%d value=%d\n", cmd.commandType, cmd.commandValue);
+        #endif
     }
 
-#if SUPPORT_RTOS
-    if (deviceCommandQueue == NULL) return;
-    if (xQueueSend(deviceCommandQueue, &cmd, pdMS_TO_TICKS(50)) != pdTRUE) {
-        Serial.println("[MQTT] Failed to queue device command");
-    } else {
-        Serial.printf("[MQTT] Queued command type=%d value=%d\n", cmd.commandType, cmd.commandValue);
-    }
-#else
-    //MemoryData::GetInstance().setDeviceCommand(cmd);
-    //Serial.printf("[MQTT] Queued (non-RTOS) command type=%d value=%d\n", cmd.commandType, cmd.commandValue);
-#endif
+
 }
 
 
@@ -121,7 +123,13 @@ void NetWork_Mqtt::disconnetMqtt(){
 }
 
 void NetWork_Mqtt::connectMqtt(){
-   
+  MqttClient.setCallback(MqttDataCallback);
+  MqttClient.setServer(Settings.mqtt_host, Settings.mqtt_port);
+
+  if (MqttClient.connect(Settings.mqtt_client, Settings.mqtt_user, Settings.mqtt_pwd, Settings.subcribe_topic, 1, true, "")) {
+    this->sendMessageInfo("test");
+    
+  }
 }
 
 
@@ -137,9 +145,6 @@ void NetWork_Mqtt::sendMessageInfo(char * data){
 }
 
 
-void NetWork_Mqtt::decodeMessange(char * data){
-   
-}
 
 
 void NetWork_Mqtt::MqttSubscribe(char *topic)
@@ -162,13 +167,8 @@ void NetWork_Mqtt::MqttReconnect()
 
   EspClient.stop();
   yield();
-  MqttClient.setCallback(MqttDataCallback);
-  MqttClient.setServer(Settings.mqtt_host, Settings.mqtt_port);
-
-  if (MqttClient.connect(Settings.mqtt_client, Settings.mqtt_user, Settings.mqtt_pwd, Settings.subcribe_topic, 1, true, "")) {
-    this->sendMessageInfo("test");
-    this->connectMqtt();
-  }
+  
+  this->connectMqtt();
 }
 
 

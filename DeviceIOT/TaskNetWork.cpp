@@ -219,6 +219,10 @@ bool checkNetWorkReConnect(void){
         netWork_Wifi.connectWifi();
         testTimeData.state==3;
         testTimeData.numberCheck = 0;
+        netWork_Wifi.startWebServer();
+       // netWork_Mqtt.getAllDataSetup();
+       // netWork_Mqtt.setupInfoMQTT();
+        //if(netWork_Mqtt.checkStatusMqtt()) netWork_Mqtt.sendMessageInfo("mqtt");
     }
     return true;   
 }
