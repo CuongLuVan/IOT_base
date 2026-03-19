@@ -12,8 +12,6 @@ TaskHandle_t Task1;
 TaskHandle_t Task2;
 TaskHandle_t Task3;
 
-const int led_1 = 2;
-const int led_2 = 25;
 
 void setup() {
     Serial.begin(115200);
@@ -22,8 +20,6 @@ void setup() {
     taskSensor.setup();
     task_NetWork.setup();
 
-    pinMode(led_1, OUTPUT);
-    pinMode(led_2, OUTPUT);
 
 #if SUPPORT_RTOS
     // RTOS mode: create tasks pinned to cores (ESP32)

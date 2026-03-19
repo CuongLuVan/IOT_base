@@ -67,10 +67,10 @@ void NetWork_Wifi::handleControl(){
     cmd.commandType = webServer->arg("com").toInt();
     cmd.commandValue = webServer->arg("value").toInt();
    
-    if(cmd.commandType == 0x02) {
-        cmd.reserved = 0;
-    } else if(cmd.commandType == 0x01)  {
-        cmd.reserved = 1;
+    if(cmd.commandType == COMMAND_TYPE_OTHER) {
+        cmd.reserved = COMMAND_RESERVED_NONE;
+    } else if(cmd.commandType == COMMAND_TYPE_CONTROL)  {
+        cmd.reserved = COMMAND_RESERVED_CONTROL;
         #if SUPPORT_RTOS
             if (deviceCommandQueue == NULL) return;
             if (xQueueSend(deviceCommandQueue, &cmd, pdMS_TO_TICKS(50)) != pdTRUE) {

@@ -107,7 +107,7 @@ void TaskDevice::taskRun(void * parameter) {
                     DeviceCommand cmd_to_device;
                     if (xQueueReceive(deviceCommandQueue, &cmd_to_device, 0) == pdTRUE) {
                         // apply command locally
-                        if(cmd_to_device.commandType == 0x01) {
+                        if(cmd_to_device.commandType == COMMAND_TYPE_CONTROL) {
                             control.device_port = cmd_to_device.commandValue;
                         }
                         control.count_info++;
@@ -118,7 +118,7 @@ void TaskDevice::taskRun(void * parameter) {
                 MemoryData::GetInstance().deviceStatus_ = &control;
                 if(MemoryData::GetInstance().deviceCommand_ != NULL) {
                     DeviceCommand* cmd_to_device = MemoryData::GetInstance().deviceCommand_;
-                    if(cmd_to_device->commandType== 0x01) {
+                    if(cmd_to_device->commandType== COMMAND_TYPE_CONTROL) {
                         control.device_port = cmd_to_device->commandValue;
                         cmd_to_device->reserved = 0; // Mark as processed
                         control.count_info++;
