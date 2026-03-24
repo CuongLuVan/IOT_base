@@ -1,0 +1,33 @@
+.sc-listchat {
+    position: absolute;
+    bottom: -75px;
+    height: 60px;
+    width: 304px;
+    border-radius: 8px;
+    background-color: #fff;
+    color: #333;
+    overflow: hidden;
+}
+
+.sc-listchat-control {
+    position: relative;
+}
+
+.sc-listchat-left-button {
+    position: absolute;
+    left: 0;
+    top: 18px;
+}
+
+.sc-listchat-right-button {
+    position: absolute;
+    right: 0;
+    top: 18px;
+}
+
+
+
+.sc-listchat-left-button >img, .sc-listchat-right-button>img {
+    width: 15px;
+    height: 18px;
+}

@@ -1,0 +1,237 @@
+
+.auth-container {
+    font-family: "Roboto", sans-serif;
+    width: 100%;
+    height: 900px;
+    left: 0px;
+    top: 0px;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(11px);
+  }
+  
+  .auth-deco {
+    position: relative;
+    width: 800px;
+    height: 500px;
+    top: 100px;
+    margin: 0 auto;
+    background: white;
+    box-shadow: 0px 4px 4px rgba(0, 0, 0, 0.25);
+    backdrop-filter: blur(47px);
+    border-radius: 8px;
+  }
+  
+  .pos-abs {
+    position: absolute;
+  }
+
+  .font-small {
+    font-size: 12px;
+    font-weight: bold;
+    margin-bottom: 0px;
+  }
+  
+  .leaf {
+    left: -2%;
+    top: 15%;
+  }
+  
+  .leaf-1 {
+    left: -1%;
+    top: 0%;
+    width: 100px;
+  }
+  
+  .leaf-2 {
+    left: 27%;
+    bottom: -3%;
+    width: 70px;
+  }
+  
+  .leaf-3 {
+    bottom: -1%;
+    left: 35%;
+    width: 140px;
+  }
+  
+  .decor {
+    left: 40%;
+    width: 150px;
+  }
+  
+  .decor-1 {
+    left: 10%;
+    top: 10%;
+    width: 140px;
+  }
+  
+  .side-image {
+    width: 180px;
+    left: 15%;
+    bottom: 25%;
+  }
+  .decor-point {
+    left: 12%;
+    bottom: 40%;
+    width: 8px;
+  }
+  
+  .decor-point-1 {
+    left: 12%;
+    bottom: 36%;
+    width: 8px;
+  }
+  
+  .decor-point-2 {
+    left: 12%;
+    bottom: 32%;
+    width: 8px;
+  }
+  
+  .decor-point-3 {
+    left: 12%;
+    bottom: 28%;
+    width: 8px;
+  }
+  
+  .decor-point-4 {
+    left: 12%;
+    bottom: 24%;
+    width: 8px;
+  }
+  
+  .line {
+    left: 46%;
+    top: 16%;
+  }
+  
+  .circle {
+    right: -2%;
+    bottom: -4%;
+  }
+  
+  .box-login {
+    position: absolute;
+    right: 12%;
+    top: 30%;
+  }
+  
+  .caption {
+    position: absolute;
+    width: 250px;
+    height: 30px;
+    right: 4%;
+    top: -20%;
+    /* Title/AVO 32 Bold */
+    /* font-family: UTM Avo; */
+    font-style: normal;
+    font-weight: bold;
+    font-size: 25px;
+    line-height: 120%;
+    /* or 38px */
+    text-align: center;
+    color: #273e7c;
+  }
+  
+  
+  .close {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    right: 4%;
+    top: 4%;
+    background-color: #bac6e5;
+    border: none;
+    color: white;
+  }
+  
+  .close:hover {
+    background-color: #273e7c;
+  }
+  
+  .username,
+  .password {
+    width: 250px;
+    margin-bottom: 14px;
+    height: 35px;
+    margin-top: 2px;
+    background-color: #e6ebf8;
+    border: none;
+    border-radius: 5px;
+    font-size: 11px;
+    padding-left: 15px;
+  }
+  .check-pass {
+    padding-bottom: 10px;
+  }
+  .remember-pass {
+    padding-left: 5px;
+  }
+  
+  .forget-pass {
+    color: #273e7c;
+    font-weight: bold;
+    padding-left: 70px;
+  }
+  
+  .remember-pass,
+  .forget-pass {
+    font-size: 10px;
+    margin-bottom: 0px;
+  }
+  
+  .login {
+    width: 250px;
+    height: 40px;
+    text-align: center;
+    background-color: #273e7c;
+    color: white;
+    outline: none;
+    border: none;
+    border-radius: 6px;
+    margin-bottom: 15px;
+    font-size: 12px;
+    font-weight: bold;
+  }
+  
+  .login:hover {
+    cursor: pointer;
+  }
+  
+  .other-regis {
+    text-align: center;
+  }
+  
+  .other-login {
+    color: #5a5a5a;
+    font-size: 10px;
+    margin-bottom:0px;
+    padding-bottom: 10px;
+  }
+  
+  .facebook,
+  .google {
+    width: 35px;
+    padding-bottom: 10px;
+  }
+  
+  .facebook {
+    margin-right: 5px;
+  }
+  
+  .no-account {
+    display: block;
+    font-size: 10px;
+  }
+  
+  .no-account {
+    right: 26.5%;
+  }
+  
+  .register-now {
+    width: 60px;
+    padding-left: 2px;
+    color: #273e7c;
+    font-weight: 700;
+  }
+  
