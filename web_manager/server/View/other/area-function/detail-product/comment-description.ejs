@@ -1,0 +1,64 @@
+<div class="detail-review mb-5">
+    <div class="row mt-5">
+      <div class="col-lg-9 col-xs-12 product-bg border-bottom-review">
+        <div class="nav-detail ml-3, my-4">
+          <a><span class="text-detail mr-5" id="click-descrip" onclick="selectInfo()">Chi tiết</span></a>
+          <a><span class="comment text-detail my-4" id="click-review" onclick="selectReview()" >Review</span></a>
+        </div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="col-lg-9 col-xs-12 product-bg pt-4">
+        <div class="product-description" id="homeDescription">
+          <p class="text-description" >
+          </p>
+        </div>
+        <div class="product-description" id="root_comment">
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script type="text/javascript">  
+            selectInfo();
+           function selectInfo(){
+                document.getElementById('homeDescription').style.visibility ='visible';   
+                document.getElementById('root_comment').style.visibility ='hidden';   
+                document.getElementById('homeDescription').style.display = "block";
+                document.getElementById('root_comment').style.display = "none";
+                document.getElementById('click-descrip').style.borderBottom = '2px solid #33a0ff';
+                document.getElementById('click-review').style.border = 'none';
+
+           }
+
+           function selectReview(){
+             document.getElementById('homeDescription').style.visibility ='hidden';   
+             document.getElementById('root_comment').style.visibility ='visible';   
+             document.getElementById('homeDescription').style.display = "none";
+             document.getElementById('root_comment').style.display = "block";
+             document.getElementById('click-review').style.borderBottom = '2px solid #33a0ff';
+             document.getElementById('click-descrip').style.border = 'none';
+           }
+           function setItemByDatePage(item) {
+               item.sort((el1, el2) => {
+                   element1 = el1.updated_at.toUpperCase();
+                   element2 = el2.updated_at.toUpperCase();
+                   if (element1 > element2) return -1;
+                   else return 1;
+               })
+
+               return item;
+           }
+           $('#homeDescription').html("");
+           var dataViewHtml = ('<%= detail %>').replaceAll('type=', '');
+           getInfoHtml('/api/customers/page_product?type='+dataViewHtml,(data)=>{
+                if(data==false) return; 
+                const dataItems = setItemByDatePage(data.result);
+                   var linkAcess = window.location.protocol+'//'+ window.location.host + '/'+ data.result[0].filesave;
+                   getInfoHtml(linkAcess,(data)=>{
+                        if(data==false) return; 
+                        $('#homeDescription').html(data);
+                   });
+           });
+</script>

@@ -1,0 +1,239 @@
+<div class="header-info"  id="info-user-view"  >
+    <div class="header-item-profile" id="info-user-data" >
+    </div>
+    <div class="header-item-cart">
+      <a href="/tree/cart">
+          <i class="fa fa-shopping-cart"> 
+              <span class="product-count" id="value_item_Cart" >0</span>
+          </i>
+      </a>
+      <span class="cart-amunt" id="shopping_logout_cart">Đăng xuất</span>
+    </div>
+</div>
+<style>
+  .info-text-info-swal{
+    margin: auto;
+    width: 100%;
+    margin-bottom: 20px;
+  }
+</style>
+<script type="text/javascript">
+      onReloadUser();
+      onReloadMenu();
+      function onReloadMenu(){
+          var data = localStorage.getItem('cart');
+          var dataCart={name:"info",value:[]};
+          if((data!=null)&&(data!="")){
+              dataCart= JSON.parse(data);
+          }
+          var numberProduct=dataCart.value.length;
+          $('#value_item_Cart').html(numberProduct);
+          //shopping_logout_cart
+      }
+    
+      function onReloadUser(){
+        var data = localStorage.getItem('customer');
+        if(data!=null&&data!==undefined&&data.length>1){       
+          $('#info-user-data').html(`<i class="fa fa-user"></i> <span>${data.substring(0, data.length>10?10:data.length)}</span>`);
+          $('#shopping_logout_cart').html(`<a onclick="logoutCustomerMenu()">Đăng xuất</a>`);
+        }
+        else {
+          //shopping_logout_cart
+          $('#info-user-data').html(``);
+          $('#shopping_logout_cart').html(`<a onclick="loginCustomerMenu()">Đăng nhập </a>`);
+        } 
+      }
+
+      function logoutCustomerMenu(){
+          Swal.fire({
+              title: 'Bạn muốn đăng xuất chứ?',
+              icon: 'warning',
+              showCancelButton: true,
+              confirmButtonColor: '#3085d6',
+              cancelButtonColor: '#d33',
+              confirmButtonText: 'Đăng xuất',
+              allowOutsideClick: false,
+              showCloseButton: true
+          }).then((result) => {
+              if (result.isConfirmed) {
+                localStorage.setItem('customer', "");
+                localStorage.setItem('token', "");
+                localStorage.setItem('cart', "");
+                onReloadUser();
+                onReloadMenu();
+                window.location.href = "./";
+              }
+          });
+      }
+      
+      function loginCustomerMenu(calback=null){
+        Swal.fire({
+          title: 'Đăng nhập',
+          html: `<input type="text" id="login" class="swal2-input info-text-info-swal" placeholder="Tên tài khoản">
+          <input type="password" id="password" class="swal2-input info-text-info-swal" placeholder="Mật khẩu"><br/>
+          Nếu chưa có tài khoản, Xin vui lòng  <ins style=" color: blue;" onclick="registerCustomerMenu()"">đăng ký</ins> `,
+          confirmButtonText: 'Đăng nhập',
+          focusConfirm: false,
+          allowOutsideClick: false,
+          showCloseButton: true,
+          preConfirm: () => {
+            const login = Swal.getPopup().querySelector('#login').value
+            const password = Swal.getPopup().querySelector('#password').value
+            if (!login || !password) {
+              Swal.showValidationMessage(`Please enter login and password`)
+            }
+            return { login: login, password: password }
+          }
+        }).then((result) => {
+          Swal.showLoading();
+          var infoUser ={}
+          var infoLoad={email:result.value.login,password:result.value.password};
+          setTimeout(()=>{
+              Swal.showLoading();
+              postInfoData('/api/auth/login_customer',infoLoad,(data)=> {
+                if(data.error){
+                    Swal.hideLoading();
+                    Swal.close();
+                    Swal.fire({
+                          title: "<i>Không thể đăng nhập. Xin vui lòng thử lại</i>", 
+                          html: 'Lỗi',  
+                          confirmButtonText: "<u>Đồng ý</u>", 
+                          allowOutsideClick: false,
+                          showCloseButton: true,
+                          showCloseButton: true
+                      });
+                    
+                  }
+                  else
+                  { 
+                    localStorage.setItem('customer', infoLoad["email"]);
+                    localStorage.setItem('token', data.data.token);
+                    localStorage.setItem('avatar', data.data.avatar);
+                    onReloadUser();
+                    Swal.hideLoading();
+                    Swal.close();
+                    location.reload();
+                  }
+                  
+              });
+          },1000);
+          
+        })
+        
+      }
+
+      function registerCustomerMenu(){
+        const data = formRegistration();
+        uploadForm(data);
+      }
+      
+      const formRegistration = () => {
+                  var itemValue= ["username","fullname","email","password","phone","avatar","address","note"];
+                  var itemName= ["Tên tài khoản","Họ và tên","email","Mật khẩu","Số điện thoại ","avatar","address","note"];
+                  var itemType= ["text","text","text","password","text","avatar","text","text"];
+                  var htmlData='';
+                  itemValue.forEach((element,index) => {
+                      if(itemType[index]=="avatar"){
+                        htmlData  =htmlData +'<div style="display: grid; grid-template-columns: 40% 60%; grid-template-rows: 100% 0%; height: 80px; margin-bottom: 10px;">' 
+                                        +  '<div> <label for="upload-photo-invoice">Tải ảnh avartar...</label>  <input id="upload-photo-invoice"  style="border-color: #9c9cb654;" placeholder ="' + itemName[index] +'" type="file" id="'+ 
+                                        element+'" name="'+element+'" accept=".png,.jpg,.jpeg" onchange="uploadImageData(this)" ></div>'
+                                        +'  <img id="imageUploadInfo"  src="" width="80px" height="80px" alt=""/>  <br/> </div>';
+                      }
+                      else
+                          htmlData  =htmlData +'<div style="display: grid; grid-template-rows: 100% 0%; height: 40px; margin-bottom: 10px;">' 
+                                        +  '<input placeholder ="' + itemName[index] +'" type="'+itemType[index]+'" id="'+ 
+                                        element+'" name="'+element+'"><br/> </div>';
+                      // htmlData = htmlData + '<div class="row"> <div class="col-4 text-left"> <span style="margin:auto;">' + element + '</span></div> <div class="col-8"><input type="text" id="'+ element+'" name="'+element+'"> </div></div>'
+                  });
+                  htmlData = '<div>' + htmlData + '</div>';
+                  // '<input class="form-control" type="text" placeholder="Default input">'
+                  return htmlData;
+              }
+      const uploadForm = (htmlData) => {
+                  Swal.fire({
+                      title: "<i>Xin vui lòng thêm thông tin</i>", 
+                      html: htmlData,  
+                      confirmButtonText: "<u>Đồng ý</u>", 
+                      allowOutsideClick: false,
+                      showCloseButton: true,
+                      showCloseButton: true
+                  }).then((result) => {
+                      if (result.value) {
+                          var dataJsonnew=getDataInval({});
+                          Swal.showLoading();
+                          postInfoData('/api/customers/register',dataJsonnew,(data)=> {
+                            if(!data.error){
+                                var infoLoad={email:dataJsonnew["email"],password:dataJsonnew["password"]}
+                                postInfoData('/api/auth/login_customer',infoLoad,(data)=> {
+                                    if(!data.error){
+                                      localStorage.setItem('customer', dataJsonnew["email"]);
+                                      localStorage.setItem('token', data.data.token);
+                                      localStorage.setItem('avatar', data.data.avatar);
+                                      onReloadUser();
+                                      Swal.hideLoading();
+                                      Swal.close();
+                                    }
+                                    else
+                                    {
+                                          Swal.hideLoading();
+                                          Swal.close();
+                                          Swal.fire({
+                                                title: "<i>Không thể đăng nhập. Xin vui lòng thử lại</i>", 
+                                                html: 'Lỗi',  
+                                                confirmButtonText: "<u>Đồng ý</u>", 
+                                                allowOutsideClick: false,
+                                                showCloseButton: true,
+                                                showCloseButton: true
+                                            });
+                                    }
+                                });
+                                
+                            }
+                            else
+                            {
+                                Swal.fire({
+                                    title: "<i>Không tồn tại dữ liệu</i>", 
+                                    html: 'Lỗi',  
+                                    confirmButtonText: "<u>Đồng ý</u>", 
+                                    allowOutsideClick: false,
+                                    showCloseButton: true,
+                                    showCloseButton: true
+                                });
+                            }
+                              
+                          })
+                          //finishBill(dataJsonData);
+                      } 
+                  })
+        }
+
+        async  function uploadImageData(event){
+              const data = new FormData() 
+              data.append('file', event.files[0]);
+              try {
+                let response = await fetch('/api/customers/import-image-customer', 
+                  {method: "POST", body: data}); 
+                const result = await response.json();
+                $("#imageUploadInfo").attr("src",result.url );
+              } catch(e) {
+
+              }    
+             
+          }
+          function getDataInval(info){
+              var itemValue= ["username","email","password","token_reset","phone","avatar","fullname","permission_id","address","note"];
+              var htmlData='';
+              itemValue.forEach(element => {
+                  info[element]=$('#'+element).val();
+                  if(element=="avatar")  info[element]=$('#imageUploadInfo').attr('src');
+              });
+              return info;
+              var costValue=0;
+              info.value.forEach(item => {
+                  costValue += (item.number* item.imageInfo.cost_detail);
+              });
+              info['Total']=costValue;
+              return info;
+          }
+
+  </script>

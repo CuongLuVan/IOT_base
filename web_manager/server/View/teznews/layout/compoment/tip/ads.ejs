@@ -1,0 +1,24 @@
+<div class="ads hidden-sm hidden-xs" id="ids_ads_home">
+    <p>advertisement</p>
+    <div class="ads hidden-sm hidden-xs"></div>
+    <img alt="chợ xanh 4 mùa" src="" class="img-responsive" />
+</div>
+<script type="text/javascript">
+    var infoData = `<p>Quảng cáo</p>`;
+    function getDataInfoAdvertisement(data){
+            infoData = `<p>Quảng cáo</p>`;
+            for(var i=0;((i<4)&&(i<data.length));i++){
+                getInfoHtml("/"+data[i].filesave,
+                            (info)=>
+                            {
+                                if(info==false) return; 
+                                infoData = infoData + '<div style="margin-top: 30px;">' +info + '</div>';
+                                $("#ids_ads_home").html(infoData);
+                            });
+            }
+    }
+    postInfoData('/api/document/get_advertisement',{group_content_sub_id:0},(dataJson)=>{
+        if(!dataJson.error)
+            getDataInfoAdvertisement(dataJson.data);
+    });
+</script>

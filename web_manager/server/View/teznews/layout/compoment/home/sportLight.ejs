@@ -1,0 +1,45 @@
+<div class="box-caption">
+    <span>Nổi bật</span>
+</div>
+<!--sportlight-->
+<section class="owl-carousel owl-spotlight" id="owl_spotlight_id" >
+    
+</section>
+
+<script type="text/javascript">
+        function infoValueDataThree(item){
+            var html="";
+            for(var i=0;((i< 4)&&(i<item.length));i++){
+                var linkInfo=getInfoLink(item[i]);
+                var contentSub=getDetailContent(item[i].group_content_sub_id);
+                html = html +
+                        `<div>
+                            <article class="spotlight-item">
+                                <div class="spotlight-img ">
+                                    <div class="info-head-main-crop">
+                                        <img alt="chợ xanh 4 mùa" src="`+item[i].content_img+`" class="img-responsive " />
+                                    </div>
+                                    <a href="`+linkInfo+`" class="cate-tag">`+contentSub+`</a>
+                                </div>
+
+                                <div class="spotlight-item-caption">
+                                    <h2 class="font-heading"> <a href="`+linkInfo+`">`+item[i].title+`</a></h2>
+                                    <div class="meta-post">
+                                        <a href="`+linkInfo+`">
+                                            `+contentSub+`
+                                        </a>
+                                        <em></em>
+                                        <span>
+                                            `+(new Date(item[i].created_at)).toLocaleDateString()+`
+                                        </span>
+                                    </div>
+                                    <p>`+item[i].content+` </p>
+                                </div>
+                            </article>
+                        </div>`;
+            }
+            return html;
+        }
+
+        
+</script>

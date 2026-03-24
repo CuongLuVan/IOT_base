@@ -1,0 +1,67 @@
+<div class="detail-review">
+    <div class="row">
+      <div class="product-bg border-bottom-review flex-container-v1 " style="width: 100%;">
+          <div class="flex-item-v1"><span class="text-detail" id="click-descrip" onclick="selectInfo()"><%= __('infoProduct') %></span></div>
+          <div class="flex-item-v1"><span class="comment text-detail" id="click-review"  ></span></div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="col-xs-12 product-bg pt-4" style="width: -webkit-fill-available;">
+        <div class="product-description" id="homeDescription">
+          <p class="text-description" >
+          </p>
+        </div>
+        <div class="product-description" id="enter_comment" style="height: 600px;">
+         
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script type="text/javascript">  
+///comment/product
+          const queryString = window.location.search;
+          $('#enter_comment').html(` <iframe src="/comment/product${queryString}"  frameborder="0" style="overflow:hidden;height:100%;width:100%" height="100%" width="100%" ></iframe>`);
+          document.getElementById('homeDescription').html =  `./comment/product` + queryString;
+
+            selectInfo();
+           function selectInfo(){
+                document.getElementById('homeDescription').style.visibility ='visible';   
+                document.getElementById('enter_comment').style.visibility ='hidden';   
+                document.getElementById('homeDescription').style.display = "block";
+                document.getElementById('enter_comment').style.display = "none";
+                document.getElementById('click-descrip').style.borderBottom = '2px solid #33a0ff';
+                document.getElementById('click-review').style.border = 'none';
+
+           }
+
+           function selectReview(){
+             document.getElementById('homeDescription').style.visibility ='hidden';   
+             document.getElementById('enter_comment').style.visibility ='visible';   
+             document.getElementById('homeDescription').style.display = "none";
+             document.getElementById('enter_comment').style.display = "block";
+             document.getElementById('click-review').style.borderBottom = '2px solid #33a0ff';
+             document.getElementById('click-descrip').style.border = 'none';
+           }
+           function setItemByDatePage(item) {
+               item.sort((el1, el2) => {
+                   element1 = el1.updated_at.toUpperCase();
+                   element2 = el2.updated_at.toUpperCase();
+                   if (element1 > element2) return -1;
+                   else return 1;
+               })
+               return item;
+           }
+           $('#homeDescription').html("");
+           var dataViewHtml = ('<%= detail %>').replaceAll('type=', '');
+           getInfoHtml('/api/customers/page_product?type='+dataViewHtml,(data)=>{
+                if(data==false) return; 
+                const dataItems = setItemByDatePage(data.result);
+                   var linkAcess = '/'+ data.result[0].filesave;
+                   getInfoHtml(linkAcess,(data)=>{
+                      if(data==false) return; 
+                       $('#homeDescription').html(data);
+                   });
+           });
+</script>

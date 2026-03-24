@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+
+<html lang="en">
+  <% include ./layout/header.ejs %>
+  <body>
+    <% include ./layout/menuSale-new.ejs %>
+    <section id="best-seller-section">
+        <h2 class="best-seller-caption text-center" id="name-group-info" ><!---IC----></h2>
+        <div class="row best-seller-group grid" id="best-seller-items">
+        </div>
+        <div class="best-seller-load-more text-center">
+          <button type="button" class="btn btn-outline-primary" onclick="loadAnotherElectric()">Load more</button>
+        </div>
+      </section>
+    <br/>
+  </body>
+  <script type="text/javascript">
+        var dataView = ('<%= detail %>').replaceAll('type=', '');
+        var infoData = ["IC","LINH KIỆN","THIẾT BỊ"];
+        const urlParams = new URLSearchParams(window.location.search);
+        const color = urlParams.get('type')-1;
+        $("#name-group-info").html(infoData[color]);
+        dataView ="1";
+        
+        var jsonItemElectric=[];
+        var lstGroupElectric={product_group:parseInt(dataView),start:-5,end:4};
+        loadAnotherElectric();
+        function loadAnotherElectric(){
+        lstGroupElectric.start+=5;
+        lstGroupElectric.end+=5;
+        postInfoData('/api/customers/lst_product',lstGroupElectric,(data)=>{
+            if(!data.error){
+                data.data.result.forEach((element) => {
+                  if(jsonItemElectric.findIndex(o=>(o.product_id==element.product_id))<0)
+                    jsonItemElectric.push(element);
+                });
+                setFillertProductToView(jsonItemElectric,"#best-seller-items","other");
+            }
+           
+        });
+        }
+    </script>
+</html>

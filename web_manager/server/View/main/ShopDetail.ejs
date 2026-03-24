@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+
+<html lang="en">
+  <% include ./layout/header.ejs %>
+  <body>
+    <% include ./layout/menuSale.ejs %>
+    <main>
+        <% include ./layout/banner.ejs %>
+      <!--
+        - PRODUCT
+      -->
+        <% include ./layout/menu_child.ejs %>
+        <div class="product-container">
+            <div class="container">
+                <div class="product-box">
+                <!--
+                - PRODUCT GRID
+                -->
+                    <div class="product-main">
+                        <h2 class="title"><%= __('productPage') %></h2>
+                        <div class="product-grid" id="best-seller-items">
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <% include ./layout/layout_pages.ejs %>
+    </main>
+
+    <script type="text/javascript">
+        const searchParams = (new URL(document.location)).searchParams;
+        var dataView = searchParams.get("type");
+        if(dataView==undefined||dataView==null) dataView = '<%= detail %>';
+        // ('<%= detail %>').replaceAll('type=', '');
+        
+
+        postInfoData('/api/customers/shop_info',{company_id:dataView},(data)=> {                          
+            if(!data.error){
+                $("#company-info-name").html(data.data.result[0].companyname);
+                $("#company-info-adress").html(data.data.result[0].adresss);
+                $("#company-info-phone").html(data.data.result[0].phone);
+            }
+        });  
+        
+        var jsonItemElectric=[];
+        var lstGroupElectric={product_group:0,start:-5,end:0};
+        loadAnotherElectric();
+        function loadAnotherElectric(start=0,end=0){
+           var idSelect = { company_id:dataView };
+           var dataInfo =JSON.parse(JSON.stringify(idSelect));
+           var dataGroup = -1;
+           if(searchParamsMenu.has("item")) dataGroup = searchParams.get("item");
+           dataInfo.product_group =  dataGroup;
+           dataInfo.start=start;
+           dataInfo.end=end;
+           if(end==0) dataInfo.end=10;
+            postInfoData('/api/customers/shop_product',dataInfo,(data)=>{
+                if(!data.error){
+                    jsonItemElectric = data.data.result;//.push(...data.data.result);
+                    setInfoCompanyToView(jsonItemElectric,"#best-seller-items");
+                }
+            });
+            
+        }
+        function searchDataInfoLocation(start,end){
+            var idSelect = { company_id:dataView };
+            var dataInfo =JSON.parse(JSON.stringify(idSelect));
+            dataInfo.start=start;
+            dataInfo.end=end;
+            loadAnotherElectric();
+        }
+        var dataInfoSP1 =JSON.parse(JSON.stringify({ company_id:dataView }));
+        dataInfoSP1.count_data =true;
+        postInfoData('/api/customers/shop_product',dataInfoSP1,(data)=> {      
+            if(!data.error){
+                    layout_pages_numberPages=data.data.result[0].number_store;
+                    getSelectInfo(data.data.result[0].number_store);
+            }            
+        }); 
+
+    
+        function setInfoCompanyToView(items, itemHtml,type="product_detail") {
+            var html='';
+            
+            items.forEach((element) => {
+                var percent_HTML =`<del>${ setValueCost(element.cost_real,"VND") }</del>`;
+                if(element.cost_real==element.cost_detail) percent_HTML= "";
+                var dataInfo = `<div class="showcase">
+                                    <div class="showcase-banner">
+                                        <a href="/${type}/${element.name_short}"  >
+                                            <img src="${element.image}" alt="chợ xanh 4 mùa" class="product-img default"
+                                                width="300">
+                                            <img src="${element.image}" alt="chợ xanh 4 mùa" class="product-img hover"
+                                                width="300">
+                                        </a>
+                                    <p class="showcase-badge angle pink">${element.store==1?"Hết hàng": element.name_image_detail}</p>
+                                
+                                    <div class="showcase-actions">
+                                        <!--<button class="btn-action">
+                                        <ion-icon name="heart-outline"></ion-icon>
+                                        </button>
+                                
+                                        <button class="btn-action">
+                                        <ion-icon name="eye-outline"></ion-icon>
+                                        </button>
+                                
+                                        <button class="btn-action">
+                                        <ion-icon name="repeat-outline"></ion-icon>
+                                        </button>-->
+                                
+                                        <button class="btn-action">
+                                            <a href="/${type}/${element.name_short}">
+                                                <ion-icon name="arrow-redo-outline"></ion-icon>
+                                            </a>
+                                        </button>
+                                    </div>
+                                    </div>
+                                
+                                    <div class="showcase-content">
+                                    <a href="/${type}/${element.name_short}" class="showcase-category">${element.name}</a>
+                                    <h3>
+                                        <a href="/${type}/${element.name_short}"  class="showcase-title">${(element.detail)}</a>
+                                    </h3>
+                                    <!---
+                                    <div class="showcase-rating">
+                                        <ion-icon name="star"></ion-icon>
+                                        <ion-icon name="star"></ion-icon>
+                                        <ion-icon name="star"></ion-icon>
+                                        <ion-icon name="star-outline"></ion-icon>
+                                        <ion-icon name="star-outline"></ion-icon>
+                                    </div>
+                                    --->
+                                    <div class="price-box">
+                                        <p class="price">${(element.cost_detail>0? setValueCost(element.cost_detail,"VND") :"Liên hệ")}</p>
+                                        ${percent_HTML}
+                                    </div>
+                                    </div>
+                                </div>`;
+                html+=dataInfo;
+            });
+            $(itemHtml).html(html);
+        }
+                
+    </script>
+    <% include ./layout/footer.ejs %>
+  </body>
+</html>

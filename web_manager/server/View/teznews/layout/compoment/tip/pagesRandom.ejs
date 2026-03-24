@@ -1,0 +1,49 @@
+<ul role="tablist" class="tab-popular">
+    <li class="active">
+        <a href="#tab1" role="tab" data-toggle="tab">
+            Bài viết gần nhất
+        </a>
+    </li>
+</ul>
+<div class="tab-content">
+    <div role="tabpanel" class="tab-pane active" id="tab1">
+        <ul class="list-news-popular" id="tool_description1">
+        </ul>
+    </div>
+    
+</div>
+<script type="text/javascript">
+        function infoRamdomPagesToShow(item){
+            var html="";
+            for(var i=0;i<item.length;i++){
+                var linkInfo=getInfoLink(item[i]);
+                html=  html+    `<li>
+                                    <a href="`+linkInfo+`">
+                                        <img alt="chợ xanh 4 mùa" src="`+item[i].content_img+`">
+                                    </a>
+                                    <h3><a href="`+linkInfo+`">`+item[i].title+`</a></h3>
+                                    <div class="meta-post">
+                                        <a href="`+linkInfo+`">
+                                            #
+                                        </a>
+                                        <em></em>
+                                        <span>
+                                            `+(new Date(item[i].created_at)).toLocaleDateString()+`
+                                        </span>
+                                    </div>
+                                </li>`;
+            }
+            return html;
+        }
+
+   
+        var  ramdomValue= Math.floor(Math.random() * 40);
+        postInfoData('/api/document/ramdom',{type:ramdomValue},(dataJson)=>{
+            if(!dataJson.error){
+                var curentHtml = infoRamdomPagesToShow(dataJson.data);
+                $("#tool_description1").html(curentHtml);
+            }
+            
+        });
+
+</script>

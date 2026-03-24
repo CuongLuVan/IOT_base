@@ -1,0 +1,84 @@
+<footer class="footer">
+    <div class="container">
+        <div class="row">
+            <div class="col-md-4  col-sm-4 col-xs-12">
+                <div class="about">
+                    <a href="#" class="logo">
+                        <img alt="chợ xanh 4 mùa" src="/teznews/images/sparc-lab-logo.png" />
+                    </a>
+                    <p>Kết nối thông tin tới mọi người</p>
+                </div>
+            </div>
+            <div class="col-md-3 col-md-offset-1 col-sm-4 col-xs-12">
+                <h3>Nội dung</h3>
+                <ul class="list-category">
+                    <li><a href="/"> <%= __('mainPages') %> </a></li>
+                    <li><a href="/tech/head"><%= __('infomation') %></a></li>
+                    <li><a href="/document/head"><%= __('doccument') %>  </a></li>
+                    <li><a href="/tool/head"><%= __('tool_support') %></a></li>
+                    <li><a href="/about"><%= __('intruduce') %></a></li>
+                </ul>
+            </div>
+            <div class="col-md-3 col-md-offset-1 col-sm-4 col-xs-12">
+                <h3>info</h3>
+
+                <div class="list-tags">
+                    <a  class="google" onclick="sendEmailDataInfo()">
+                        <i class="fa fa-google"></i> techhust.com@gmail.com
+                    </a>
+                    <a href="/warning_for_site" target="_blank" rel="noopener noreferrer">
+                        <i class="fa fa-upload" style="font-size: 22px;"></i> Báo cáo vi phạm
+                    </a>
+                </div>
+            </div> 
+        </div>
+        <!--All right-->
+        <!--<div class="allright">
+            <div class="row">
+                <div class="col-sm-6 col-xs-12">
+                    <p>    © 2016 <a href="#">TECH NEWS</a>. All rights reserved.</p>
+                </div>
+
+                <div class="col-sm-6 col-xs-12">
+                    <ul class="list-social-icon list-social-icon-footer">
+                        <li>
+                            <a href="#" class="facebook">
+                                <i class="fa fa-facebook"></i>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="#" class="twitter">
+                                <i class="fa fa-twitter"></i>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="#" class="google">
+                                <i class="fa fa-google"></i>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="#" class="youtube">
+                                <i class="fa fa-youtube-play"></i>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="#" class="pinterest">
+                                <i class="fa fa-pinterest-p"></i>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="#" class="rss">
+                                <i class="fa fa-rss"></i>
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>-->
+    </div>
+</footer>
+<script type="text/javascript">
+    function sendEmailDataInfo(){
+        window.open('mailto:techhust.com@gmail.com');
+    }
+</script>

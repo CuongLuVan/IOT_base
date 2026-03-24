@@ -1,0 +1,39 @@
+<div class="col-lg-4 col-xs-12 image-product my-auto text-center" style="margin-top: 0px !important">
+    <img src="" class="img-fluid" alt="Responsive image" id="main_product_detail" />
+    <div class="product-gallery" >
+        <!-- <i onClick="nextSilde()" class="fa fa-chevron-left product-image-left"></i> -->
+        <div class="col-xs-6 product-gallery main_support_pro_detail"  id="main_support_pro_detail">
+        </div>
+        <!-- <i onClick="prevosSilde()" class="fa fa-chevron-right product-image-right"></i>-->
+    </div>
+    <!-- Carousel section -->
+</div>
+<script type="text/javascript">  
+    function selectImageView(element){
+        $("#main_product_detail").attr("src",element.image_info_detail );
+    }
+    function onChangeLinkClick(link){ 
+            $("#main_product_detail").attr("src",link );
+    }
+    function setCarretImage(loadcofig){  
+        var tupeSupportImage='';
+        for(var i=0;i<loadcofig.length;i++ ){
+            if(loadcofig[i].image_info_detail!=null){
+                tupeSupportImage+=`<img  src='${loadcofig[i].image_info_detail}' onclick='onChangeLinkClick("${loadcofig[i].image_info_detail}")' width='100' alt="chợ xanh 4 mùa" /> `;
+            } 
+        }
+        $('#main_support_pro_detail').html(tupeSupportImage);  
+        setTimeout(()=>{
+                $(".main_support_pro_detail").owlCarousel({  nav: true, navigation: true,
+                    loop: false, margin: 10, autoplay: true,smartSpeed: 500,dots: false,
+                    autoHeight: true,lazyLoad:true,
+                    navText : ["<i class='fa fa-chevron-left'></i>","<i class='fa fa-chevron-right'></i>"],
+                    responsive: { 0:{ items:1,},600:{
+                          items:1,},1000:{ items:2,}}
+                });
+        },100);         
+    }
+
+</script>
+
+

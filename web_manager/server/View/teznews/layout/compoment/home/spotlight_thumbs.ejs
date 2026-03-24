@@ -1,0 +1,55 @@
+<section class="spotlight-thumbs">
+    <div class="row" id="spotlight_thumbs_id">
+        
+    </div>
+</section>
+
+<script type="text/javascript">
+    function infoSpotLightThumbs(item){
+        var html="";
+        for(var i=0;((i< 3)&&(i<item.length));i++){
+            var linkInfo=getInfoLink(item[i]);
+            var contentSub=getDetailContent(item[i].group_content_sub_id);
+            html=  html+ 
+                    `<div class="col-md-4 col-sm-4 col-xs-12">
+                        <div class="spotlight-item-thumb">
+                            <div class="spotlight-item-thumb-img">
+                                <div class="info-head-thump-crop">
+                                    <a href="`+linkInfo+`">
+                                        <img alt="chợ xanh 4 mùa" src="`+item[i].content_img+`" />
+                                    </a>
+                                </div>
+                                <a href="`+linkInfo+`" class="cate-tag">`+contentSub+`</a>
+                            </div>
+                            <h3><a href="`+linkInfo+`">`+item[i].title+`</a></h3>
+                            <div class="meta-post">
+                                <a href="`+linkInfo+`">
+                                    ##
+                                </a>
+                                <em></em>
+                                <span>
+                                    `+(new Date(item[i].created_at)).toLocaleDateString()+`
+                                </span>
+                            </div>
+                        </div>
+                    </div>`;
+            
+        }
+        return html;
+    }
+
+    getInfoDataPublic('/api/document/get_home',(dataJson)=>{
+        if(dataJson!=false){
+            $("#owl_spotlight_id").html(infoValueDataThree(dataJson));
+            $('.owl-spotlight').data('owlCarousel').destroy();
+            $('.owl-spotlight').owlCarousel({
+                loop: true,
+                nav: true,
+                items: 1,
+                mouseDrag: false,
+                navText: ["<i class='fa fa-angle-left'></i>", "<i class='fa fa-angle-right'></i>"]
+            });
+            $("#spotlight_thumbs_id").html(infoSpotLightThumbs(dataJson));
+        }   
+    });
+</script>

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+    <% include ./layout/header.ejs %>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <style>
+        .rounded-circle {
+            height: fit-content;
+        }
+    </style>
+    <body>
+        <% include ./layout/menuSale-new.ejs %>
+        <section id="infor-product">
+            <div class="row">
+                <% include ./area-function/detail-product/image-product.ejs %>
+                <div class="col-lg-5 col-xs-12 detail-product" style="margin-top: 0px !important">
+                  <% include  ./layout/title-product-common.ejs %>
+                </div>
+                <% include ./area-function/detail-product/product-same.ejs %>
+            </div>
+            <% include ./area-function/detail-product/comment-description.ejs %>
+            <% include ./area-function/detail-product/related-product.ejs %>
+        </section>
+        <br/>
+    </body>
+    <script type="text/javascript">  
+        var dataView = ('<%= detail %>').replaceAll('type=', '');
+
+           function getShopOnline(loadcofig){  
+               var value_promotion=` `;
+               for(var i=0;i<loadcofig.length;i++ ){  
+                   value_promotion +=(`<button class="add_to_cart_button"`+
+                                       ` onclick="window.open('`+loadcofig[i].link+`','_blank')"  >`
+                                           +loadcofig[i].name_shop+`</button>`);         
+               }
+               $('#store_product_online').html(value_promotion);             
+           }
+           
+           function nextSilde(){
+               $('.main_support_pro_detail').trigger('next.owl.carousel');
+           }
+           function prevosSilde(){
+               $('.main_support_pro_detail').trigger('prev.owl.carousel');
+           }
+
+           getInfoHtml(('/api/customers/detail_product?type='+dataView),(dataJson)=>{
+                if(dataJson==false) return; 
+                gotoCheckInfoValue(dataJson.result);
+           });
+           getInfoHtml(('/api/customers/detail_shop?type='+dataView),(dataJson)=>{
+                if(dataJson==false) return; 
+                getShopOnline(dataJson.result);
+           });
+           
+
+       </script>
+</html>

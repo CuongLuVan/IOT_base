@@ -1,0 +1,38 @@
+<div class="banner">
+    <div class="container">
+      <div class="slider-container has-scrollbar" id="info_id_banner" >
+        
+      </div>
+    </div>
+</div>
+
+<script type="text/javascript">  
+    getInfoDataPublic('/api/customers/info_ads',(data)=> {      
+        if(!data.error){
+            var htmlAds = "";
+            for(var i=0;i<data.result.length;i++){
+                let itemInfo = data.result[i];
+                if(itemInfo.group_file.length>8){
+                    htmlAds = htmlAds+  `<div class="slider-item">
+                                        <img src="${itemInfo.content_img}" class="banner-img" alt="">
+                                        <div class="banner-content">
+                                            <a href="${itemInfo.group_file}" class="banner-btn">Truy cập</a>
+                                        </div>
+                                    </div>`;
+                }
+                else
+                {
+                    htmlAds = htmlAds+  `<div class="slider-item">
+                                        <img src="${itemInfo.content_img}" class="banner-img" alt="">
+                                        <div class="banner-content">
+                                            <a href="/product/product_detail?type=${itemInfo.product_id}" class="banner-btn">Truy cập</a>
+                                        </div>
+                                    </div>`;
+                }
+                
+            }
+            $("#info_id_banner").html(htmlAds);
+        }            
+    });
+
+</script>

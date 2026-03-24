@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+    <% include ./layout/header_product.ejs %>
+    <body>
+        <% include ./layout/menuSale.ejs %>
+        <style>
+
+            .cart_btn_select {
+                background: none repeat scroll 0 0 rgb(201, 93, 93);
+                border: 2px solid rgb(216, 216, 216);
+                color: #333;
+                font-size: 16px;
+                width: 120px;
+                margin: 2px;
+                padding: 1px 2px;display: inline-block;
+            }
+            .cart_btn_select .tooltiptext {
+                visibility: hidden;
+                width: 120px;
+                background-color: rgb(170, 94, 94);
+                color: #fff;
+                text-align: center;
+                border-radius: 6px;
+                padding: 5px 0;
+
+                /* Position the tooltip */
+                position: absolute;
+                z-index: 1;
+            }
+
+            .cart_btn_select:hover .tooltiptext {
+                visibility: visible;
+            }
+            .cart_btn_unable {
+                background: none repeat scroll 0 0 rgb(74, 68, 68);
+                border: 2px solid rgb(216, 216, 216);
+                color: #333;
+                font-size: 16px;
+                width: 100px;
+                margin: 2px;
+                padding: 1px 2px;display: inline-block;
+            }
+            .cart_btn_unable .tooltiptext {
+                visibility: hidden;
+                width: 120px;
+                background-color: rgb(97, 53, 53);
+                color: #fff;
+                text-align: center;
+                border-radius: 6px;
+                padding: 5px 0;
+
+                /* Position the tooltip */
+                position: absolute;
+                z-index: 1;
+            }
+
+            .cart_btn_unable:hover .tooltiptext {
+                visibility: visible;
+            }
+            .add_to_cart_button {
+                background: none repeat scroll 0 0 #fff;
+                border: 2px solid rgb(216, 216, 216);
+                color: #333;
+                font-size: 16px;
+                width: 120px;
+                margin: 2px;
+                padding: 1px 2px;display: inline-block;
+            }
+            .add_to_cart_button:hover {background-color: #524b4b;color: #fff;text-decoration: none}
+            .add_to_cart_button .tooltiptext {
+                visibility: hidden;
+                width: 120px;
+                background-color: rgb(161, 58, 58);
+                color: #fff;
+                text-align: center;
+                border-radius: 6px;
+                padding: 5px 0;
+
+                /* Position the tooltip */
+                position: absolute;
+                z-index: 1;
+            }
+
+            .add_to_cart_button:hover .tooltiptext {
+                visibility: visible;
+            }
+        </style>
+        <main>
+            
+            <div class="product-container">
+                <div class="container">
+                    <div class="product-box">
+                    <!--
+                    - PRODUCT GRID
+                    -->
+                        <div class="product-main" style=" margin-bottom: 20px; " >
+                            <section id="infor-product">
+                                <div class="row" style=" margin-bottom: 50px; ">
+                                    <% include ./area-function/detail-product/image-product.ejs %>
+                                    <div class="col-lg-6 col-xs-12 detail-product" style="margin-top: 0px !important">
+                                      <% include ./area-function/title-product-common.ejs %>
+                                    </div>
+                                    <% include ./area-function/detail-product/product-same.ejs %>
+                                </div>
+                                <% include ./area-function/detail-product/comment-description.ejs %>
+                            </section>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        
+        <% include ./layout/footer.ejs %>
+    </body>
+    <script type="text/javascript">  
+        var dataView = ('<%= detail %>').replaceAll('type=', '');
+
+           
+           
+           function nextSilde(){
+               $('.owl-carousel').trigger('next.owl.carousel');
+           }
+           function prevosSilde(){
+               $('.owl-carousel').trigger('prev.owl.carousel');
+           }
+
+           getInfoHtml(('/api/customers/detail_product?type='+dataView),(dataJson)=>{
+                if(dataJson==false) return; 
+                gotoCheckInfoValue(dataJson.result);
+           });
+          
+           
+
+       </script>
+</html>

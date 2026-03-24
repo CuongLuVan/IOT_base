@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+
+<html lang="en">
+  <% include ./layout/header.ejs %>
+  <body>
+    <% include ./layout/menuSale.ejs %>
+    <main>
+      <% include ./layout/banner.ejs %>
+    
+      <!--
+        - PRODUCT
+      -->
+
+      <div class="product-container">
+
+        <div class="container">
+
+          <div class="product-box">
+            <!--
+              - PRODUCT GRID
+            -->
+
+            <div class="product-main">
+
+              <h2 class="title"> <%= __('productPage') %></h2>
+
+              <div class="product-grid" id="best-seller-items">
+
+                <div class="showcase">
+
+                  <div class="showcase-banner">
+
+                    <img src="./assets/images/products/jacket-3.jpg" alt="chợ xanh 4 mùa" width="300" class="product-img default">
+                    <img src="./assets/images/products/jacket-4.jpg" alt="chợ xanh 4 mùa" width="300" class="product-img hover">
+
+                    <p class="showcase-badge">15%</p>
+
+                    <div class="showcase-actions">
+
+                      <!--<button class="btn-action">
+                        <ion-icon name="heart-outline"></ion-icon>
+                      </button>
+
+                      <button class="btn-action">
+                        <ion-icon name="eye-outline"></ion-icon>
+                      </button>
+
+                      <button class="btn-action">
+                        <ion-icon name="repeat-outline"></ion-icon>
+                      </button> -->
+
+                      <button class="btn-action">
+                        <a href="#">
+                          <ion-icon name="bag-add-outline"></ion-icon>
+                        </a>
+                        
+                      </button>
+
+                    </div>
+
+                  </div>
+
+                  <div class="showcase-content">                   
+                  </div>
+                </div>
+                
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <% include ./layout/layout_pages.ejs %>
+
+    </main>
+    <script type="text/javascript">
+      var jsonItemElectric=[];
+      var lstGroupElectric={product_group:0,start:0,end:10};
+      loadAnotherElectric();
+      function loadAnotherElectric(){
+       
+        postInfoData('/api/customers/lst_product',lstGroupElectric,(data)=>{
+          if(!data.error){
+            jsonItemElectric = data.data.result;// .push(...data.data.result);
+            setInfoCompanyToView(jsonItemElectric,"#best-seller-items");
+          }
+        });
+      }
+      function searchDataInfoLocation(start,end){
+        lstGroupElectric.start=start;
+        lstGroupElectric.end=end;
+        loadAnotherElectric();
+      }
+
+      postInfoData('/api/customers/lst_product',{count_data:true,start:0,end:0,product_group:0},(data)=> {      
+          if(!data.error){
+                  layout_pages_numberPages=data.data.result[0].number_store;
+                  getSelectInfo(data.data.result[0].number_store);
+          }            
+      }); 
+  
+      function setInfoCompanyToView(items, itemHtml,type="product_detail") {
+          var html='';
+         
+          items.forEach((element) => {
+              var dataInfo = `<div class="showcase">
+                <div class="showcase-banner">
+                  <a href="/${type}/${element.name_short}">
+                  <img src="${element.image}" alt="\" class="product-img default"
+                    width="300">
+                  <img src="${element.image_info_detail}" alt="chợ xanh 4 mùa" class="product-img hover"
+                    width="300">
+                  </a>
+                  <p class="showcase-badge angle pink">${element.store==1?"Hết hàng": element.name_image_detail}</p>
+              
+                  <div class="showcase-actions">
+                    <!--<button class="btn-action">
+                      <ion-icon name="heart-outline"></ion-icon>
+                    </button>
+              
+                    <button class="btn-action">
+                      <ion-icon name="eye-outline"></ion-icon>
+                    </button>
+              
+                    <button class="btn-action">
+                      <ion-icon name="repeat-outline"></ion-icon>
+                    </button> -->
+              
+                    <button class="btn-action">
+                      <a href="/${type}/${element.name_short}">
+                        <ion-icon name="arrow-redo-outline"></ion-icon>
+                      </a>
+                    </button>
+                  </div>
+                </div>
+              
+                <div class="showcase-content">
+                  <a href="/${type}/${element.name_short}" class="showcase-category">${element.name}</a>
+                  <h3>
+                    <a href="/${type}/${element.name_short}"  class="showcase-title">${(element.detail)}</a>
+                  </h3>
+                  <!---
+                  <div class="showcase-rating">
+                    <ion-icon name="star"></ion-icon>
+                    <ion-icon name="star"></ion-icon>
+                    <ion-icon name="star"></ion-icon>
+                    <ion-icon name="star-outline"></ion-icon>
+                    <ion-icon name="star-outline"></ion-icon>
+                  </div> --->
+                  <div class="price-box">
+                    <p class="price">${(element.cost_detail>0? setValueCost(element.cost_detail,"VND"):"Liên hệ")}</p>
+                    ${(element.cost_real==element.cost_detail?"": "<del>" + setValueCost(element.cost_real,"VND") +"</del>")} 
+                  </div>
+                </div>
+              </div>`;
+              html+=dataInfo;
+          });
+          $(itemHtml).html(html);
+      }
+              
+    </script>
+    <% include ./layout/footer.ejs %>
+  </body>
+</html>

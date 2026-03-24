@@ -1,0 +1,551 @@
+
+  <!--
+    - NOTIFICATION TOAST
+  -->
+<!--
+  <div class="notification-toast" data-toast>
+
+    <button class="toast-close-btn" data-toast-close>
+      <ion-icon name="close-outline"></ion-icon>
+    </button>
+
+    <div class="toast-banner">
+      <img src="./assets/images/products/jewellery-1.jpg" alt="Rose Gold Earrings" width="80" height="70">
+    </div>
+
+    <div class="toast-detail">
+
+      <p class="toast-message">
+        Someone in new just bought
+      </p>
+
+      <p class="toast-title">
+        Rose Gold Earrings
+      </p>
+
+      <p class="toast-meta">
+        <time datetime="PT2M">2 Minutes</time> ago
+      </p>
+
+    </div>
+
+  </div>-->
+
+
+
+
+
+  <!--
+    - HEADER
+  -->
+
+  <header>
+    <div class="header-main">
+
+      <div class="container">
+
+        <a href="/" class="header-logo">
+          <div width="120" height="36" style="font-size: 15px;"> <img width="120" src="/img/logo.png" alt="chợ xanh 4 mùa" > </div>
+        </a>
+
+        <div class="header-search-container">
+
+          <input id="search_id" type="search" name="search" class="search-field" placeholder="Enter your product name...">
+
+          <button class="search-btn" onclick="searchAllProduct()" >
+            <ion-icon name="search-outline"></ion-icon>
+          </button>
+
+        </div>
+
+        <div class="header-user-actions">
+
+          <button class="action-btn" id ="info-user-data">
+            <ul class="desktop-menu-category-list">
+              <li class="menu-category">
+                <ion-icon name="person-outline"></ion-icon>
+                  <span class="count">0</span>
+    
+                  <ul class="dropdown-list">
+      
+                    <li class="dropdown-item">
+                      <a href="#"> <%= __('infomation') %></a>
+                    </li>
+      
+                    <li class="dropdown-item">
+                      <a href="#"> <%= __('logout') %> </a>
+                    </li>
+      
+                  </ul>
+              </li>
+            </ul>
+            
+          </button>
+
+          <button class="action-btn" id="shopping_logout_cart">
+            <ion-icon name="log-in"></ion-icon>
+          </button>
+
+          <button class="action-btn">
+            <a href="/cart">
+              <ion-icon name="cart"></ion-icon>
+              <span class="count" id="value_item_Cart">10</span>
+            </a>
+          </button>
+          <button class="action-btn">
+            <ul class="desktop-menu-category-list">
+              <li class="menu-category">
+                  <span style=" font-size: 14px; " > <img src="<%= __('langgue') %>" style=" height: 32px; " alt=""/>     </span>
+                  <ul class="dropdown-list" style=" width: auto;" >
+                    <li class="dropdown-item">
+                      <a href="/change-lang/vi"> <img src="/img/vn_langue.jpg"  style="margin-left: 20px; height: 32px; " alt="chợ xanh 4 mùa" /> </a>
+                    </li>
+                    <li class="dropdown-item">
+                      <a href="/change-lang/en"> <img src="/img/United_Kingdom.jpg"  style="margin-left: 20px; height: 32px; " alt="chợ xanh 4 mùa" /> </a>
+                    </li>
+                  </ul>
+              </li>
+            </ul>
+            
+          </button>
+        </div>
+
+      </div>
+
+    </div>
+
+    <nav class="desktop-navigation-menu">
+
+      <div class="container">
+
+        <ul class="desktop-menu-category-list">
+
+          <li class="menu-category">
+            <a href="/" class="menu-title"><%= __('mainPages') %> </a>
+          </li>
+          <li class="menu-category">
+            <a href="/shop" class="menu-title"><%= __('shopPage') %></a>
+          </li>
+          <li class="menu-category">
+            <a href="/about" class="menu-title"><%= __('aboutPage') %></a>
+          </li>
+        </ul>
+
+      </div>
+
+    </nav>
+
+    <div class="mobile-bottom-navigation">
+
+      <button class="action-btn" data-mobile-menu-open-btn>
+        <ion-icon name="menu-outline"></ion-icon>
+      </button>
+
+      <button class="action-btn">
+        <ion-icon name="person-outline"></ion-icon>
+
+        <span class="count">0</span>
+      </button>
+
+      <button class="action-btn">
+        <ion-icon name="log-out"></ion-icon>
+      </button>
+
+      <button class="action-btn">
+        <a href="/cart">
+          <ion-icon name="cart"></ion-icon>
+          <span class="count">0</span>
+        </a>
+      </button>
+
+      <button class="action-btn" data-mobile-menu-open-btn>
+        <ion-icon name="grid-outline"></ion-icon>
+      </button>
+
+    </div>
+
+    <nav class="mobile-navigation-menu  has-scrollbar" data-mobile-menu>
+
+      <div class="menu-top">
+        <h2 class="menu-title">Menu</h2>
+
+        <button class="menu-close-btn" data-mobile-menu-close-btn>
+          <ion-icon name="close-outline"></ion-icon>
+        </button>
+      </div>
+
+      <ul class="mobile-menu-category-list">
+
+        <li class="menu-category">
+          <a href="/" class="menu-title"><%= __('mainPages') %></a>
+        </li>
+        <li class="menu-category">
+          <a href="/shop" class="menu-title"><%= __('shopPage') %></a>
+        </li>
+        <li class="menu-category">
+          <a href="/about" class="menu-title"><%= __('aboutPage') %></a>
+        </li>
+      
+
+      </ul>
+      <br/>
+      .......................................
+      <br/>
+      <h2 class="menu-title">Ngôn ngữ</h2>
+      <br/>
+      <ul class="mobile-menu-category-list">
+        <li class="menu-category">
+          <a href="/change-lang/vi" class="menu-title"><img src="/img/vn_langue.jpg"  style=" height: 32px; "  alt="chợ xanh 4 mùa" /></a>
+        </li>
+        <li class="menu-category">
+          <a href="/change-lang/en" class="menu-title"><img src="/img/United_Kingdom.jpg"  style=" height: 32px; " alt="chợ xanh 4 mùa" /></a>
+        </li>
+      </ul>
+
+    </nav>
+
+  </header>
+
+
+  <script type="text/javascript">
+    var url = window.location.href;
+    var element = null;
+    if(url.includes(`product?type=1`)){
+        element = document.getElementById("mainPages2");
+    } else if(url.includes(`product?type=2`)){
+        element = document.getElementById("mainPages3");
+    } else if(url.includes(`product?type=3`)){
+        element = document.getElementById("mainPages4");
+    } else if(url.includes(`/about`)){
+        element = document.getElementById("mainPages5");
+    } else if(url.includes(`/sale`)){
+        element = document.getElementById("mainPages1");
+    }
+
+    if(element!=null) element.classList.add("navbar-show-menu");
+
+</script>
+
+<script type="text/javascript">
+
+    function toggleMenuResponsive () {
+        var listNav = document.getElementById("header-menu-groups");
+        var listLogin = document.getElementById("info-user-view");
+        if (listNav.className === "header-menu-group") {
+          listNav.className += " responsive-navbar";
+          listLogin.className += " header-info-hiden";
+        }
+        else {
+          listNav.className = "header-menu-group";
+          listLogin.className = "header-info";
+        }
+    }
+  
+
+  
+    function addProductToCart(numberData,product_id,infoData,locatiom){
+              var infoDetailProduct = {product_id:product_id,number:1 ,imageInfo:"" };
+               // Get saved data from localStorage
+              var data = localStorage.getItem('cart');
+              var dataCart={name:"info",value:[]};
+              if(data!=null){
+                  dataCart= JSON.parse(data);
+              }
+              infoDetailProduct.number= numberData;
+              infoDetailProduct.imageInfo=dataSaveInfo[infoData][locatiom];
+              var fillter =dataCart.value.filter(o=>o.imageInfo.image_id==infoDetailProduct.imageInfo.image_id);
+              if(fillter.length>0){
+                  // đơn hàng tồn tại
+                  return;
+              }
+              dataCart.value.push(infoDetailProduct);
+             
+             // Save data to localStorage
+              localStorage.setItem('cart', JSON.stringify(dataCart));
+              onReload();
+    }
+  
+
+</script>
+<style>
+    .info-text-info-swal{
+      margin: auto;
+      width: 100%;
+      margin-bottom: 20px;
+    }
+</style>
+
+<script type="text/javascript">
+    onReloadUser();
+    onReloadMenu();
+    function onReloadMenu(){
+        var data = localStorage.getItem('cart');
+        var dataCart={name:"info",value:[]};
+        if((data!=null)&&(data!="")){
+            dataCart= JSON.parse(data);
+        }
+        var numberProduct=dataCart.value.length;
+        $('#value_item_Cart').html(numberProduct);
+        //shopping_logout_cart
+    }
+  
+    function onReloadUser(){
+      var data = localStorage.getItem('customer');
+      if(data!=null&&data!==undefined&&data.length>1){ 
+        var avatar = localStorage.getItem('avatar');
+        
+        var infoUserCreate =`<ul class="desktop-menu-category-list">
+                                <li class="menu-category">
+                                    <img src="${avatar}" alt="" style="width: 48px;" />
+                                    <ul class="dropdown-list">
+                                      <li class="dropdown-item">
+                                        <a href="/info-user/1">Thông tin tài khoản</a>
+                                      </li>
+                                      <li class="dropdown-item">
+                                        <a href="/noification">Thông báo</a>
+                                      </li>
+                                    </ul>
+                                </li>
+                              </ul>`;  
+        $('#info-user-data').html(infoUserCreate);
+        var infoUser1 =`<ul class="desktop-menu-category-list">
+                          <li class="menu-category">
+                              <ion-icon name="log-out" onclick="logoutCustomerMenu()"></ion-icon>
+                              <ul class="dropdown-list">
+                                  <li class="dropdown-item">
+                                    <a href="#">Đăng xuất </a>
+                                  </li>
+                              </ul>
+                          </li>
+                        </ul>`;
+        $('#shopping_logout_cart').html(infoUser1);
+      }
+      else {
+        //shopping_logout_cart
+        var infoUserCreate =`<ul class="desktop-menu-category-list">
+                                <li class="menu-category">
+                                    <a href="/start-register">
+                                      <ion-icon name="person-outline" />
+                                    </a>
+                                    <span class="count">+</span>
+                                    <ul class="dropdown-list">
+                                      <li class="dropdown-item">
+                                        <a href="/start-register">Tạo Tài khoản</a>
+                                      </li>
+                                    </ul>
+                                </li>
+                              </ul>`;
+
+        $('#info-user-data').html(infoUserCreate);
+        var infoUser1 =`<ul class="desktop-menu-category-list">
+                          <li class="menu-category">
+                              <ion-icon name="log-in" onclick="loginCustomerMenu()"></ion-icon>
+                              <ul class="dropdown-list">
+                                  <li class="dropdown-item">
+                                    <a href="#"  onclick="loginCustomerMenu()"><%= __('loginPage') %></a>
+                                  </li>
+                              </ul>
+                          </li>
+                        </ul>`;
+        $('#shopping_logout_cart').html(infoUser1);
+      } 
+    }
+
+    function logoutCustomerMenu(){
+        Swal.fire({
+            title: 'Bạn muốn đăng xuất chứ?',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#3085d6',
+            cancelButtonColor: '#d33',
+            confirmButtonText: 'Đăng xuất',
+            allowOutsideClick: false,
+            showCloseButton: true
+        }).then((result) => {
+            if (result.isConfirmed) {
+              localStorage.setItem('customer', "");
+              localStorage.setItem('token', "");
+              localStorage.setItem('cart', "");
+              onReloadUser();
+              onReloadMenu();
+              window.location.href = "./";
+            }
+        });
+    }
+    
+    function loginCustomerMenu(calback=null){
+      Swal.fire({
+        title: 'Đăng nhập',
+        html: `<input type="text" id="login" class="swal2-input info-text-info-swal" placeholder="Tên tài khoản">
+        <input type="password" id="password" class="swal2-input info-text-info-swal" placeholder="Mật khẩu"><br/>
+        Nếu chưa có tài khoản, Xin vui lòng  <ins style=" color: blue;" onclick="registerCustomerMenu()"">đăng ký</ins> `,
+        confirmButtonText: 'Đăng nhập',
+        focusConfirm: false,
+        allowOutsideClick: false,
+        showCloseButton: true,
+        preConfirm: () => {
+          const login = Swal.getPopup().querySelector('#login').value
+          const password = Swal.getPopup().querySelector('#password').value
+          if (!login || !password) {
+            Swal.showValidationMessage(`Please enter login and password`)
+          }
+          return { login: login, password: password }
+        }
+      }).then((result) => {
+        Swal.showLoading();
+        var infoUser ={}
+        var infoLoad={email:result.value.login,password:result.value.password};
+        setTimeout(()=>{
+            Swal.showLoading();
+            postInfoData('/api/auth/login_customer',infoLoad,(data)=> {
+              if(data.error){
+                  Swal.hideLoading();
+                  Swal.close();
+                  Swal.fire({
+                        title: "<i>Không thể đăng nhập. Xin vui lòng thử lại</i>", 
+                        html: 'Lỗi',  
+                        confirmButtonText: "<u>Đồng ý</u>", 
+                        allowOutsideClick: false,
+                        showCloseButton: true
+                    });
+                  
+                }
+                else
+                { 
+                  localStorage.setItem('customer', infoLoad["email"]);
+                  localStorage.setItem('token', data.data.token);
+                  localStorage.setItem('avatar', data.data.avatar);
+                  onReloadUser();
+                  Swal.hideLoading();
+                  Swal.close();
+                  location.reload();
+                }
+                
+            });
+        },1000);
+        
+      })
+      
+    }
+
+    function registerCustomerMenu(){
+      const data = formRegistration();
+      uploadForm(data);
+    }
+    
+    const formRegistration = () => {
+                var itemValue= ["username","fullname","email","password","phone","avatar","address","note"];
+                var itemName= ["Tên tài khoản","Họ và tên","email","Mật khẩu","Số điện thoại ","avatar","address","note"];
+                var itemType= ["text","text","text","password","text","avatar","text","text"];
+                var htmlData='';
+                itemValue.forEach((element,index) => {
+                    if(itemType[index]=="avatar"){
+                      htmlData  =htmlData +'<div style="display: grid; grid-template-columns: 40% 60%; grid-template-rows: 100% 0%; height: 80px; margin-bottom: 10px;">' 
+                                      +  '<div> <label for="upload-photo-invoice">Tải ảnh avartar...</label>  <input id="upload-photo-invoice" style="border-color: #9c9cb654;"  placeholder ="' + itemName[index] +'" type="file" id="'+ 
+                                      element+'" name="'+element+'" accept=".png,.jpg,.jpeg" onchange="uploadImageData(this)" ></div>'
+                                      +'  <img id="imageUploadInfo"  src="" width="80px" height="80px" alt="chợ xanh 4 mùa" />  <br/> </div>';
+                    }
+                    else
+                        htmlData  =htmlData +'<div style="display: grid; grid-template-rows: 100% 0%; height: 40px; margin-bottom: 10px;">' 
+                                      +  '<input placeholder ="' + itemName[index] +'" type="'+itemType[index]+'" id="'+ 
+                                      element+'" name="'+element+'"><br/> </div>';
+                    // htmlData = htmlData + '<div class="row"> <div class="col-4 text-left"> <span style="margin:auto;">' + element + '</span></div> <div class="col-8"><input type="text" id="'+ element+'" name="'+element+'"> </div></div>'
+                });
+                htmlData = '<div>' + htmlData + '</div>';
+                // '<input class="form-control" type="text" placeholder="Default input">'
+                return htmlData;
+            }
+    const uploadForm = (htmlData) => {
+                Swal.fire({
+                    title: "<i>Xin vui lòng thêm thông tin</i>", 
+                    html: htmlData,  
+                    confirmButtonText: "<u>Đồng ý</u>", 
+                    allowOutsideClick: false,
+                    showCloseButton: true
+                }).then((result) => {
+                    if (result.value) {
+                        var dataJsonnew=getDataInval({});
+                        Swal.showLoading();
+                        postInfoData('/api/customers/register',dataJsonnew,(data)=> {
+                          if(!data.error){
+                              var infoLoad={email:dataJsonnew["email"],password:dataJsonnew["password"]}
+                              postInfoData('/api/auth/login_customer',infoLoad,(data)=> {
+                                  if(!data.error){
+                                    localStorage.setItem('customer', dataJsonnew["email"]);
+                                    localStorage.setItem('token', data.data.token);
+                                    localStorage.setItem('avatar', data.data.avatar);
+                                    onReloadUser();
+                                    Swal.hideLoading();
+                                    Swal.close();
+                                  }
+                                  else
+                                  {
+                                        Swal.hideLoading();
+                                        Swal.close();
+                                        Swal.fire({
+                                              title: "<i>Không thể đăng nhập. Xin vui lòng thử lại</i>", 
+                                              html: 'Lỗi',  
+                                              confirmButtonText: "<u>Đồng ý</u>", 
+                                              allowOutsideClick: false,
+                                              showCloseButton: true
+                                          });
+                                  }
+                              });
+                              
+                          }
+                          else
+                          {
+                              Swal.fire({
+                                  title: "<i>Không tồn tại dữ liệu</i>", 
+                                  html: 'Lỗi',  
+                                  confirmButtonText: "<u>Đồng ý</u>", 
+                                  allowOutsideClick: false,
+                                  showCloseButton: true
+                              });
+                          }
+                            
+                        })
+                        //finishBill(dataJsonData);
+                    } 
+                })
+      }
+
+      async  function uploadImageData(event){
+            const data = new FormData() 
+            data.append('file', event.files[0]);
+            try {
+              let response = await fetch('/api/customers/import-image-customer', 
+                {method: "POST", body: data}); 
+              const result = await response.json();
+              $("#imageUploadInfo").attr("src",result.url );
+            } catch(e) {
+
+            }    
+           
+        }
+        function getDataInval(info){
+            var itemValue= ["username","email","password","token_reset","phone","avatar","fullname","permission_id","address","note"];
+            var htmlData='';
+            itemValue.forEach(element => {
+                info[element]=$('#'+element).val();
+                if(element=="avatar")  info[element]=$('#imageUploadInfo').attr('src');
+            });
+            return info;
+            var costValue=0;
+            info.value.forEach(item => {
+                costValue += (item.number* item.imageInfo.cost_detail);
+            });
+            info['Total']=costValue;
+            return info;
+        }
+
+        function searchAllProduct(){
+            var searchDetail = $('#search_id').val();
+            localStorage.setItem('search_id', searchDetail);
+            setTimeout(()=>{
+              window.location.href = "/search";
+            },200);
+
+        }
+
+</script>

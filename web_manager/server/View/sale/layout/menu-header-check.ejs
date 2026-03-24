@@ -1,0 +1,26 @@
+<div class="header-menu-group" id="header-menu-groups">
+    <a href="/sale" class="menu-item active" id ="mainPages1"><%= __('mainPages') %></a>
+    <a href="/sale/product?type=1" class="menu-item" id ="mainPages2">IC</a>
+    <a href="/sale/product?type=2" class="menu-item" id ="mainPages3">LINH KIỆN</a>
+    <a href="/sale/product?type=3" class="menu-item" id ="mainPages4">THIẾT BỊ</a>
+    <a href="/about" class="menu-item" id ="mainPages5">CONTACT</a>
+</div>
+
+<script type="text/javascript">
+    var url = window.location.href;
+    var element = null;
+    if(url.includes(`product?type=1`)){
+        element = document.getElementById("mainPages2");
+    } else if(url.includes(`product?type=2`)){
+        element = document.getElementById("mainPages3");
+    } else if(url.includes(`product?type=3`)){
+        element = document.getElementById("mainPages4");
+    } else if(url.includes(`/about`)){
+        element = document.getElementById("mainPages5");
+    } else if(url.includes(`/sale`)){
+        element = document.getElementById("mainPages1");
+    }
+
+    if(element!=null) element.classList.add("navbar-show-menu");
+
+</script>

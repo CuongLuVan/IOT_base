@@ -1,0 +1,137 @@
+﻿<% include /layout/head/header.ejs %>
+    <div class="page">
+        <div class="container">
+            <% include /layout/head/headerAds.ejs %>
+            <!--menu-->
+            <% include /layout/menu/pcMenu.ejs %>
+
+            <div class="row">
+                <!--colleft-->
+                <div class="col-md-8 col-sm-12">
+                    <div class="box-caption">
+                        <span  id="main_group_id"><%= __('infomation') %></span>
+                    </div>
+                    <!--list-news-cate-->
+                    <div class="list-news-cate" id="child_group_content">
+                        
+                    </div>
+                    <!--paging-->
+                    <div class="paging" id="location_padding_id">
+                       
+                    </div>
+
+                </div>
+
+                <!--colright-->
+                <div class="col-md-4 col-sm-12">
+                    <!--tab popular--> 
+                    <% include /layout/compoment/home/tool.ejs %>
+                    <% include /layout/compoment/tip/ads.ejs %>
+                </div>
+            </div>
+        </div>
+        <!--footer-->
+        <% include /layout/menu/footer.ejs %>
+    </div>
+    <script type="text/javascript">
+        
+        function infoValueDataGroupTheNew(item,countStart=0,countEnd=10){
+            var html="";
+            for(var i=countStart;((i< countEnd)&&(i<item.length));i++){
+                var linkInfo=getInfoLink(item[i]);
+                let itemInfo = item[i];
+                var thefist= (i==countStart)?"news-cate-item-first":"";
+                var stringInfo = itemInfo.content.length >260 ?itemInfo.content.substring(0, 260) + "...":itemInfo.content; 
+                var contentSub=getDetailContent(itemInfo.group_content_sub_id);
+                html = html + `<article class="news-cate-item `+thefist+`">
+                            <div class="row">
+                                <div class="col-md-5 col-sm-5 col-xs-12 info-head-thump-crop">
+                                    <a href="`+linkInfo+`">
+                                        <img alt="chợ xanh 4 mùa" src="`+itemInfo.content_img+`">
+                                    </a>
+                                </div>
+                                <div class="col-md-7 col-sm-7 col-xs-12">
+                                    <h3><a href="`+linkInfo+`">`+itemInfo.title+`</a></h3>
+                                    <div class="meta-post">
+                                        <a href="`+linkInfo+`">
+                                            `+contentSub+`
+                                        </a>
+                                        <em></em>
+                                        <span>
+                                            `+(new Date(itemInfo.created_at)).toLocaleDateString()+`
+                                        </span>
+                                    </div>
+                                    <p>`+stringInfo+`</p>
+                                </div>
+                            </div>
+                        </article>`;
+            }
+            return html;
+        }
+    
+        var infoDataGroup=[];
+        var locationDataGroup=0;
+        function refehSelectPages(index){
+            locationDataGroup=index;
+            var sort =[-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1];
+            if(infoDataGroup.length<100){
+                for(var i=0;(i*10)<infoDataGroup.length;i++){
+                    sort[i]=i;
+                }
+            }
+            else
+            {
+                var endLocation = Math.floor(infoDataGroup.length/10);
+                sort[5]=locationDataGroup;
+                for(var i=1;i<4;i++){
+                    var cleft= locationDataGroup-i;
+                    var cright= locationDataGroup+i;
+                    if(cleft>0)  sort[5-i]=cleft;
+                    if(cleft<endLocation)  sort[5+i]=cright;
+                }
+                for(var i=0;i<9;i++){
+                    if((sort[i]==-1)&&(sort[i+1]>-1)){
+                        sort[i]=-2;
+                    }else if((sort[i]>-1)&&(sort[i+1]==-1)){
+                        sort[i]=-2;
+                    }
+                }
+            }
+            var html= `  <a onClick="selectItemPages(0)"  >Prev</a>`;
+            if(locationDataGroup>0) html=`  <a onClick="selectItemPages(`+(locationDataGroup-1)+`)"  >Prev</a>`;
+
+            for(var i=0;i<10;i++){
+                if(sort[i]!=-1){
+                    if(sort[i]==-2){
+                        html= html+ `  <a >...</a>`;
+                    }
+                    else if(sort[i]>-1){
+                        if(sort[i]==locationDataGroup)  html= html+ `  <a class="current" onClick="selectItemPages(`+sort[i]+`)" >`+(sort[i]+1)+`</a>`;
+                            else  html= html+ `  <a onClick="selectItemPages(`+sort[i]+`)" >`+(sort[i]+1)+`</a>`;
+                    }
+                }
+            }
+            html= html+ `  <a onClick="selectItemPages(`+(locationDataGroup+1)+`)" >Next</a>`;
+            $("#location_padding_id").html(html);
+            
+        }
+    
+    
+        function selectItemPages(index){
+            $("#child_group_content").html(infoValueDataGroupTheNew(infoDataGroup,index*10,index*10+9));
+            refehSelectPages(index);
+        }
+        var dataView = '<%= detail %>';
+        var routeGroup ='<%= route %>';
+        $("#main_group_id").html(routeGroup);
+
+        getInfoDataPublic('/api/document/document_detail/'+dataView,(dataJson)=>{
+            if(dataJson!=false){
+                infoDataGroup=dataJson;
+                $("#child_group_content").html(infoValueDataGroupTheNew(dataJson,0,9));
+                refehSelectPages(0);
+            }
+        });
+    </script>
+<% include /layout/head/endhead.ejs %>
+

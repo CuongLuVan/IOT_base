@@ -1,0 +1,105 @@
+<html lang="en">
+    <% include ./layout/header.ejs %>
+  <body>
+        <% include ./layout/menuSale.ejs %>
+        <% include ./css/register_css.ejs %>  
+        <main>
+            <div class="container">
+                <div style="text-align: -webkit-center;">
+                    <h3>Thông tin doanh nghiệp </h3>
+                    <div class="form__group field">
+                        <input type="input" class="form__field" placeholder="register_companyname" name="register_companyname" id='register_companyname' required />
+                        <label for="register_companyname" class="form__label">Tên Công ty</label>
+                    </div>
+                    <div class="form__group field">
+                        <input type="input" class="form__field" placeholder="register_adresss1" name="register_adresss1" id='register_adresss1' required />
+                        <label for="register_adresss1" class="form__label">Địa chỉ Công ty</label>
+                    </div>
+                    <div class="form__group field">
+                        <input type="input" class="form__field" placeholder="register_phone1" name="register_phone1" id='register_phone1' required />
+                        <label for="register_phone1" class="form__label">Số điện thoại</label>
+                    </div>
+                    <div class="form__group field">
+                        <input type="input" class="form__field" placeholder="register_fax1" name="register_fax1" id='register_fax1' required />
+                        <label for="register_fax1" class="form__label">Fax</label>
+                    </div>
+                    <div class="form__group field">
+                            <div class="form-group focused" style="text-align: left;" >
+                                <label  style="margin-right: 70px; font-size: 21px;color: #9b9b9b;">
+                                        Ảnh avatar </label>
+                                <input type="file" accept=".png,.jpg,.jpeg" 
+                                    onchange="uploadImageDataCompany(this)" 
+                                    id="upload-photo-user"  
+                                    placeholder="First name" value="Lucky" />
+                        </div>
+                        <img id="register_icon_company" style="height: 150px;" alt="chợ xanh 4 mùa" />
+                    </div>
+                    <div class="form__group field">
+                        <a  class="button-71" role="button"  onclick="registerInfo()" >
+                            <%= __('registerCustomer') %> 
+                        </a>
+                    </div>
+                </div>
+                <br/>
+                <br/>
+                
+            </div>
+
+        </main>
+        <% include ./layout/footer.ejs %>
+    </body>
+    <script>
+
+        //register_customer
+        async  function uploadImageData(event){
+                const data = new FormData() 
+                data.append('file', event.files[0]);
+                try {
+                    let response = await fetch('/api/customers/import-image-customer', 
+                        {method: "POST", body: data}); 
+                    const result = await response.json();
+                    $("#register_avatar").attr("src",result.url );
+                } 
+                catch(e) 
+                {
+
+                }   
+        }
+        async  function uploadImageDataCompany(event){
+                const data = new FormData() 
+                data.append('file', event.files[0]);
+                try {
+                    let response = await fetch('/api/customers/import-image-customer', 
+                        {method: "POST", body: data}); 
+                    const result = await response.json();
+                    $("#register_icon_company").attr("src",result.url );
+                } 
+                catch(e) 
+                {
+
+                }   
+        }
+
+        function registerInfo(){
+            var company =  {
+                                companyname:$("#register_companyname").val(),
+                                adresss:$("#register_adresss1").val(),
+                                phone:$("#register_phone1").val(),
+                                fax:$("#register_fax1").val(),
+                                top:0,
+                                icon_company:$("#register_icon_company").attr('src')
+                            };
+
+            postInfoData('/api/customers/register_company',{company:company },(dataJson)=>{
+                if(!dataJson.error){
+                    Swal.fire( "Đăng ký khách hàng","<i>Chợ xanh bốn mùa đã ghi nhận đăng ký của bạn, Sau khi chúng tôi đã nhận thông tin của bạn chúng tôi sẽ thẩm định thông tin của bạn sớm nhất có thể. Xin vui lòng đợi!</i>", "<u>Đồng ý</u>")
+                    .then((result) => {
+                                window.location.href = "./";
+                    });
+                }
+            });
+
+        }
+    </script>
+    
+</html>

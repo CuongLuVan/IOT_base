@@ -1,0 +1,50 @@
+<script type="text/javascript">  
+    /*Dropdown Menu*/
+    window.onload = (event) => {
+        searchDataInfoLocation();  
+    };
+
+
+function searchDataInfoLocation(start=0,end=0){
+    var idSelect = { city:0 , village :0,province:0 ,nameLocation:localStorage.getItem('search_id')};
+   var dataInfo =JSON.parse(JSON.stringify(idSelect));
+   dataInfo.start=start;
+   dataInfo.end=end;
+   if(end==0) dataInfo.end=10;
+   postInfoData('/api/customers/get_shop',dataInfo,(data)=> {      
+       if(!data.error){
+            setListProductToView(data.data.result,"#best-seller-items")
+            getSelectInfo(layout_pages_numberPages,locationSelect);
+       }                     
+   });
+  
+   if(end==0){
+        var dataInfoSP =JSON.parse(JSON.stringify(idSelect));
+        dataInfoSP.count_data =true;
+        postInfoData('/api/customers/get_shop',dataInfoSP,(data)=> {      
+            if(!data.error){
+                    layout_pages_numberPages=data.data.result[0].number_store;
+                    getSelectInfo(data.data.result[0].number_store);
+            }            
+        }); 
+   }
+     
+}
+
+</script>
+
+
+<script type="text/javascript">
+
+
+
+
+function setListProductToView(items, itemHtml) {
+    setFillertProductToView(items, itemHtml,"product");
+}
+
+  
+   // setListProductToView(infoToshow,"#best-seller-items");
+    
+
+</script>

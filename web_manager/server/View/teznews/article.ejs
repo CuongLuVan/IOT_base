@@ -1,0 +1,82 @@
+﻿<% include /layout/head/header.ejs %>
+
+    <div class="page">
+        <div class="container">
+            <% include /layout/head/headerAds.ejs %>
+            <!--menu-->
+            <% include /layout/menu/pcMenu.ejs %>
+
+            <div class="row">
+                <!--colleft-->
+                <div class="col-md-8 col-sm-12">
+                    <!--post-detail-->
+                    <article class="post-detail" id="check_data_side_menu"> 
+                        
+
+                    </article>
+                    
+                <!--     include /layout/compoment/tip/nearRealease.ejs 
+                    include /layout/compoment/tip/comment.ejs  -->
+                </div>
+
+                <!--colright-->
+                <div class="col-md-4 col-sm-12">
+                    <!--tab popular-->
+                    <% include /layout/compoment/tip/pagesRandom.ejs %> 
+                    <% include /layout/compoment/tip/ads.ejs %>
+                </div>
+            </div>
+        </div>
+        <!--footer-->
+        <% include /layout/menu/footer.ejs %>
+    </div>
+<% include /layout/head/endhead.ejs %>
+
+<script type="text/javascript">
+    var dataView =  "/"+ '<%= detail %>';
+    const queryString = window.location.search;
+    const urlParams = new URLSearchParams(queryString);
+    var linkAcess = urlParams.get('file'); //checkGetQuerryForm(); // + dataView.replaceAll('+', '/');
+    if(urlParams.has('file')){
+        linkAcess = "/"+linkAcess;
+        getInfoHtml(linkAcess,(data)=>{
+            if(data==false) return; 
+            $('#check_data_side_menu').html(data); //.replaceAll("</p>","<br/>").replaceAll("<p>","<br/>")
+            $('html, body').animate({ scrollTop: 0 }, 'fast');
+        });
+        
+    }
+    else
+    {
+       // linkAcess = dataView;
+       var dataView =  '<%= type %>';
+       setTimeout(()=>{
+
+            postInfoData('/api/customers/get_page_detail',{data:dataView},(dataJson)=>{
+                if(!dataJson.error){
+                    if(dataJson.data.result==-1){
+                        $('#check_data_side_menu').html(`<h1> The pages not support this langgue </h1>`); //.replaceAll("</p>","<br/>").replaceAll("<p>","<br/>")
+                        $('html, body').animate({ scrollTop: 0 }, 'fast');
+                    }
+                    else
+                    {
+                        getInfoHtml( "/"+ dataJson.data.result,(data)=>{
+                            if(data==false) return; 
+                            $('#check_data_side_menu').html(data); //.replaceAll("</p>","<br/>").replaceAll("<p>","<br/>")
+                            $('html, body').animate({ scrollTop: 0 }, 'fast');
+                        });
+                    }
+                    
+                }
+            });
+       },1000);
+      
+
+    }
+   
+   // document.getElementById("htmlToView").src = linkAcess;
+    
+
+   
+
+ </script>

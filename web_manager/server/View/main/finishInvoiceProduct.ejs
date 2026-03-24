@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+    <% include ./layout/header.ejs %>
+    <body>
+        <% include ./layout/menuSale.ejs %>
+        <% include ./layout/menuSaleCSS.ejs %>
+        <div class="single-product-area1">
+            <center>
+                <h1 style=" color: #58c71c;font-family: math;">
+                            Hoàn tất thanh toán
+                </h1>
+            </center> 
+            <center> <div id="cart_item_adress" >  </div> </center> 
+            <div class="button-status-bill">
+                <div class="button-status-bill-view">
+                    <button class="status-bill-detail" onclick="cancelTheBill()" id ="cancel_bill_status"> Hủy đơn hàng </button>
+                    <button class="status-bill-detail"  onclick="statusOfBill()" id ="info_bill_status" > Trạng thái đơn hàng </button>
+               </div> 
+            </div>
+        </div>
+        
+        <style>
+            .swal-height{
+                width:500px !important;
+                height: 300px!important;
+            }
+        
+        </style>
+
+        
+        <div class="product-container">
+            <div class="container">
+                <div class="product-box">
+                    <!--
+                    - PRODUCT GRID
+                    -->
+                    <div class="product-main" style=" width: 90vw; ">
+                    <center>  <h2 class="title">Thanh toán đơn hàng</h2></center>
+                    <div style="overflow-x:auto;">
+                        <table id="cart_item_detail" >
+                        <tr>
+                           
+                        </tr>
+                        </table>
+                    </div>
+                    
+                    <div class="checkout-voucher-total">
+                        <div class="row" id="total_category_checkout">
+                        <div class="btn-checkout-row">
+                            <div class="checkout-total d-flex flex-column pb-3 border-bottom">
+                            <div class="subtotal pb-3 d-flex justify-content-between">
+                                <span>Tổng giá trị sản phẩm</span>
+                                <span id="sum_all_product">200.000VND</span>
+                            </div>
+                            <div class="shipping-fee pb-3 d-flex justify-content-between">
+                                <span>Phí ship</span>
+                                <span>Tự thỏa thuận</span>
+                            </div>
+                
+                            </div>
+                
+                      
+                        </div>
+                        </div>
+                    </div>
+                </div>
+
+                </div>
+            </div>
+        </div>
+
+        <% include ./layout/layout_pages.ejs %>
+        <% include ./layout/footer.ejs %>
+        <script type="text/javascript">
+            var customersInfo = localStorage.getItem("customer");
+            const TypeSelection =[{id:0,name :"Đơn hàng đang đợi"},{id:10,name :"Đơn hàng được chấp thuận"},
+                                    {id:20,name :"Chuyển cho cộng tác viên"},{id:30,name :"Kết thúc đơn hàng"}
+                                    ,{id:40,name :"Đơn hàng yêu cầu hủy"},{id:50,name :"Điều tra đơn hàng"}
+                                    ,{id:60,name :"Đơn hàng đã hủy"},{id:70,name :"Trả lại đơn hàng"}];
+
+            if(customersInfo==null||customersInfo.length<3){
+                document.getElementById("cancel_bill_status").style.visibility = "hidden";
+               // document.getElementById("info_bill_status").style.visibility = "hidden";
+            }
+
+            var dataView = '<%= detail %>';
+            dataView = dataView.replaceAll('type=', '');
+            var isMobile = (/iphone|ipod|android|ie|blackberry|fennec/).test
+                 (navigator.userAgent.toLowerCase());
+           
+            var htmlInfo=``;
+            if(!isMobile){
+                htmlInfo = ` <tr> 
+                                  <th>STT</th> <th></th>
+                                  <th>SẢN PHẨM</th><th>GIÁ</th>
+                                  <th>SỐ LƯỢNG</th> <th>TỔNG</th> 
+                              </tr>`;
+            }
+            else
+            {
+                htmlInfo = `<tr> <th>STT</th>
+                                          <th>SẢN PHẨM</th> <th>TỔNG</th> 
+                                      </tr>`;
+            }
+            var costValue=0;
+            function onLoadData(data){
+            
+                var dataCart={name:"info",value:[]};
+                dataCart.value =data;
+               
+                var numberProduct=dataCart.value.length;
+               
+                for(var i=0;i<dataCart.value.length;i++){
+                    let item =dataCart.value[i];
+                    var costSum=item.quantity* item.cost_detail;
+                    costValue += costSum;
+                    if(!isMobile){
+                        htmlInfo =htmlInfo + `
+                                <tr class="cart_item" > <td class="product-remove">`+(i+1)+`</a> 
+                                    </td>
+                                    <td class="product-thumbnail">
+                                            <a href="/product/product_detail?type=${item.product_id}">`
+                                                +`<img width="145" height="145" alt="poster_1_up" 
+                                            class="shop_thumbnail" src="`+item.image_info_detail+`"  alt=""></a>
+                                    </td>
+                                    <td class="product-name">
+                                        <a href="/product/product_detail?type=${item.product_id}">`
+                                                + item.name_image_detail+`</a> 
+                                    </td>
+                                    <td class="product-price">
+                                        <span class="amount">`+setValueCost(item.cost_detail,"VND") +`</span> 
+                                    </td>
+                                    <td class="product-quantity">
+                                        <div class="quantity buttons_added">`
+                                                +item.quantity+`
+                                        </div>
+                                    </td>
+                                    <td class="product-subtotal">
+                                        <span class="amount">`+setValueCost(costSum,"VND") +`</span> 
+                                    </td> 
+                                </tr>`;
+                    }
+                    else
+                    {
+                        htmlInfo =htmlInfo + `
+                                <tr class="cart_item" > <td class="product-remove">`+(i+1)+`</a> 
+                                    </td>
+                                    <td class="product-thumbnail">
+                                            <a href="/product/product_detail?type=${item.product_id}">`
+                                                +`<img width="145" height="145" alt="chợ xanh 4 mùa" 
+                                            class="shop_thumbnail" src="`+item.image_info_detail+`"></a>
+                                    </td>
+                                    <td class="product-name">
+                                        <a href="/product/product_detail?type=${item.product_id}">`
+                                                + item.name+`</a> 
+                                        <span class="amount">`+setValueCost(item.cost_detail,"VND") +`</span> 
+                                        <div class="quantity buttons_added">`
+                                                +item.quantity+`
+                                        </div>
+                                        <span class="amount">`+setValueCost(costSum,"VND") +` </span> 
+                                    </td> 
+                                </tr>`;
+                    }
+            
+                }
+
+                $('#cart_item_detail').html(htmlInfo);
+                $('#sum_all_product').html(setValueCost(costValue,"VND") );
+            
+            }
+            function onLoadDataAdress(data){
+                var adresInfo = ` Địa chỉ giao hàng: ${data["phone"]} -  ${data["address"]} <br/>`;
+
+
+
+                $('#cart_item_adress').html(adresInfo);
+                if(data.status==40){
+                    $('#cancel_bill_status').html("Đơn đang yêu cầu hủy");
+                } else if(data.status==60){
+                    $('#cancel_bill_status').html("Đơn đã được hủy");
+                }else if(data.status==null){
+                    $('#info_bill_status').html("Đơn hàng đang đợi");
+                }
+                /*else{
+                    for(var i=0;i<TypeSelection.length;i++){
+                        if(TypeSelection[i].id == data.status){
+                            $('#info_bill_status').html(TypeSelection[i].name);
+                        }
+                    }
+                    
+                }
+                
+                */
+                statusTheBill = data.status;
+                //cancel_bill_status
+            }
+            
+         
+            var JsonInfoBill = JSON.parse(localStorage.getItem("bill_detail"));
+            for(var x=0;x<JsonInfoBill.length;x++){
+                var infodata = {bill:JsonInfoBill[x].bill };
+                var dataPhone = localStorage.getItem('phone_info_lock');
+                //dataPhone ='0983828382';
+                if((dataPhone!=null)&&(dataPhone.length>5)) infodata["phone_info_lock"] = dataPhone;
+                postInfoData('/api/customers/detail_bill',infodata,(data)=>{
+                    if(!data.error) {
+                        onLoadData(data.data.result.data);
+                        onLoadDataAdress(data.data.result.bill);
+                    }
+                    else {
+                        loginCustomerMenu();
+                    }
+                });
+            }
+            
+            
+            var statusTheBill = 0;
+            function statusOfBill(){
+            
+                postInfoData('/api/customers/buy_status',{buyproduct_id:dataView},(data)=>{
+                    if(!data.error) {
+                       
+                        var html="";
+                        data.data.result.product_buy.forEach(element => {
+                            var info = "Bắt đầu đặt hàng ";
+                            TypeSelection.forEach(status => {
+                                if(status.id == element.status){
+                                    info = status.name;
+                                }
+                            });
+                            html = html+ `<label> - Thời gian : ${element.updated_at}  </label><br/> <label> - Trạng thái : ${info}  </label><br/>`
+                        });
+            
+                        data.data.result.product_buy_return.forEach(element => {
+                            var info = "Bắt đầu đặt hàng ";
+                            TypeSelection.forEach(status => {
+                                if(status.id == element.status){
+                                    info = status.name;
+                                }
+                            });
+                            html = html+ `<label> Thời gian : ${element.updated_at} Trạng thái : ${info}  </label><br/>`
+                        });     
+                
+                        var htmlDetail =`<div style=" height: 100%; overflow: hidden;" >
+                                            <div style="width: 20%; float:left;">
+                                                <img src="/sparc_landing_page/images/sparc-lab-logo.png" width ="80px" height="80px" alt="chợ xanh 4 mùa" />
+                                                <label>  </label>
+                                                <img src="/teznews/images/timeline.png" width ="50px" height="100px" alt="chợ xanh 4 mùa" />
+                                            </div>
+                                            <div style="width: 80%; float:right; ">
+                                                <h2>Thông báo</h2></br>
+                                                <div  style=" margin-left: 1px; text-align: left; ">
+                                                ${html}
+                                                <div>
+                                            </div>
+                                        </div>`;
+                        Swal.fire({
+                            html: htmlDetail,
+                            confirmButtonText: 'Đóng',
+                            focusConfirm: false,
+                            customClass: 'swal-height',
+                            allowOutsideClick: false,
+                            showCloseButton: true
+            
+                        });
+                                            
+                    }
+                });
+            
+            }
+            
+            function cancelTheBill(){
+                var customersInfo = localStorage.getItem("customer");
+                if(customersInfo==null||customersInfo.length<3){
+                    return ;
+                }
+
+                if(statusTheBill==40||statusTheBill==60){
+                    return ;
+                }
+                Swal.fire({
+                    title: 'Hủy đơn hàng',
+                    html: `Bạn chắc chắn hủy đơn hàng này chứ`,
+                    showCancelButton: true,
+                    confirmButtonText: 'Đồng ý',
+                    cancelButtonText:" Quay lại",
+                    focusConfirm: false,
+                    allowOutsideClick: false,
+                    showCloseButton: true
+                    }).then((result)=>{
+                            if(result.isConfirmed) {
+                                Swal.fire({
+                                    title: 'Xin vui lòng cho biết lý do Hủy đơn hàng',
+                                    input: 'text',
+                                    inputAttributes: {
+                                        autocapitalize: 'off'
+                                    },
+                                    showCancelButton: true,
+                                    confirmButtonText: 'Look up',
+                                    showLoaderOnConfirm: true,
+                                    allowOutsideClick: false,
+                                    showCloseButton: true,
+                                    preConfirm: (dataInfo) => {
+                                        postInfoData('/api/customers/cancel_bill',{buyproduct_id:dataView,note:dataInfo},(data)=>{
+                                            if(!data.error) {
+                                                location.reload();
+                                            }
+                                            else   throw new Error(response.statusText)
+                                        });
+                                    },
+                                    allowOutsideClick: () => !Swal.isLoading()
+                                    }).then((result) => {
+                                        var info = "Lỗi! Xin vui lòng thử lại";
+                                        if (result.isConfirmed) {
+                                            info = "Xin vui lòng đợi bên bán hàng confirm";
+                                        }
+                                        Swal.fire({ title: info,allowOutsideClick: false,
+                                                    showCloseButton: true })
+                                    })
+                            }
+                    });
+            }
+        
+        </script>
+      
+        
+    </body>
+</html>

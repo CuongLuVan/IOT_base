@@ -1,0 +1,169 @@
+<html lang="en">
+    <link href="https://fonts.googleapis.com/css?family=Roboto:400,700" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <% include ./layout/header.ejs %>
+  <body>
+        <% include ./layout/css_layout.ejs %>
+        <% include ./layout/menuSale.ejs %>
+        <script src="/static/city.js"></script>
+        <script src="/static/province.js"></script> 
+        <script src="/static/village.js"></script>            
+    <div class="container">
+        <span class="choose">Tìm cửa hàng theo khu vực</span>
+        <% include ./layout/layout_location.ejs %>
+        
+    </div>
+
+    <div class="container">
+		<div class="wrap">
+            <div class="search">
+               <input type="text" id="value_search_location" class="searchTerm" placeholder="Tìm kiếm bằng từ khóa?">
+               <button class="searchButton" onclick="searchInfo()">
+                 <i class="fa fa-search"></i>
+              </button>
+            </div>
+        </div>
+	</div>
+    <div class="container row" style="padding-top: 40px;">
+        <div class="col-md-2 col-sm-2 col-xs-2"  >
+            <section id="best-seller-section1">
+                <h5 style="margin-top: 25px;" class="best-seller-caption text-center" id="name-group-info1" ></h5>
+                <div class="row grid" id="best-seller-items1">
+                </div>
+                <div class="best-seller-load-more text-center">
+                
+                </div>
+            </section>
+        </div>
+        <div class="col-md-10 col-sm-10 col-xs-10" >
+            <section id="best-seller-section">
+                <h5 class="best-seller-caption text-center" id="name-group-info2" ></h5>
+                <div class="row grid margin-menu-home" id="best-seller-items2"></div>
+                <% include ./layout/layout_pages.ejs %>
+            </section>
+        </div>
+
+    </div>
+
+    <script type="text/javascript">  
+        function checkAreLocationNotInval(searchText=false){
+            var dataError="";
+            var errStatus=false;
+            if(idSelect.city==0) {
+                dataError ="Xin vui lòng chọn thành phố !";
+                errStatus= true;
+            }
+            else
+            {
+                if(searchText==false){
+                    if(idSelect.province==0) {
+                        dataError ="Xin vui lòng chọn quận/huyện !";
+                        errStatus= true;
+                    } 
+                    else if(idSelect.province==0){
+                        dataError ="Xin vui lòng chọn xã/phường !";
+                        errStatus= true;
+                    }
+                }
+                else {
+                    if($('#value_search_location').val().length<3){
+                        dataError ="Độ dài từ khóa tối đa 3 ký tự";
+                        errStatus= true;
+                    }
+                }
+            }
+            if(errStatus){
+                Swal.fire({ title:"Lỗi" , 
+                            html: "<i>"+dataError+"</i>",  
+                            confirmButtonText: "<u>Đồng ý</u>", 
+                            allowOutsideClick: false,
+                            showCloseButton: true
+                        });
+            }
+            return errStatus;
+        }
+
+        function setListProductToView(items,itemHtml) {
+                        var html='';
+                        var productIDLst = [];
+                        items.forEach((element) => {
+                            if(!productIDLst.includes(element.product_id)){
+                                productIDLst.push(element.product_id);
+                            
+                                html+=`<div class="col-xs-12"> 
+                                        <a href="/product/product_detail?type=${element.product_id}">
+                                        <div class="best-seller-item">
+                                            <div class="image-block-view">
+                                                <div class="image-block-view-160" >
+                                                    <img src="${element.image}" class="best-seller-item-image img-fluid"  alt="chợ xanh 4 mùa"  />
+                                                </div>
+                                            </div>
+                                            <div class="best-seller-item-info">
+                                            <div class="info-name">${element.product_name} - ${element.number} </div>
+                                            <div class="info-price">
+                                                <span class="info-company-detail">${ element.companyname}</span>
+                                            </div>
+                                            </div>
+                                        </div>
+                                        </a>
+                                    </div>`;
+                                }
+                        });
+                        $(itemHtml).html(html);
+                        $('#name-group-info2').html(" Các sản phẩm");
+                        
+        }
+
+        function setListCompanyToView(items,itemHtml) {
+                        var html='';
+                        var companyLst = [];
+                        items.forEach((element) => {
+                            if(!companyLst.includes(element.company_id)){
+                                companyLst.push(element.company_id);
+                                html+=`<div class="col-xs-12"> 
+                                        <a href="/shop/detail?type=${element.company_id}">
+                                        <div class="best-seller-item">
+                                            <div class="image-block-view">
+                                                <div class="image-block-view-160" >
+                                                    <img src="${element.image}" class="best-seller-item-image img-fluid"  alt="chợ xanh 4 mùa"  />
+                                                </div>
+                                            </div>
+                                            <div class="best-seller-item-info">
+                                            <div class="info-name">${element.companyname}</div>
+                                            <div class="info-price">
+                                                <span class="info-company-detail">${ element.content}</span>
+                                            </div>
+                                            </div>
+                                        </div>
+                                        </a>
+                                    </div>`;
+                            }
+                        });
+                        $(itemHtml).html(html);
+                        $('#name-group-info1').html(" Doanh nghiệp ");
+        }
+
+        function searchInfo(){
+            if(checkAreLocationNotInval()) return;
+            idSelect.nameLocation = $('#value_search_location').val();
+           // var dataInfo = { city:0 , village :0,province:0 ,nameLocation: $('#value_search_location').val() };
+            postInfoData('/api/customers/search_location',idSelect,(data)=> {   
+                if(!data.error){
+                    document.getElementById("best-seller-items1").classList.add("best-seller-group-tower");
+                    document.getElementById("best-seller-items2").classList.add("best-seller-group-tower");
+
+                    setListCompanyToView(data.data.result,"#best-seller-items1");
+                    setListProductToView(data.data.result,"#best-seller-items2");  
+                }                    
+            });
+            
+            
+
+        }
+        
+    </script>
+
+    
+    <br/>
+  </body>
+</html>

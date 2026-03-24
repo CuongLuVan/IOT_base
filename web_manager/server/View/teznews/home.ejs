@@ -1,0 +1,30 @@
+﻿<% include /layout/head/header.ejs %>
+    <div class="page">
+        <div class="container">
+            <% include /layout/head/headerAds.ejs %>
+            <!--menu-->
+            <% include /layout/menu/pcMenu.ejs %>
+            <div class="row">
+                <!--colleft-->
+                <div class="col-md-8 col-sm-12">
+                    <% include /layout/compoment/home/sportLight.ejs %>
+                    <!--spotlight-thumbs-->
+                    <% include /layout/compoment/home/spotlight_thumbs.ejs %>
+                    <% include /layout/compoment/home/info.ejs %>
+                    <!--box-news-->
+                    <% include /layout/compoment/home/review.ejs %>
+                </div>
+
+                <!--colright-->
+                <div class="col-md-4 col-sm-12">
+                    <!--tab popular-->
+                    <% include /layout/compoment/home/tool.ejs %>
+                    <% include /layout/compoment/tip/ads.ejs %>
+                </div>
+            </div>
+        </div>
+        <!--footer-->
+        <% include /layout/menu/footer.ejs %>
+    </div>
+<% include /layout/head/endhead.ejs %>
+

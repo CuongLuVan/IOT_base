@@ -1,0 +1,38 @@
+<div class="m-auto text-center" style="margin-top: 0px !important">
+
+    <div class="best-seller-item" id="ids_ads_homex">
+   
+    </div>
+</div>
+
+<script type="text/javascript"> 
+          function getDataInfoAdvertisement1(data){
+                  var infoData = "";
+                  console.log("getDataInfoAdvertisement1",data)
+                  for(var i=0;(i<data.length);i++){
+                    infoData = infoData + 
+                    `<div class="best-seller-item">
+                          <div class="image-block-view">
+                            <div class="image-block-view-250">
+                              <img src="${data[i].image}"  class="best-seller-item-image img-fluid" alt="chợ xanh 4 mùa" />
+                            </div>
+                          </div>
+                          <div class="best-seller-item-info">
+                              <span><a class="info-name" href="/product/product_detail?type=${data[i].product_id}">
+                                    ${data[i].name}</a>  
+                              </span> 
+                              <div class="info-price">
+                                  <span class="info-price-discount">${setValueCost(data[i].cost_detail,"VND") }</span>
+                              </div>
+                          </div>
+                     </div>`;
+                  }
+                  $("#ids_ads_homex").html(infoData);
+          }
+
+          
+         getInfoHtml("/api/customers/info_ads", (data) => {
+            if(data==false) return; 
+            getDataInfoAdvertisement1(data.result); 
+        });
+</script>

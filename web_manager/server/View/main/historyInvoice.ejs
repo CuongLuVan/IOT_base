@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+    <% include ./layout/header.ejs %>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <style>
+        .rounded-circle {
+            height: fit-content;
+        }
+    </style>
+    <body>
+        <% include ./layout/menuSale.ejs %>
+        <center><h2> Lịch sử đơn hàng </h2> </center>
+        <section id="history-p-product">
+            <div class="row">
+                <div class="col-lg-2 col-xs-12 image-product my-auto text-center" style="margin-top: 0px !important">
+                    
+                    <div class="product-main-history" > Đơn hàng </div>
+                    <div  id="lstBillInfo" style="text-align: left;"> </div> 
+                    <div class="product-main-history" > Thông báo </div>
+                    
+                </div>
+                <div class="col-lg-8 col-xs-12 detail-product" style="margin-top: 0px !important">
+                    <div class="detail-name-star border-bottom">
+                        <center> <h3 id="cart_item_adress" >  </h3> </center> 
+                    </div>
+                    <div class="mb-2 detail-price-method">
+                        <table cellspacing="0" class="shop_table cart">
+                            <thead>
+                                <tr>
+                                    <th class="product-remove">stt</th>
+                                    <th class="product-thumbnail">Hình ảnh</th>
+                                    <th class="product-name">Sản Phẩm</th>
+                                    <th class="product-price">Giá</th>
+                                    <th class="product-quantity">Số lượng</th>
+                                    <th class="product-subtotal">Tổng giá trị</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cart_item_detail">
+                                
+                            </tbody>
+                        </table>
+                        <div id="info_return_product" class="product-setup-history">
+                            <button> Hủy đơn hàng </button>    
+                            <button> Mua lại lần nữa </button>  
+                            <button> Trạng thái đơn hàng </button>  
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+        <br/>
+    </body>
+    <script type="text/javascript">  
+        var lstBill = [];
+        var lstToBuy =[];
+        postInfoData('/api/customers/lst_bill',{},(data)=>{
+                if(!data.error) {
+                    var html='';
+                    var loadfistData = {buyproduct_id:-1};
+                    data.data.result.forEach(element => {
+                        html= html+  `<label class='product-detail-history'  onclick='getInfoThebill(${JSON.stringify(element)})' > ${element.name} </label> <br/>`
+                        if(loadfistData.buyproduct_id==-1){
+                            loadfistData = element;
+                        } 
+                    });
+                    $('#lstBillInfo').html(html);
+                    if(loadfistData.buyproduct_id!=-1) {
+                        getInfoThebill(loadfistData);
+                    } 
+                }
+                else {
+                   
+                    
+                }
+        });
+
+
+        function onLoadData(data){
+
+                var dataCart={name:"info",value:[]};
+                dataCart.value =data;
+                var costValue=0;
+                var numberProduct=dataCart.value.length;
+                var htmlInfo=``;
+                for(var i=0;i<dataCart.value.length;i++){
+                    let item =dataCart.value[i];
+                    var costSum=item.quantity* item.cost_detail;
+                    costValue += costSum;
+                    htmlInfo =htmlInfo + `<tr class="cart_item" > <td class="product-remove">`+i+`</a> 
+                                </td>`;
+                    htmlInfo =htmlInfo + `<td class="product-thumbnail">
+                                        <a href="/product/product_detail?type=`+item.product_id+`">`
+                                            +`<img width="145" height="145" alt="poster_1_up" 
+                                        class="shop_thumbnail" src="`+item.image_info_detail+`" alt=""></a>
+                                </td>
+                                <td class="product-name">
+                                    <a href="/product/product_detail?type=`+item.product_id+`">`
+                                            + item.name_image_detail+`</a> 
+                                </td>
+                                <td class="product-price">
+                                    <span class="amount">`+setValueCost(item.cost_detail,"VND") +`</span> 
+                                </td>
+                                <td class="product-quantity">
+                                    <div class="quantity buttons_added">`
+                                            +item.quantity+`
+                                    </div>
+                                </td>
+                                <td class="product-subtotal">
+                                    <span class="amount">`+ setValueCost(costSum,"VND") +` </span> 
+                                </td> </tr>`;
+
+                }
+                htmlInfo =htmlInfo + `<tr>
+                                            <td class="actions" colspan="6">
+                                                <span class="amount"> Tổng giá trị đơn hàng : `+ setValueCost(costValue,"VND") +` </span> 
+                                            </td>
+                                        </tr>`;
+                $('#cart_item_detail').html(htmlInfo);
+
+        }
+        function onLoadDataAdress(data){
+            var adresInfo = ` Địa chỉ giao hàng: ${data["phone"]} -  ${data["address"]}`;
+            $('#cart_item_adress').html(adresInfo);
+        }
+
+        function cancelTheBill(dataView){
+            Swal.fire({
+                title: "Thông báo !",
+                html: "<i>bạn chắc chắn muốn hủy đơn hàng này chứ!</i>", 
+                confirmButtonText: "<u>Đồng ý</u>", 
+                allowOutsideClick: false,
+                showCloseButton: true
+              }).then((result)=>{
+                if (result.isConfirmed) {
+                    var element = dataView;
+                    postInfoData('/api/customers/cancel_bill',{buyproduct_id:element.buyproduct_id},(data)=>{
+                        if(!data.error) {
+                            showAlertInfoMessage("Hủy đơn hàng thành công");
+                            location.reload();
+                        }
+                        else {
+                        
+                        }
+                    });
+                }
+               
+              }).catch((err)=>{
+                showAlertInfoMessage("Không thể hủy đơn hàng");
+              });
+        }
+        function buyTheBill(dataView){
+            Swal.fire({
+                title: "Thông báo !",
+                html: "<i>bạn chắc chắn muốn mua lại các sản phẩm này chứ!</i>", 
+                confirmButtonText: "<u>Đồng ý</u>", 
+                allowOutsideClick: false,
+                showCloseButton: true
+              }).then((result)=>{
+                if (result.isConfirmed){
+                    var element = dataView;
+                    postInfoData('/api/customers/buy_again',{buyproduct_id:element.buyproduct_id},(data)=>{
+                        if(!data.error) {
+                            showAlertInfoMessage("Mua đơn hàng thành công");
+                        }
+                    });
+                }
+              }).catch((err)=>{
+                showAlertInfoMessage("Không thể mua lại sản phẩm");
+              });
+        }
+
+
+
+
+        function statusTheBill(dataView){
+            var TypeSelection =[{id:0,name :"Đơn hàng đang đợi"},{id:10,name :"Đơn hàng được chấp thuận"},
+                        {id:20,name :"Chuyển cho cộng tác viên"},{id:30,name :"Kết thúc đơn hàng"}
+                        ,{id:40,name :"Đơn hàng yêu cầu hủy"},{id:50,name :"Điều tra đơn hàng"}
+                        ,{id:60,name :"Đơn hàng đã hủy"},{id:70,name :"Trả lại đơn hàng"}];
+            var status = " Không xác định";
+            TypeSelection.forEach(info => {
+                if(info.id == dataView.status){
+                    status = info.name;
+                }
+            });
+            Swal.fire({
+                title: "Thông báo !",
+                html: "<i>Chi tiết đơn hàng !</i><br/>"+status, 
+                confirmButtonText: "<u>Đồng ý</u>", 
+                allowOutsideClick: false,
+                showCloseButton: true
+              }).then((result)=>{
+                if (result.isConfirmed){
+                    var element = dataView;
+                    postInfoData('/api/customers/buy_status',{buyproduct_id:element.buyproduct_id},(data)=>{
+                        if(!data.error) {
+                            ///
+                        }
+                    });
+                }
+              }).catch((err)=>{
+                showAlertInfoMessage("Không thể mua lại sản phẩm");
+              });
+        }
+
+        function getInfoThebill(dataView){
+            var element = dataView;
+            var dataInfo = "";
+            if(element.status ==0){
+                dataInfo = `<button class="product-button-history-enable"  onclick='cancelTheBill(${JSON.stringify(dataView)})' > Hủy đơn hàng </button>    
+                            <button class="product-button-history-enable"   onclick='buyTheBill(${JSON.stringify(dataView)})'  > Mua lại lần nữa </button>  
+                            <button class="product-button-history-enable"  onclick='statusTheBill(${JSON.stringify(dataView)})'  > Trạng thái đơn hàng </button>`;
+            }
+            else  if(element.status ==30)
+            {
+                dataInfo = `<button class="product-button-history-disable"  > Hủy đơn hàng </button>    
+                            <button class="product-button-history-enable"  onclick='buyTheBill(${JSON.stringify(dataView)})' > Mua lại lần nữa </button>  
+                            <button class="product-button-history-enable"  onclick='statusTheBill(${JSON.stringify(dataView)})' > Trạng thái đơn hàng </button>`;
+            } else  if(element.status ==40){
+                dataInfo = `<button class="product-button-history-disable" > Hủy đơn hàng </button>    
+                            <button class="product-button-history-enable"  onclick='buyTheBill(${JSON.stringify(dataView)})' > Mua lại lần nữa </button>  
+                            <button class="product-button-history-enable"  onclick='statusTheBill(${JSON.stringify(dataView)})'  > Trạng thái đơn hàng </button>`;
+            }
+            else
+            {
+                dataInfo = `<button class="product-button-history-enable"  onclick='cancelTheBill(${JSON.stringify(dataView)})' > Hủy đơn hàng </button>    
+                            <button class="product-button-history-enable"  onclick='buyTheBill(${JSON.stringify(dataView)})' > Mua lại lần nữa </button>  
+                            <button class="product-button-history-enable"  onclick='statusTheBill(${JSON.stringify(dataView)})' > Trạng thái đơn hàng </button>`;
+                  
+            }
+            $('#info_return_product').html(dataInfo);
+
+
+            Swal.showLoading();
+            
+                setTimeout(()=>{
+                    var infodata = element.buyproduct_id;
+                    var dataPhone = localStorage.getItem('phone_info_lock');
+                    //dataPhone ='0983828382';
+                    if((dataPhone!=null)&&(dataPhone.length>5)) infodata["phone_info_lock"] = dataPhone;
+                    postInfoData('/api/customers/detail_bill',{bill:element.buyproduct_id},(data)=>{
+                        if(!data.error) {
+                            onLoadData(data.data.result.data);
+                            onLoadDataAdress(data.data.result.bill);
+                        }
+                        else {
+                        
+                        }
+                    });
+                    Swal.hideLoading();
+                    Swal.close();
+                },1000);
+          
+        }
+
+       </script>
+</html>

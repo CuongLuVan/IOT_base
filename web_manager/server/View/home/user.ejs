@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content=" chợ xanh bốn mùa , sản phẩm chất lượng cho cuộc sống ">
+    <meta name="author" content="congnd91">
+    <title>Thông tin cá nhân</title>
+    <script src="/sparc_landing_page/js/jquery.min.js"></script>
+    <!-- Bootstrap v4.4.1 js -->
+    <script src="/sparc_landing_page/js/bootstrap.min.js"></script>
+    <script src="/js/commonJS.js"></script>
+    <script src="/js/sweetalert2.all.min.js"></script>
+    <link href="https://fonts.googleapis.com/css?family=Open+Sans:300,400,600,700" rel="stylesheet">
+    <link rel="stylesheet" type="text/css" href="/css/userstyle.css">
+</head>
+
+
+<body>
+  <div class="main-content">
+    <!-- Top navbar -->
+    <nav class="navbar navbar-top navbar-expand-md navbar-dark" id="navbar-main">
+      <div class="container-fluid">
+        <!-- User -->
+        <ul class="navbar-nav align-items-center d-none d-md-flex">
+          <li class="nav-item dropdown">
+            <a class="nav-link pr-0" href="#" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+              <div class="media align-items-center">
+                <span class="avatar avatar-sm rounded-circle">
+                  <img id="image_user_1" alt="chợ xanh 4 mùa" src="">
+                </span>
+                <div class="media-body ml-2 d-none d-lg-block">
+                  <span id="name_user_1" class="mb-0 text-sm  font-weight-bold">Jessica Jones</span>
+                </div>
+              </div>
+            </a>
+            
+          </li>
+        </ul>
+      </div>
+    </nav>
+    <!-- Header -->
+    <div class="header pb-8 pt-5 pt-lg-8 d-flex align-items-center" style="min-height: 600px; background-image: url(https://raw.githubusercontent.com/creativetimofficial/argon-dashboard/gh-pages/assets-old/img/theme/profile-cover.jpg); background-size: cover; background-position: center top;">
+      <!-- Mask -->
+      <span class="mask bg-gradient-default opacity-8"></span>
+      <!-- Header container -->
+      <div class="container-fluid d-flex align-items-center">
+        <div class="row">
+          <div class="col-lg-7 col-md-10">
+            <h1 class="display-2 text-white"> Thông tin cá nhân</h1>
+            <a href="/"> <p class="text-white mt-0 mb-5"> &lt;&lt;  Quay về trang chủ</p></a>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- Page content -->
+    <div class="container-fluid mt--7">
+      <div class="row">
+        <div class="col-xl-4 order-xl-2 mb-5 mb-xl-0">
+          <div class="card card-profile shadow">
+            <div class="row justify-content-center">
+              <div class="col-lg-3 order-lg-2">
+                <div class="card-profile-image">
+                  <a href="#">
+                    <img id="image_user_2"  src="" alt="chợ xanh 4 mùa" >
+                  </a>
+                </div>
+              </div>
+            </div>
+            <div class="card-header text-center border-0 pt-8 pt-md-4 pb-0 pb-md-4">
+              <div class="d-flex justify-content-between">
+                <!---  <a href="#" class="btn btn-sm btn-info mr-4">Connect</a> --->
+                <!--- <a href="#" class="btn btn-sm btn-default float-right">Message</a> --->
+              </div>
+            </div>
+            <div class="card-body pt-0 pt-md-4">
+           
+              <div class="row">
+                <div class="col">
+                  <div class="card-profile-stats d-flex justify-content-center mt-md-5">
+                    <div><!---
+                      <span class="heading">22</span>
+                      <span class="description">Friends</span> -->
+                    </div>
+                    <div><!---
+                      <span class="heading">10</span>
+                      <span class="description">Photos</span> -->
+                    </div>
+                    <div><!---
+                      <span class="heading">89</span>
+                      <span class="description">Comments</span>-->
+                    </div>
+                  </div>
+                </div>
+              </div> 
+              <div class="text-center">
+                <a onclick="changePassWord()"> <h3> Đổi mật khẩu</h3> </a>
+                <a href="/history"> <h3> Lịch sử đơn hàng </h3> </a>
+                <div id="permission_check">
+                  <a href="http://localhost:3020/customer/#/"></a><h3> Màn hình quản lý </h3> </a>
+                </div>
+          
+                <a href="/noification"><h3> Thông báo </h3> </a>
+                <!---<div class="h5 font-weight-300">
+                  <i class="ni location_pin mr-2"></i>Bucharest, Romania
+                </div>
+                <div class="h5 mt-4">
+                  <i class="ni business_briefcase-24 mr-2"></i>Solution Manager - Creative Tim Officer
+                </div>
+                <div>
+                  <i class="ni education_hat mr-2"></i>University of Computer Science
+                </div>
+                <hr class="my-4">
+                <p>Ryan — the name taken by Melbourne-raised, Brooklyn-based Nick Murphy — writes, performs and records all of his own music.</p>
+                <a href="#">Show more</a>-->
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-xl-8 order-xl-1">
+          <div class="card bg-secondary shadow">
+            <div class="card-header bg-white border-0">
+              <div class="row align-items-center">
+                <div class="col-8">
+                  <h3 class="mb-0">Tài khoản</h3>
+                </div>
+                <div class="col-4 text-right">
+                  <a onclick="saveInfoData()" class="btn btn-sm btn-primary" style="color: white;" >Lưu lại</a>
+                </div>
+              </div>
+            </div>
+            <div class="card-body">
+              <form>
+                <h6 class="heading-small text-muted mb-4">Thông tin tài khoản</h6>
+                <div class="pl-lg-4">
+                  <div class="row">
+                    <div class="col-lg-6">
+                      <div class="form-group focused">
+                        <label class="form-control-label" for="input-username">Tên tài khoản</label>
+                        <input type="text" id="input-username" class="form-control form-control-alternative" placeholder="Username" value="lucky.jesse">
+                      </div>
+                    </div>
+                    <div class="col-lg-6">
+                      <div class="form-group">
+                        <label class="form-control-label" for="input-email">Địa chỉ email</label>
+                        <input type="email" id="input-email" class="form-control form-control-alternative" placeholder="jesse@example.com">
+                      </div>
+                    </div>
+                  </div>
+                  <div class="row">
+                    <div class="col-lg-6">
+                      <div class="form-group focused">
+                        <label class="form-control-label" for="input-first-name">Họ tên</label>
+                        <input type="text" id="input-first-name" class="form-control form-control-alternative" placeholder="First name" value="Lucky">
+                      </div>
+                    </div>
+                    
+                    <!--
+                    <div class="col-lg-6">
+                      <div class="form-group focused">
+                        <label class="form-control-label" for="input-last-name">Last name</label>
+                        <input type="text" id="input-last-name" class="form-control form-control-alternative" placeholder="Last name" value="Jesse">
+                      </div>
+                    </div> -->
+                  </div> 
+                  <div class="row">
+                    <div class="col-lg-6">
+                      <div class="form-group focused">
+                        <label class="form-control-label" for="upload-photo-user">Ảnh đại diện</label>
+                        <input type="file" accept=".png,.jpg,.jpeg" 
+                              onchange="uploadImageData(this)" 
+                              id="upload-photo-user"  
+                              class="form-control form-control-alternative" 
+                              placeholder="First name" value="Lucky" />
+                      </div>
+                      <img id="image_user_avatar" style="height: 150px;" alt=""/>
+                    </div>
+                  </div> 
+                </div>
+                <hr class="my-4">
+                <!-- Address -->
+                <h6 class="heading-small text-muted mb-4">Thông tin liên hệ</h6>
+                <div class="pl-lg-4">
+                  <div class="row">
+                    <div class="col-md-12">
+                      <div class="form-group focused">
+                        <label class="form-control-label" for="input-address">Địa chỉ</label>
+                        <input id="input-address" class="form-control form-control-alternative" placeholder="Home Address" value="Bld Mihail Kogalniceanu, nr. 8 Bl 1, Sc 1, Ap 09" type="text">
+                      </div>
+                    </div>
+                  </div>
+                  <div class="row">
+                    <div class="col-md-12">
+                      <div class="form-group focused">
+                        <label class="form-control-label" for="input-phone-number">Số điện thoại</label>
+                        <input id="input-phone-number" class="form-control form-control-alternative" placeholder="Home Address" value="Bld Mihail Kogalniceanu, nr. 8 Bl 1, Sc 1, Ap 09" type="text">
+                      </div>
+                    </div>
+                  </div>
+                  <!---
+                  <div class="row">
+                    <div class="col-lg-4">
+                      <div class="form-group focused">
+                        <label class="form-control-label" for="input-city">City</label>
+                        <input type="text" id="input-city" class="form-control form-control-alternative" placeholder="City" value="New York">
+                      </div>
+                    </div>
+                    <div class="col-lg-4">
+                      <div class="form-group focused">
+                        <label class="form-control-label" for="input-country">Country</label>
+                        <input type="text" id="input-country" class="form-control form-control-alternative" placeholder="Country" value="United States">
+                      </div>
+                    </div>
+
+                    <div class="col-lg-4">
+                      <div class="form-group">
+                        <label class="form-control-label" for="input-country">Postal code</label>
+                        <input type="number" id="input-postal-code" class="form-control form-control-alternative" placeholder="Postal code">
+                      </div>
+                    </div>
+                  </div>  --->
+                </div>
+
+                <!-- Description
+                <h6 class="heading-small text-muted mb-4">About me</h6>
+                <div class="pl-lg-4">
+                  <div class="form-group focused">
+                    <label>About Me</label>
+                    <textarea rows="4" class="form-control form-control-alternative" placeholder="A few words about you ...">A beautiful Dashboard for Bootstrap 4. It is Free and Open Source.</textarea>
+                  </div>
+                </div> -->
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <footer class="footer">
+    <div class="row align-items-center justify-content-xl-between">
+      <div class="col-xl-6 m-auto text-center">
+        <div class="copyright">
+          <p> Chợ xanh bốn mùa</p>
+        </div>
+      </div>
+    </div>
+  </footer>
+</body>
+
+<script type="text/javascript">
+    
+    var dataView = '<%= info %>';
+    
+    async  function uploadImageData(event){
+            const data = new FormData() 
+            data.append('file', event.files[0]);
+            try {
+              let response = await fetch('/api/customers/import-image-customer', 
+                {method: "POST", body: data}); 
+              const result = await response.json();
+              $("#image_user_avatar").attr("src",result.url );
+            } 
+            catch(e) 
+            {
+            }   
+    }
+    var infoDataSave = null;
+    getInfoData('/api/auth/info_customer',{},(dataJson)=>{
+               //getShopOnline(dataJson.result);
+        if(dataJson!=false){
+          
+              $("#image_user_1").attr("src", dataJson.user.avatar);
+              $("#image_user_2").attr("src",  dataJson.user.avatar);
+              $("#image_user_avatar").attr("src",  dataJson.user.avatar); 
+              $("#name_user_1").html(dataJson.user.email);
+              $("#input-first-name").val(dataJson.user.fullname);
+              $("#input-email").val(dataJson.user.email);
+              $("#input-username").val( dataJson.user.username);
+              $("#input-address").val(dataJson.user.address);
+              $("#input-phone-number").val(dataJson.user.phone);
+              if(dataJson.user.permission_id==0)
+                  $("#permission_check").html(`<a href="/register-new-company"><h3> Đăng ký doanh nghiệp </h3> </a>`);
+              else
+                  $("#permission_check").html(`<a href="http://localhost:3030/customer/#/"><h3> Màn hình quản lý </h3> </a>`);
+
+              infoDataSave = dataJson.user;
+              
+        }
+    });
+
+    function saveInfoData(){
+        if(infoDataSave==null){
+          // $("#image_user_avatar").attr("src",result.url );
+          return;
+        }
+        infoDataSave.fullname =$("#input-first-name").val();
+        infoDataSave.avatar =$("#image_user_avatar").attr('src');
+        infoDataSave.username =$("#input-username").val();
+        infoDataSave.address =$("#input-address").val();
+        infoDataSave.phone =$("#input-phone-number").val();
+        infoDataSave.isUpdatePassWord= false;
+        postInfoData('/api/customers/save_user_info',infoDataSave,(dataJson)=>{
+            if(!dataJson.error){
+              Swal.fire( "Sửa thông tin","<i>Đã sửa thông tin thành công!</i>", "<u>Đồng ý</u>");
+            }
+        });
+    }
+
+    function changePassWord(){
+      Swal.fire({
+          title: 'Xin vui lòng nhập thông tin mật khẩu',
+          html:`
+            <input id="swal-input1" class="swal2-input" type="password" placeholder="Mật khẩu" /> 
+            <input id="swal-input2" class="swal2-input" type="password" placeholder="Mật khẩu mới" />
+            <input id="swal-input3" class="swal2-input" type="password" placeholder="Nhập lại mật khẩu" />`,
+          allowOutsideClick: false,
+          showCloseButton: true,
+          preConfirm: function () {
+            return new Promise(function (resolve) {
+              resolve([
+                $('#swal-input1').val(),
+                $('#swal-input2').val(),
+                $('#swal-input3').val()
+              ])
+            })
+          },
+          onOpen: function () {
+            $('#swal-input1').focus()
+          }
+        }).then(function (result) {
+          if(!result.isConfirmed) return;
+          if(result.value[1].length<8) {
+            Swal.fire( "Sửa thông tin","Độ dài mật khẩu quá ngắn xin vui lòng nhập > 8 ký tự", "<u>Đồng ý</u>");
+            return;
+          }
+          if(result.value[0]==result.value[1]){
+            Swal.fire( "Sửa thông tin","Mật khẩu cũ và mới đang giống nhau, xin vui lòng kiểm tra lại", "<u>Đồng ý</u>");
+            return;
+          }
+          if(result.value[1]!=result.value[2]){
+            Swal.fire( "Sửa thông tin","Mật khẩu mới không trùng khớp xin vui lòng nhập lại", "<u>Đồng ý</u>");
+            return;
+          }
+         
+          postInfoData('/api/customers/save_user_info',{customer_id:infoDataSave.customer_id, old:result.value[0],password:result.value[1],isUpdatePassWord:true},(dataJson)=>{
+                  if(!dataJson.error){
+                    Swal.fire( "Sửa thông tin","<i>Đã sửa thông tin thành công!</i>", "<u>Đồng ý</u>");
+                  }
+          });
+        });
+    }
+
+   
+
+</script>
+
+</html>
+

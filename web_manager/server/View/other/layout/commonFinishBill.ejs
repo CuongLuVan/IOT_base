@@ -1,0 +1,227 @@
+<div class="single-product-area1">
+    <center>
+        <h1 style=" color: #58c71c;font-family: math;">
+                    Hoàn tất thanh toán
+        </h1>
+    </center> 
+    <center> <div id="cart_item_adress" >  </div> </center> 
+    <div class="button-status-bill">
+        <div class="button-status-bill-view">
+            <button class="status-bill-detail" onclick="cancelTheBill()" id ="cancel_bill_status"> Hủy đơn hàng </button>
+            <button class="status-bill-detail"  onclick="statusOfBill()"> Trạng thái đơn hàng </button>
+       </div> 
+    </div>
+   
+    <div class="container">
+        <center>
+            <form>
+                <table cellspacing="0" class="shop_table cart">
+                    <thead>
+                        <tr>
+                            <th class="product-remove">stt</th>
+                            <th class="product-thumbnail">Hình ảnh</th>
+                            <th class="product-name">Sản Phẩm</th>
+                            <th class="product-price">Giá</th>
+                            <th class="product-quantity">Số lượng</th>
+                            <th class="product-subtotal">Tổng giá trị</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cart_item_detail">
+                        
+                    </tbody>
+                </table>
+            </form>
+        </center>               
+    </div>
+</div>
+
+<style>
+    .swal-height{
+        width:500px !important;
+        height: 300px!important;
+    }
+
+</style>
+
+<script type="text/javascript">
+    var dataView = '<%= detail %>';
+    dataView = dataView.replaceAll('type=', '');
+    var isMobile = (/iphone|ipod|android|ie|blackberry|fennec/).test
+         (navigator.userAgent.toLowerCase());
+
+
+function onLoadData(data){
+
+    var dataCart={name:"info",value:[]};
+    dataCart.value =data;
+    var costValue=0;
+    var numberProduct=dataCart.value.length;
+    var htmlInfo=``;
+    for(var i=0;i<dataCart.value.length;i++){
+        let item =dataCart.value[i];
+        var costSum=item.quantity* item.cost_detail;
+        costValue += costSum;
+        htmlInfo =htmlInfo + `<tr class="cart_item" > <td class="product-remove">`+(i+1)+`</a> 
+                    </td>`;
+        htmlInfo =htmlInfo + `<td class="product-thumbnail">
+                            <a href="/${commonTypeLink}/`+setPadamDetailSale(item)+`">`
+                                +`<img width="145" height="145" alt="chợ xanh 4 mùa" 
+                            class="shop_thumbnail" src="`+item.image_info_detail+`"></a>
+                    </td>
+                    <td class="product-name">
+                        <a href="/${commonTypeLink}/`+setPadamDetailSale(item)+`">`
+                                 + item.name_image_detail+`</a> 
+                    </td>
+                    <td class="product-price">
+                        <span class="amount">`+setValueCost(item.cost_detail,"VND") +`</span> 
+                    </td>
+                    <td class="product-quantity">
+                        <div class="quantity buttons_added">`
+                                +item.quantity+`
+                        </div>
+                    </td>
+                    <td class="product-subtotal">
+                        <span class="amount">`+setValueCost(costSum,"VND") +` </span> 
+                    </td> </tr>`;
+
+    }
+    htmlInfo =htmlInfo + `<tr>
+                                <td class="actions" colspan="6">
+                                    <span class="amount"> Tổng giá trị đơn hàng : `+setValueCost(costValue,"VND") +` </span> 
+                                </td>
+                            </tr>`;
+    $('#cart_item_detail').html(htmlInfo);
+
+}
+function onLoadDataAdress(data){
+    var adresInfo = ` Địa chỉ giao hàng: ${data["phone"]} -  ${data["address"]}`;
+    $('#cart_item_adress').html(adresInfo);
+    if(data.status==40){
+        $('#cancel_bill_status').html("Đơn đang yêu cầu hủy");
+    } else if(data.status==60){
+        $('#cancel_bill_status').html("Đơn đã được hủy");
+    }
+    statusTheBill = data.status;
+    //cancel_bill_status
+}
+
+var infodata = {bill:dataView};
+var dataPhone = localStorage.getItem('phone_info_lock');
+//dataPhone ='0983828382';
+if((dataPhone!=null)&&(dataPhone.length>5)) infodata["phone_info_lock"] = dataPhone;
+postInfoData('/api/customers/detail_bill',infodata,(data)=>{
+    if(!data.error) {
+        onLoadData(data.data.result.data);
+        onLoadDataAdress(data.data.result.bill);
+    }
+    else {
+        loginCustomerMenu();
+    }
+});
+
+ var statusTheBill = 0;
+function statusOfBill(){
+
+    postInfoData('/api/customers/buy_status',{buyproduct_id:dataView},(data)=>{
+        if(!data.error) {
+            const TypeSelection =[{id:0,name :"Đơn hàng đang đợi"},{id:10,name :"Đơn hàng được chấp thuận"},
+                        {id:20,name :"Chuyển cho cộng tác viên"},{id:30,name :"Kết thúc đơn hàng"}
+                        ,{id:40,name :"Đơn hàng yêu cầu hủy"},{id:50,name :"Điều tra đơn hàng"}
+                        ,{id:60,name :"Đơn hàng đã hủy"},{id:70,name :"Trả lại đơn hàng"}];
+            var html="";
+            data.data.result.product_buy.forEach(element => {
+                var info = "Bắt đầu đặt hàng ";
+                TypeSelection.forEach(status => {
+                    if(status.id == element.status){
+                        info = status.name;
+                    }
+                });
+                html = html+ `<label> - Thời gian : ${element.updated_at}  </label><br/> <label> - Trạng thái : ${info}  </label><br/>`
+            });
+
+            data.data.result.product_buy_return.forEach(element => {
+                var info = "Bắt đầu đặt hàng ";
+                TypeSelection.forEach(status => {
+                    if(status.id == element.status){
+                        info = status.name;
+                    }
+                });
+                html = html+ `<label> Thời gian : ${element.updated_at} Trạng thái : ${info}  </label><br/>`
+            });     
+    
+            var htmlDetail =`<div style=" height: 100%; overflow: hidden;" >
+                                 <div style="width: 20%; float:left;">
+                                    <img src="/sparc_landing_page/images/sparc-lab-logo.png" width ="80px" height="80px" alt=""/>
+                                    <label>  </label>
+                                    <img src="/teznews/images/timeline.png" width ="50px" height="100px" alt="chợ xanh 4 mùa" />
+                                </div>
+                                <div style="width: 80%; float:right; ">
+                                    <h2>Thông báo</h2></br>
+                                    <div  style=" margin-left: 1px; text-align: left; ">
+                                    ${html}
+                                    <div>
+                                </div>
+                            </div>`;
+            Swal.fire({
+                html: htmlDetail,
+                confirmButtonText: 'Đóng',
+                focusConfirm: false,
+                customClass: 'swal-height',
+                allowOutsideClick: false,
+                showCloseButton: true
+
+              });
+                                
+        }
+    });
+
+}
+
+function cancelTheBill(){
+    if(statusTheBill==40||statusTheBill==60){
+        return ;
+    }
+    Swal.fire({
+        title: 'Hủy đơn hàng',
+        html: `Bạn chắc chắn hủy đơn hàng này chứ`,
+        showCancelButton: true,
+        confirmButtonText: 'Đồng ý',
+        cancelButtonText:" Quay lại",
+        allowOutsideClick: false,
+        showCloseButton: true,
+        focusConfirm: false,
+        }).then((result)=>{
+                if(result.isConfirmed) {
+                    Swal.fire({
+                        title: 'Xin vui lòng cho biết lý do Hủy đơn hàng',
+                        input: 'text',
+                        inputAttributes: {
+                            autocapitalize: 'off'
+                        },
+                        showCancelButton: true,
+                        allowOutsideClick: false,
+                                    showCloseButton: true,
+                        confirmButtonText: 'Look up',
+                        showLoaderOnConfirm: true,
+                        preConfirm: (dataInfo) => {
+                            postInfoData('/api/customers/cancel_bill',{buyproduct_id:dataView,note:dataInfo},(data)=>{
+                                if(!data.error) {
+                                    location.reload();
+                                }
+                                else   throw new Error(response.statusText)
+                            });
+                        },
+                        allowOutsideClick: () => !Swal.isLoading()
+                        }).then((result) => {
+                            var info = "Lỗi! Xin vui lòng thử lại";
+                            if (result.isConfirmed) {
+                                info = "Xin vui lòng đợi bên bán hàng confirm";
+                            }
+                            Swal.fire({ title: info,allowOutsideClick: false,
+                                    showCloseButton: true })
+                        })
+                }
+        });
+}
+
+</script>

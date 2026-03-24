@@ -1,0 +1,122 @@
+<style>
+
+    .info-page-button{ 
+                width: 40px;
+                height: 40px;
+                font-size: 20px;
+               
+                margin-left: 10px;
+                margin-right: 10px;
+                border-radius: 8px;
+                border: 2px solid #7c7777;
+                /*margin-left: -3px;*/
+    }
+
+    .info-page-button.active{
+        border: 2px solid black;
+    }
+    .container-page {
+        font-family: arial;
+        font-size: 24px;
+        display: flex;
+        width: 100%;
+        height: auto;
+        margin: 10px;
+    }
+    .container-page-detail {
+        /* Center horizontally*/
+        text-align: center;
+        display: flex;
+        margin: 0 auto;
+    }
+
+       
+</style>
+
+    <div class="container-page">
+        <div class="container-page-detail" id="lst-file-to-page" style="margin-top: 10px;">
+                        
+        </div>
+    </div>
+
+<script type="text/javascript">  
+
+    var locationSelect = 0;
+    var layout_pages_numberPages =0;
+    
+    function selectPageProduct(item){
+        locationSelect=item;
+        searchDataInfoLocation(item,item+10);
+    }
+
+    function getSelectInfo(dataCount,locationSelect=0){
+            var htmlInfo = ` <button class="info-page-button" onClick="selectPageProduct(0)" >&#8810;</button>`;
+                
+            if(dataCount<90){
+                for(var i=0;i<dataCount;i=i+10){
+                    if(locationSelect==i)
+                        htmlInfo = htmlInfo +`<button class="info-page-button active" onClick="selectPageProduct(${i})" >${i/10+1}</button>`;
+                    else
+                        htmlInfo = htmlInfo +`<button class="info-page-button" onClick="selectPageProduct(${i})" >${i/10+1}</button>`;
+                }
+            }
+            else
+            {
+                var dataCheck=[10,20,30,40,50,60,70,80,-90];
+                if(locationSelect>80){
+                    if((dataCount-70)<locationSelect){
+                        var start = parseInt(Math.floor((dataCount-70)/10))*10;
+                        var endData = parseInt(Math.floor(dataCount/10))*10;
+                        var countData = 1;
+                        dataCheck[0]=-(start-10);
+                        if(endData<dataCount){
+                            start = start+10 ;
+                            dataCheck[0]=-(start-10);
+                            endData = endData+10;
+                        } 
+                        endData = endData +10;
+                        for(var i=start;i<endData;i=i+10){
+                            dataCheck[countData] = i;
+                            countData ++;
+                        }
+                    }
+                    else {
+                       
+                        var start = parseInt(Math.floor((locationSelect-40)/10))*10;
+                        var endData = parseInt(Math.floor((locationSelect+30)/10))*10;
+                        dataCheck[8]=-(endData);
+                        dataCheck[0]=-(start-10);
+                        var countData = 1;
+                        for(var i=start;i<endData;i=i+10){
+                            dataCheck[countData] = i;
+                            countData ++;
+                        }
+                    }
+                }
+
+                for(var i=0;i<9;i++){
+                    if(dataCheck[i]<0){
+                        htmlInfo = htmlInfo +`<button class="info-page-button" onClick="selectPageProduct(${0-dataCheck[i]})" >...</button>`;
+                    }
+                    else
+                    {
+                        if(locationSelect==dataCheck[i])
+                            htmlInfo = htmlInfo +`<button class="info-page-button active" onClick="selectPageProduct(${dataCheck[i]})" >${dataCheck[i]/10}</button>`;
+                        else
+                            htmlInfo = htmlInfo +`<button class="info-page-button" onClick="selectPageProduct(${dataCheck[i]})" >${dataCheck[i]/10}</button>`;
+                    }
+                }
+            }
+            var endDataX = parseInt(Math.floor(dataCount/10))*10;
+            if(endData<dataCount){
+                            start = start+10 ;
+                            dataCheck[0]=-(start-10);
+                            endData = endData+10;
+            } 
+
+            htmlInfo = htmlInfo + ` <button class="info-page-button"  onClick="selectPageProduct(${endDataX})" >&#8811;</button>`;
+            $("#lst-file-to-page").html(htmlInfo);
+    }
+
+
+</script>

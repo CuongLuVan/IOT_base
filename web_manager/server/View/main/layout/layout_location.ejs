@@ -1,0 +1,153 @@
+<div class="dropdown">
+    <div class="select">
+    <span id="id_city_info_name">Tỉnh/Thành phố</span>
+    <i class="fa fa-chevron-left"></i>
+    </div>
+    <input type="hidden" name="gender">
+    <ul class="dropdown-menu" id="id_city_info" >
+        <li id="male">Male</li>
+        <li id="female">Female</li>
+    </ul>
+</div>
+
+<div class="dropdown">
+    <div class="select">
+    <span id="id_province_info_name" >Quận/Huyện</span>
+    <i class="fa fa-chevron-left"></i>
+    </div>
+    <input type="hidden" name="gender">
+    <ul class="dropdown-menu"  id="id_province_info"  >
+      
+    </ul>
+</div>
+
+<div class="dropdown">
+    <div class="select">
+    <span  id="id_village_info_name" >Xã phường</span>
+    <i class="fa fa-chevron-left"></i>
+    </div>
+    <input type="hidden" name="gender">
+    <ul class="dropdown-menu"  id="id_village_info" >
+       
+    </ul>
+</div>
+
+<button class="button-search-detail" onclick="searchDataInfoLocation()" > Danh sách</button>    
+
+
+<script type="text/javascript">  
+        /*Dropdown Menu*/
+        var idSelect = { city:0 , village :0,province:0 ,nameLocation:""};
+        function GetProvineceInfo(id){
+            var infoDataProvince ='';
+            var lstinfo =-1;
+            idSelect.province=0;
+            
+            provinceInfoData.forEach(element => {
+                if(parseInt(element.city_id)==id){
+                    if(lstinfo==-1) lstinfo =id;
+                    infoDataProvince = infoDataProvince +
+                                             ` <li id="${2000000 + parseInt(element.province_id)}">${element.name_province}</li>`;
+                }    
+            });
+            $('#id_province_info').html(infoDataProvince);
+            GetVillageInfo(lstinfo);
+            //refeshCheckList();
+            $("#id_province_info_name").html('Quận/Huyện');
+        }
+
+        function GetVillageInfo(id){
+            var infoDataVillage ='';
+           // idSelect.province=0;
+            idSelect.village=0;
+            villageInfoData.forEach(element => {
+                if(parseInt(element.province_id)==id)
+                    infoDataVillage = infoDataVillage + ` <li id="${element.village_id}">${element.name_village}</li>`;
+            });
+            $('#id_village_info').html(infoDataVillage);
+            refeshCheckList();
+            $("#id_village_info_name").html('Xã/Phường');
+        }
+
+        var infoSelectData = -1;
+
+        function refeshCheckList(){
+            $(".dropdown").unbind();
+            $(".dropdown .dropdown-menu li").unbind();
+
+            $('.dropdown').click(function () {
+                $(this).attr('tabindex', 1).focus();
+                $(this).toggleClass('active');
+                $(this).find('.dropdown-menu').slideToggle(300);
+            });
+            $('.dropdown').focusout(function () {
+                $(this).removeClass('active');
+                $(this).find('.dropdown-menu').slideUp(300);
+            });
+            $('.dropdown .dropdown-menu li').click(function () {
+                $(this).parents('.dropdown').find('span').text($(this).text());
+                $(this).parents('.dropdown').find('input').attr('value', $(this).attr('id'));
+            });
+            /*End Dropdown Menu*/
+
+            $('.dropdown-menu li').click(function () {
+                var input = parseInt(this.id);
+                var value = parseInt(input/1000000);
+                var dataCheck =  parseInt(input%1000000);
+               // if(input!=infoSelectData ){
+                    infoSelectData = input;
+                    if(value==0){ //{ city:0 , village :0,province:0};
+                        idSelect.village = dataCheck;
+                    } else if(value==1){
+                        idSelect.city = dataCheck;
+                        GetProvineceInfo(dataCheck);
+                    } else if(value==2){
+                        idSelect.province = dataCheck;
+                        GetVillageInfo(dataCheck);
+                    }
+                
+            }); 
+        }
+
+        var infoDataCity ='';
+        cityInfoData.forEach(element => {
+            infoDataCity = infoDataCity + ` <li id="${1000000 + parseInt(element.city_id)}">${element.name_city}</li>`;
+        });
+        $('#id_city_info').html(infoDataCity);
+
+
+        refeshCheckList();
+
+        function searchDataInfoLocation(start=0,end=0){
+            if(checkAreLocationNotInval()) return;
+           var dataInfo =JSON.parse(JSON.stringify(idSelect));
+           dataInfo.start=start;
+           dataInfo.end=end;
+           if(end==0) dataInfo.end=10;
+           postInfoData('/api/customers/search_location',dataInfo,(data)=> {      
+               if(!data.error){
+                   document.getElementById("best-seller-items1").classList.add("best-seller-group-tower");
+                   document.getElementById("best-seller-items2").classList.add("best-seller-group-tower");
+                   setListCompanyToView(data.data.result,"#best-seller-items1");
+                   setListProductToView(data.data.result,"#best-seller-items2");
+                   getSelectInfo(layout_pages_numberPages,locationSelect);
+               }  
+                                
+           });
+          
+           if(end==0){
+                var dataInfoSP =JSON.parse(JSON.stringify(idSelect));
+                dataInfoSP.count_data =true;
+                postInfoData('/api/customers/search_location',dataInfoSP,(data)=> {      
+                    if(!data.error){
+                            layout_pages_numberPages=data.data.result[0].number_store;
+                            getSelectInfo(data.data.result[0].number_store);
+                    }          
+                }); 
+           }
+             
+       }
+
+      
+
+</script>

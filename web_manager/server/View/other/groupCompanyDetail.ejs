@@ -1,0 +1,300 @@
+<html lang="en">
+    <link href="https://fonts.googleapis.com/css?family=Roboto:400,700" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <% include ./layout/header.ejs %>
+  <body>
+    <% include ./layout/menuSale-new.ejs %>
+    <style>
+        span.msg,
+            span.choose {
+                color: #555;
+                padding: 5px 0 10px;
+                display: inherit
+            }
+            .container {
+                /*width: 500px;*/
+      
+               
+                margin: 50px auto 0;
+                text-align: center
+            }
+
+            /*Styling Selectbox*/
+            .dropdown {
+                width: 200px;
+                margin-right: 50px;
+                display: inline-block;
+                background-color: #fff;
+                border-radius: 2px;
+                box-shadow: 0 0 2px rgb(204, 204, 204);
+                transition: all .5s ease;
+                position: relative;
+                font-size: 14px;
+                color: #474747;
+                margin: 5px;
+                text-align: left
+            }
+            .dropdown .select {
+                cursor: pointer;
+                display: block;
+                padding: 10px
+            }
+            .dropdown .select > i {
+                font-size: 13px;
+                color: #888;
+                cursor: pointer;
+                transition: all .3s ease-in-out;
+                float: right;
+                line-height: 20px
+            }
+            .dropdown:hover {
+                box-shadow: 0 0 4px rgb(204, 204, 204)
+            }
+            .dropdown:active {
+                background-color: #f8f8f8
+            }
+            .dropdown.active:hover,
+            .dropdown.active {
+                box-shadow: 0 0 4px rgb(204, 204, 204);
+                border-radius: 2px 2px 0 0;
+                background-color: #f8f8f8
+            }
+            .dropdown.active .select > i {
+                transform: rotate(-90deg)
+            }
+            .dropdown .dropdown-menu {
+                position: absolute;
+                background-color: #fff;
+                width: 100%;
+                left: 0;
+                margin-top: 1px;
+                box-shadow: 0 1px 2px rgb(204, 204, 204);
+                border-radius: 0 1px 2px 2px;
+                overflow: hidden;
+                display: none;
+                max-height: 144px;
+                overflow-y: auto;
+                z-index: 9
+            }
+            .dropdown .dropdown-menu li {
+                padding: 10px;
+                transition: all .2s ease-in-out;
+                cursor: pointer
+            } 
+            .dropdown .dropdown-menu {
+                padding: 0;
+                list-style: none
+            }
+            .dropdown .dropdown-menu li:hover {
+                background-color: #f2f2f2
+            }
+            .dropdown .dropdown-menu li:active {
+                background-color: #e2e2e2
+            }
+
+            .button-search-detail {
+                align-items: center;
+                background-color:#00DDEB;
+                border: 0;
+                border-radius: 8px;
+                box-sizing: border-box;
+                margin-right: 10px;
+                color: #FFFFFF;
+                font-family: Phantomsans, sans-serif;
+                font-size: 16px;
+                justify-content: center;
+                width: 150px;
+                padding: 1px 2px;
+                text-decoration: none;
+                user-select: none;
+                -webkit-user-select: none;
+                touch-action: manipulation;
+                white-space: nowrap;
+                cursor: pointer;
+            }
+            
+            @import url(https://fonts.googleapis.com/css?family=Open+Sans);
+
+            .search {
+                width: 100%;
+                position: relative;
+                display: flex;
+            }
+
+            .searchTerm {
+                width: 100%;
+                border: 3px solid #00B4CC;
+                border-right: none;
+                padding: 5px;
+                height: 36px;
+                border-radius: 5px 0 0 5px;
+                outline: none;
+                color: #9DBFAF;
+            }
+
+            .searchTerm:focus{
+                color: #00B4CC;
+            }
+
+            .searchButton {
+                width: 40px;
+                height: 36px;
+                border: 1px solid #00B4CC;
+                background: #00B4CC;
+                text-align: center;
+                color: #fff;
+                border-radius: 0 5px 5px 0;
+                cursor: pointer;
+                font-size: 20px;
+            }
+            .wrap{
+                width: 30%;
+                position: absolute;
+                left: 50%;
+                transform: translate(-50%, -50%);
+            }
+            @media only screen and (max-width: 600px) {
+                .wrap{
+                width: 75%;
+                position: absolute;
+                left: 50%;
+                transform: translate(-50%, -50%);
+            }
+            }
+           
+    </style>
+     <script src="/static/city.js"></script>
+     <script src="/static/province.js"></script>            
+
+    <div class="container">
+        <span class="choose">
+            <div class="wrap">
+                <div class="search">
+                   <input type="text" id="value_search_location" class="searchTerm" placeholder="Tìm kiếm bằng từ khóa?">
+                   <button class="searchButton" onclick="searchInfo()">
+                     <i class="fa fa-search"></i>
+                  </button>
+                </div>
+            </div>
+        </span>
+		
+	</div>
+    <div class="container row" >
+        
+        <div class="col-md-2 col-sm-2 col-xs-2"  >
+            <div id="best-company-section" ></div>
+        </div>
+        <div class="col-md-10 col-sm-10 col-xs-10" >
+            
+            <section id="best-seller-section">
+                <h2 class="best-seller-caption text-center" id="name-group-info" ><!---IC----></h2>
+                <div class="row best-seller-group-tower grid" id="best-seller-items">
+                </div>
+                <div class="best-seller-load-more text-center">
+                
+                </div>
+            </section>
+        </div>
+       
+       
+
+        <script type="text/javascript">
+                var lstProduct = [];
+                var infoDataSave = null;
+                function setListProductToView(items, itemHtml,company) {
+                        var html='';
+                        items.forEach((element) => {
+                            let itemInfo = company.filter(o=>(o.company_id==element.company_id))
+                            let nameCompany = (itemInfo.length>0?itemInfo[0].companyname:"");
+                            if(lstProduct.includes(element.company_id))
+                                html+=`<div class="col-xs-12"> 
+                                        <a href="/product_info/detail?type=${element.product_id}">
+                                        <div class="best-seller-item">
+                                            <div class="image-block-view">
+                                                <div class="image-block-view-215" >
+                                                    <img src="${element.image}" class="best-seller-item-image img-fluid"  alt="chợ xanh 4 mùa"  />
+                                                </div>
+                                            </div>
+                                            <div class="best-seller-item-info">
+                                            <div class="info-name">${element.name}</div>
+                                            <div class="info-price">
+                                                <span class="info-company-detail">${ nameCompany}</span>
+                                            </div>
+                                            </div>
+                                        </div>
+                                        </a>
+                                    </div>`;
+                        });
+                        $(itemHtml).html(html);
+                }
+
+
+                function checkCompany(id)
+                {
+                    var checkbox = document.getElementById('fluency'+id);
+                    if (checkbox.checked != true)
+                    {
+                        if(lstProduct.includes(id)){
+                            lstProduct = lstProduct.filter(item => item !== id);
+                        }
+                    }
+                    else
+                    {
+                        if(!lstProduct.includes(id)){
+                            lstProduct.push(id);
+                        }
+                    }//infoDataSave
+                    setListProductToView(infoDataSave.product,"#best-seller-items",infoDataSave.company);
+                }
+
+                function getAllCheckBox(items,htmlTag){
+                        var html='';
+                      
+                        items.forEach((element,index) => {
+                            //.substring(0, 20)
+                            lstProduct.push(element.company_id);
+                            html+= `<div style="float: left;display: flex;flex-direction: row;flex-wrap: nowrap;"> 
+                                        <input onclick="checkCompany(${element.company_id})" 
+                                                 id="fluency${element.company_id}"   
+                                                style="width: 20px; margin: 1px;position: absolute;" type="checkbox"
+                                                 name="vehicle${index}" value="${element.company_id}" checked />
+                                        <label  style="margin-left: 20px;"  for="vehicle${index}">${element.companyname}</label><br>
+                                    </div>`;
+                        });
+                        $(htmlTag).html(html);
+                }
+
+        </script>
+
+    </div>
+
+    <script type="text/javascript">  
+            /*Dropdown Menu*/
+
+       // function searchInfo(){
+            var dataView = ('<%= detail %>').replaceAll('type=', '');
+            var dataInfo = { group_company_id:dataView};
+            postInfoData('/api/customers/get_group_company',dataInfo,(data)=> {    
+                if(!data.error){
+                    infoDataSave = data.data.result;
+                    getAllCheckBox(data.data.result.company,"#best-company-section");
+                    setListProductToView(data.data.result.product,"#best-seller-items",data.data.result.company);
+                }
+            });  
+       // }
+       function searchInfo(){
+            var dataInfoDetail = { group_company_id:dataView,data_contain:$("#value_search_location").val()};
+            postInfoData('/api/customers/get_group_company',dataInfoDetail,(data)=> {   
+                if(!data.error){
+                    infoDataSave = data.data.result;
+                    getAllCheckBox(data.data.result.company,"#best-company-section");
+                    setListProductToView(data.data.result.product,"#best-seller-items",data.data.result.company);
+                }
+            });
+       }
+        
+    </script>
+    
+    <br/>
+  </body>
+</html>

@@ -1,0 +1,54 @@
+<div class="col-lg-6 col-xs-12 image-product text-center" style="margin-top: 0px !important;margin-bottom: 30px;">
+    <img src="" class="img-fluid" alt="Responsive image" id="main_product_detail" />
+    <div class="product-gallery" style="height: 80px;" >
+        <!-- <i onClick="nextSilde()" class="fa fa-chevron-left product-image-left"></i> -->
+        <div class="col-xs-6 product-gallery main_support_pro_detail" style="height: 80px;"   id="main_support_pro_detail">
+        </div>
+        <!-- <i onClick="prevosSilde()" class="fa fa-chevron-right product-image-right"></i>-->
+    </div>
+    <!-- Carousel section -->
+</div>
+<script type="text/javascript">  
+    function selectImageView(element){
+        $("#main_product_detail").attr("src",element.image_info_detail );
+    }
+    function onChangeLinkClick(link){ 
+            $("#main_product_detail").attr("src",link );
+    }
+    function setCarretImage(loadcofig){  
+        var tupeSupportImage='';
+        var responsiveInfo ={};
+        for(var i=0;i<loadcofig.length;i++ ){
+            if(loadcofig[i].image_info_detail!=null){
+                tupeSupportImage+=` <div class="item"> <img  src='${loadcofig[i].image_info_detail}' onclick='onChangeLinkClick("${loadcofig[i].image_info_detail}")' width='100' alt="chợ xanh 4 mùa" />  </div>`;
+            } 
+            //responsiveInfo[i*80]= { items:i};
+        }
+        tupeSupportImage =` <div class="carousel-wrap"> <div class="owl-carousel owl-theme">
+            `+ tupeSupportImage+
+        `</div> </div>
+        <div class="slider_nav">
+
+        </div>
+        `;
+        /*
+                    <img  class="am-next info-check-carret" src='/pinkky/images/next-preview.png'  width='70' onClick="nextSilde()" alt="chợ xanh 4 mùa" />
+            <img  class="am-prev info-check-carret" src='/pinkky/images/back-preview.png'  width='70' onClick="prevosSilde()"   alt="chợ xanh 4 mùa" />
+        */
+        $('#main_support_pro_detail').html(tupeSupportImage);  
+        setTimeout(()=>{
+            $('.owl-carousel').owlCarousel({ nav: true, navigation: true,
+                                        loop: false, margin: 10, autoplay: true,
+                                        smartSpeed: 200,dots: false,
+                                        autoHeight: true,lazyLoad:true,
+                                        navText: [$('.am-next'),$('.am-prev')],
+                                        dots: true,
+                                        autoHeight:true,
+                                        autoWidth:true
+                             });
+        },100);         
+    }
+
+</script>
+
+

@@ -1,0 +1,357 @@
+<html lang="en">
+    <link href="https://fonts.googleapis.com/css?family=Roboto:400,700" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <% include ./layout/header.ejs %>
+  <body>
+    <% include ./layout/menuSale-new.ejs %>
+    <style>
+        span.msg,
+            span.choose {
+                color: #555;
+                padding: 5px 0 10px;
+                display: inherit
+            }
+            .container {
+                /*width: 500px;*/
+      
+               
+                margin: 50px auto 0;
+                text-align: center
+            }
+
+            /*Styling Selectbox*/
+            .dropdown {
+                width: 200px;
+                margin-right: 50px;
+                display: inline-block;
+                background-color: #fff;
+                border-radius: 2px;
+                box-shadow: 0 0 2px rgb(204, 204, 204);
+                transition: all .5s ease;
+                position: relative;
+                font-size: 14px;
+                color: #474747;
+                margin: 5px;
+                text-align: left
+            }
+            .dropdown .select {
+                cursor: pointer;
+                display: block;
+                padding: 10px
+            }
+            .dropdown .select > i {
+                font-size: 13px;
+                color: #888;
+                cursor: pointer;
+                transition: all .3s ease-in-out;
+                float: right;
+                line-height: 20px
+            }
+            .dropdown:hover {
+                box-shadow: 0 0 4px rgb(204, 204, 204)
+            }
+            .dropdown:active {
+                background-color: #f8f8f8
+            }
+            .dropdown.active:hover,
+            .dropdown.active {
+                box-shadow: 0 0 4px rgb(204, 204, 204);
+                border-radius: 2px 2px 0 0;
+                background-color: #f8f8f8
+            }
+            .dropdown.active .select > i {
+                transform: rotate(-90deg)
+            }
+            .dropdown .dropdown-menu {
+                position: absolute;
+                background-color: #fff;
+                width: 100%;
+                left: 0;
+                margin-top: 1px;
+                box-shadow: 0 1px 2px rgb(204, 204, 204);
+                border-radius: 0 1px 2px 2px;
+                overflow: hidden;
+                display: none;
+                max-height: 144px;
+                overflow-y: auto;
+                z-index: 9
+            }
+            .dropdown .dropdown-menu li {
+                padding: 10px;
+                transition: all .2s ease-in-out;
+                cursor: pointer
+            } 
+            .dropdown .dropdown-menu {
+                padding: 0;
+                list-style: none
+            }
+            .dropdown .dropdown-menu li:hover {
+                background-color: #f2f2f2
+            }
+            .dropdown .dropdown-menu li:active {
+                background-color: #e2e2e2
+            }
+
+            .button-search-detail {
+                align-items: center;
+                background-color:#00DDEB;
+                border: 0;
+                border-radius: 8px;
+                box-sizing: border-box;
+                margin-right: 10px;
+                color: #FFFFFF;
+                font-family: Phantomsans, sans-serif;
+                font-size: 16px;
+                justify-content: center;
+                width: 150px;
+                padding: 1px 2px;
+                text-decoration: none;
+                user-select: none;
+                -webkit-user-select: none;
+                touch-action: manipulation;
+                white-space: nowrap;
+                cursor: pointer;
+            }
+            
+            @import url(https://fonts.googleapis.com/css?family=Open+Sans);
+
+            .search {
+                width: 100%;
+                position: relative;
+                display: flex;
+            }
+
+            .searchTerm {
+                width: 100%;
+                border: 3px solid #00B4CC;
+                border-right: none;
+                padding: 5px;
+                height: 36px;
+                border-radius: 5px 0 0 5px;
+                outline: none;
+                color: #9DBFAF;
+            }
+
+            .searchTerm:focus{
+                color: #00B4CC;
+            }
+
+            .searchButton {
+                width: 40px;
+                height: 36px;
+                border: 1px solid #00B4CC;
+                background: #00B4CC;
+                text-align: center;
+                color: #fff;
+                border-radius: 0 5px 5px 0;
+                cursor: pointer;
+                font-size: 20px;
+            }
+            .wrap{
+                width: 30%;
+                position: absolute;
+                left: 50%;
+                transform: translate(-50%, -50%);
+            }
+            @media only screen and (max-width: 600px) {
+                .wrap{
+                width: 75%;
+                position: absolute;
+                left: 50%;
+                transform: translate(-50%, -50%);
+            }
+            }
+           
+    </style>
+     <script src="/static/city.js"></script>
+     <script src="/static/province.js"></script> 
+     <script src="/static/village.js"></script>            
+    <div class="container">
+        <span class="choose">Tìm cửa hàng theo khu vực</span>
+    
+        <div class="dropdown">
+            <div class="select">
+            <span id="id_city_info_name">Tỉnh/Thành phố</span>
+            <i class="fa fa-chevron-left"></i>
+            </div>
+            <input type="hidden" name="gender">
+            <ul class="dropdown-menu" id="id_city_info" >
+                <li id="male">Male</li>
+                <li id="female">Female</li>
+            </ul>
+        </div>
+
+        <div class="dropdown">
+            <div class="select">
+            <span id="id_province_info_name" >Quận/Huyện</span>
+            <i class="fa fa-chevron-left"></i>
+            </div>
+            <input type="hidden" name="gender">
+            <ul class="dropdown-menu"  id="id_province_info"  >
+              
+            </ul>
+        </div>
+
+        <div class="dropdown">
+            <div class="select">
+            <span  id="id_village_info_name" >Xã phường</span>
+            <i class="fa fa-chevron-left"></i>
+            </div>
+            <input type="hidden" name="gender">
+            <ul class="dropdown-menu"  id="id_village_info" >
+               
+            </ul>
+        </div>
+        <button class="button-search-detail" onclick="searchInfo()" > Danh sách</button>    
+    </div>
+
+    <div class="container">
+		<div class="wrap">
+            <div class="search">
+               <input type="text" id="value_search_location" class="searchTerm" placeholder="Tìm kiếm bằng từ khóa?">
+               <button class="searchButton" onclick="searchInfo()">
+                 <i class="fa fa-search"></i>
+              </button>
+            </div>
+        </div>
+	</div>
+    <div class="container">  
+        <section id="best-seller-section">
+            <h2 class="best-seller-caption text-center" id="name-group-info" ><!---IC----></h2>
+            <div class="row best-seller-group grid" id="best-seller-items">
+            </div>
+            <div class="best-seller-load-more text-center">
+            
+            </div>
+        </section>
+
+
+  <script type="text/javascript">
+        function setListProductToView(items, itemHtml) {
+                var html='';
+                items.forEach((element) => {
+                    html+=`<div class="col-xs-12"> 
+                            <a href="/tower_detail?type=${element.group_company_id}">
+                            <div class="best-seller-item">
+                                <div class="image-block-view">
+                                    <div class="image-block-view-all" >
+                                        <img
+                                        src="${element.image}"
+                                        class="best-seller-item-image img-fluid"
+                                        alt=""
+                                        />
+                                    </div>
+                                </div>
+                                <div class="best-seller-item-info">
+                                <div class="info-name">${element.name_group_company}</div>
+                                <div class="info-price">
+                                    <span class="info-price-discount">${element.adress}</span>
+                                </div>
+                                </div>
+                            </div>
+                            </a>
+                        </div>`;
+                });
+                $(itemHtml).html(html);
+        }
+  </script>
+
+    </div>
+
+    <script type="text/javascript">  
+            /*Dropdown Menu*/
+        var idSelect = { city:0 , village :0,province:0 ,nameLocation:""};
+        function GetProvineceInfo(id){
+            var infoDataProvince ='';
+            var lstinfo =-1;
+            idSelect.province=0;
+            
+            provinceInfoData.forEach(element => {
+                if(parseInt(element.city_id)==id){
+                    if(lstinfo==-1) lstinfo =id;
+                    infoDataProvince = infoDataProvince +
+                                             ` <li id="${2000000 + parseInt(element.province_id)}">${element.name_province}</li>`;
+                }    
+            });
+            $('#id_province_info').html(infoDataProvince);
+            GetVillageInfo(lstinfo);
+            //refeshCheckList();
+            $("#id_province_info_name").html('Quận/Huyện');
+        }
+
+        function GetVillageInfo(id){
+            var infoDataVillage ='';
+           // idSelect.province=0;
+            idSelect.village=0;
+            villageInfoData.forEach(element => {
+                if(parseInt(element.province_id)==id)
+                    infoDataVillage = infoDataVillage + ` <li id="${element.village_id}">${element.name_village}</li>`;
+            });
+            $('#id_village_info').html(infoDataVillage);
+            refeshCheckList();
+            $("#id_village_info_name").html('Xã/Phường');
+        }
+
+        var infoSelectData = -1;
+
+        function refeshCheckList(){
+            $(".dropdown").unbind();
+            $(".dropdown .dropdown-menu li").unbind();
+
+            $('.dropdown').click(function () {
+                $(this).attr('tabindex', 1).focus();
+                $(this).toggleClass('active');
+                $(this).find('.dropdown-menu').slideToggle(300);
+            });
+            $('.dropdown').focusout(function () {
+                $(this).removeClass('active');
+                $(this).find('.dropdown-menu').slideUp(300);
+            });
+            $('.dropdown .dropdown-menu li').click(function () {
+                $(this).parents('.dropdown').find('span').text($(this).text());
+                $(this).parents('.dropdown').find('input').attr('value', $(this).attr('id'));
+            });
+            /*End Dropdown Menu*/
+
+            $('.dropdown-menu li').click(function () {
+                var input = parseInt(this.id);
+                var value = parseInt(input/1000000);
+                var dataCheck =  parseInt(input%1000000);
+               // if(input!=infoSelectData ){
+                    infoSelectData = input;
+                    if(value==0){ //{ city:0 , village :0,province:0};
+                        idSelect.village = dataCheck;
+                    } else if(value==1){
+                        idSelect.city = dataCheck;
+                        GetProvineceInfo(dataCheck);
+                    } else if(value==2){
+                        idSelect.province = dataCheck;
+                        GetVillageInfo(dataCheck);
+                    }
+                
+            }); 
+        }
+
+        function searchInfo(){
+            idSelect.nameLocation = $('#value_search_location').val() ;
+            postInfoData('/api/customers/find_group_company',idSelect,(data)=> {   
+                setListProductToView(data.data.result,"#best-seller-items");                      
+            });  
+        }
+        
+    </script>
+    <script type="text/javascript">  
+        var infoDataCity ='';
+        cityInfoData.forEach(element => {
+            infoDataCity = infoDataCity + ` <li id="${1000000 + parseInt(element.city_id)}">${element.name_city}</li>`;
+        });
+        $('#id_city_info').html(infoDataCity);
+
+
+        refeshCheckList();
+
+    </script>
+    
+    <br/>
+  </body>
+</html>

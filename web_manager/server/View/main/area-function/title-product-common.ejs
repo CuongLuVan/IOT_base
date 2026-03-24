@@ -1,0 +1,145 @@
+<div class="detail-name-star border-bottom">
+    <h1 class="info-name" id="info_name_product"  ></h1>
+</div>
+<div class="mb-2 detail-price-method">
+    <div class="info-price">
+        <span class="info-price-discount" id="cost_value_calculator" ></span>
+        <span class="info-price-percent">
+                <del id="cost_value_delete"></del>
+        </span>
+    </div>
+
+    <div class="info-method border-bottom">
+        <div class="info-method-discount grid" id="main_value_promotion">
+            <span class="lh-2"><%= __('promotionPages') %>: </span>
+            <span class="text-discount" id="cost_value_promotion" ></span>
+        </div>
+        <div class="info-method-discount grid">
+            <span class="lh-2"><%= __('productPage') %>: </span>
+            <span id="value_product" style=" width: -webkit-fill-available;" ></span>
+        </div>
+        <div class="info-method-discount grid">
+            <span class="lh-2"  id="store_product_location_main"><%= __('storeLocatin') %>: </span>
+            <span id="store_product_location"></span>
+        </div>
+        <div class="info-method-discount grid">
+            <span class="lh-2"><%= __('contactPage') %>: </span>
+            <span id="store_product_online" style=" width: -webkit-fill-available;" >Shopee</span>
+        </div>
+    </div>
+    <% include ./cart-counter-common.ejs %>
+</div>
+
+
+<script type="text/javascript">  
+    var dataInfo=null;
+    var numberSelect=0;
+    function onChangeCostProduct(value){ 
+               numberSelect=value;
+               $('#info_name_product').html(dataInfo[value].detail);
+               $('#titlle_product').html(dataInfo[value].detail);
+               
+               if(dataInfo[value].cost_detail<0){
+                    $("#cost_value_calculator").html("Giá : Liên hệ");
+                    $("#cost_value_delete").html("");
+                    $("#cost_value_promotion").html("");
+                    $("#main_value_promotion").html("");
+                    $("#store_product_location").html("");
+                    $("#store_product_location_main").html("");
+                    $("#cart_detiail_id_check").html("");
+                    
+                    
+                    
+               }
+               else
+               {
+                    $("#cost_value_calculator").html("Giá : " + setValueCost(dataInfo[value].cost_detail,"VND") );
+                    if(dataInfo[value].cost_detail==dataInfo[value].cost_real){
+                            $("#cost_value_delete").html("");
+                    }
+                    else
+                    {
+                            $("#cost_value_delete").html(setValueCost(dataInfo[value].cost_real,"VND"));
+                    }
+
+                    if(dataInfo[value].store==1){
+                        $("#cost_value_calculator").html("Giá : " +  setValueCost(dataInfo[value].cost_detail,"VND")  + " / Đã hết hàng ");
+                        $("#cart_detiail_id_check").html("");
+                    }
+                    
+                    $("#cost_value_promotion").html(dataInfo[value].promotion);
+                    if(dataInfo[value].promotion!=null&&dataInfo[value].promotion.length<3){
+                            $("#main_value_promotion").html("");
+                    } 
+                        //$("#store_product_location").html("Còn lại "+ dataInfo[value].number+" sp trong "+ dataInfo[value].content );
+                    if(dataInfo[value].number == dataInfo[value].contain ) 
+                        $("#store_product_location").html(dataInfo[value].content +"(Tạm thời hết hàng)" );
+                    else 
+                        $("#store_product_location").html(dataInfo[value].content );
+               }
+              
+              
+               selectImageView(dataInfo[value]);
+           
+               for(var i=0;i<dataInfo.length;i++) $("#product_detail_cost"+i).attr('class', 'add_to_cart_button');
+               if(dataInfo[value].number == dataInfo[value].contain ) 
+                        $("#product_detail_cost"+value).attr('class', 'cart_btn_unable ');  
+               else
+                        $("#product_detail_cost"+value).attr('class', 'cart_btn_select ');  
+    }
+
+    function gotoCheckInfoValue(loadcofig){  
+        var infoProduct=``;
+        dataInfo = loadcofig;
+        setCarretImage(loadcofig);
+        for(var i=0;i<loadcofig.length;i++ ){
+            if(loadcofig[i].name_image_detail!=null){
+                infoProduct +=`<button class="add_to_cart_button" id="product_detail_cost${i}"
+                                        onclick="onChangeCostProduct(${i})">  
+                                                <span class="tooltiptext">${loadcofig[i].name_image_detail}</span>
+                                        ${loadcofig[i].name_image_detail.length>10?
+                                        (loadcofig[i].name_image_detail.substring(0, 10) +" ..")
+                                        :loadcofig[i].name_image_detail}</button>`;    
+            }   
+        }
+        $('#value_product').html(infoProduct);
+        onChangeCostProduct(0);            
+    }
+
+
+
+    function clickNameInfoData(name,link){
+        var nameLink = link.length>50? link.substring(0,50) +" ..." :link;
+
+        Swal.fire({
+                      title: `<i>${name}</i>`, 
+                      html: `${nameLink} `,  
+                      allowOutsideClick: false,
+                      confirmButtonText: "<u>Truy cập</u>", 
+                      allowOutsideClick: false,
+                      showCloseButton: true
+                    }).then((result) => {
+                            /* Read more about isConfirmed, isDenied below */
+                            if (result.isConfirmed) {
+                                window.open(link,'_blank')
+                            } 
+                    });
+
+    }
+    
+    function getShopOnline(loadcofig){  
+        var value_promotion=` `;
+        for(var i=0;i<loadcofig.length;i++ ){  
+            value_promotion +=(`<button class="add_to_cart_button"`+
+                                ` onclick="clickNameInfoData('${loadcofig[i].name_shop}','${loadcofig[i].link}') "  >`
+                                    +loadcofig[i].name_shop+`</button>`);         
+        }
+        $('#store_product_online').html(value_promotion);             
+    }
+
+    getInfoHtml(('/api/customers/detail_shop?type='+dataView),(dataJson)=>{
+        if(dataJson==false) return; 
+               getShopOnline(dataJson.result);
+    });
+    
+</script>

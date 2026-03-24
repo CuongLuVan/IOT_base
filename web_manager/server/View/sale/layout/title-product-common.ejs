@@ -1,0 +1,87 @@
+<div class="detail-name-star border-bottom">
+    <h3 class="info-name" id="info_name_product"  >Airsense</h3>
+</div>
+<div class="mb-2 detail-price-method">
+    <div class="info-price">
+        <span class="info-price-discount" id="cost_value_calculator" >200.000VND</span>
+        <span class="info-price-percent">
+                <del id="cost_value_delete">534.250VND</del>
+        </span>
+    </div>
+
+    <div class="info-method border-bottom">
+        <div class="info-method-discount grid"  id="main_value_promotion">
+            <span class="lh-2">Khuyến mãi: </span>
+            <span class="text-discount" id="cost_value_promotion" >24% Off</span>
+        </div>
+        <div class="info-method-discount grid">
+            <span class="lh-2">Sản phẩm: </span>
+            <span id="value_product" style=" width: -webkit-fill-available;" >Giảm giá 20%</span>
+        </div>
+        <div class="info-method-discount grid">
+            <span class="lh-2">Kho bãi: </span>
+            <span id="store_product_location">Hanoi</span>
+        </div>
+        <div class="info-method-discount grid">
+            <span class="lh-2">Gian hàng: </span>
+            <span id="store_product_online" style=" width: -webkit-fill-available;" >Shopee</span>
+        </div>
+    </div>
+    <% include ./cart-counter-common.ejs %>
+</div>
+
+
+<script type="text/javascript">  
+    var dataInfo=null;
+    var numberSelect=0;
+    function onChangeCostProduct(value){ 
+               numberSelect=value;
+               $('#info_name_product').html(dataInfo[value].detail);
+               $("#cost_value_calculator").html("Giá : " + setValueCost(dataInfo[value].cost_detail,"VND"));
+               if(dataInfo[value].cost_detail==dataInfo[value].cost_real){
+                    $("#cost_value_delete").html("");
+               }
+               else
+               {
+                    $("#cost_value_delete").html(setValueCost(dataInfo[value].cost_real,"VND"));
+               }
+               $("#cost_value_promotion").html(dataInfo[value].promotion);
+               if(dataInfo[value].promotion!=null&&dataInfo[value].promotion.length<3){
+                    $("#main_value_promotion").html("");
+               } 
+               selectImageView(dataInfo[value]);
+               $("#store_product_location").html("Còn lại "+ dataInfo[value].number+" sp trong "+ dataInfo[value].content );
+               for(var i=0;i<dataInfo.length;i++) $("#product_detail_cost"+i).attr('class', 'add_to_cart_button');
+               $("#product_detail_cost"+value).attr('class', 'cart_btn_select ');  
+    }
+
+    function gotoCheckInfoValue(loadcofig){  
+        var infoProduct=``;
+        dataInfo = loadcofig;
+        setCarretImage(loadcofig);
+        for(var i=0;i<loadcofig.length;i++ ){
+            if(loadcofig[i].name_image_detail!=null){
+                infoProduct +=`<button class="add_to_cart_button" id="product_detail_cost${i}"
+                                        onclick="onChangeCostProduct(${i})">
+                                        ${loadcofig[i].name_image_detail.length>10?(loadcofig[i].name_image_detail.substring(0, 10) +" ..."):loadcofig[i].name_image_detail}</button>`;         
+            }   
+        }
+        $('#value_product').html(infoProduct);
+        onChangeCostProduct(0);            
+    }
+    function getShopOnline(loadcofig){  
+        var value_promotion=` `;
+        for(var i=0;i<loadcofig.length;i++ ){  
+            value_promotion +=(`<button class="add_to_cart_button"`+
+                                ` onclick="window.open('`+loadcofig[i].link+`','_blank')"  >`
+                                    +loadcofig[i].name_shop+`</button>`);         
+        }
+        $('#store_product_online').html(value_promotion);             
+    }
+
+    getInfoHtml(('/api/customers/detail_shop?type='+dataView),(dataJson)=>{
+        if(dataJson==false) return; 
+               getShopOnline(dataJson.result);
+    });
+    
+</script>

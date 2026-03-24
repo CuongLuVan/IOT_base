@@ -1,0 +1,103 @@
+<html lang="en">
+    <% include ./layout/header.ejs %>
+  <body>
+        <% include ./layout/menuSale.ejs %>        
+
+    <style>
+        /* CSS */
+        /* CSS */
+        .button-71 {
+            background-color: #0078d0;
+            border: 0;
+            color: #fff !important;
+            border-radius: 56px;
+            width: 300px;
+            color: #fff;
+            cursor: pointer;
+            display: inline-block;
+            font-family: system-ui,-apple-system,system-ui,"Segoe UI",Roboto,Ubuntu,"Helvetica Neue",sans-serif;
+            font-size: 18px;
+            font-weight: 600;
+            outline: 0;
+            padding: 16px 21px;
+            margin-bottom: 30px;
+            position: relative;
+            text-align: center;
+            text-decoration: none;
+            transition: all .3s;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+        }
+
+        .button-71:before {
+            background-color: initial;
+            background-image: linear-gradient(#fff 0, rgba(255, 255, 255, 0) 100%);
+            border-radius: 125px;
+            content: "";
+            height: 50%;
+            left: 4%;
+            opacity: .5;
+            position: absolute;
+            top: 0;
+            transition: all .3s;
+      
+        }
+
+        .button-71:hover {
+            box-shadow: rgba(255, 255, 255, .2) 0 3px 15px inset, rgba(0, 0, 0, .1) 0 3px 5px, rgba(0, 0, 0, .1) 0 10px 13px;
+            transform: scale(1.05);
+        }
+        .main-view-register{
+            text-align: left;
+            font-size: 23px; 
+        }
+
+        @media (min-width: 768px) {
+            .button-71 {
+                padding: 16px 18px;
+            }
+            .main-view-register{
+                width:70vw;
+            }
+        }
+
+    </style>
+    <main>
+        <div class="product-container">
+                <div class="container">
+                    <div class="main-view-register" >
+                        Đăng ký thành viên khách hàng bạn sẽ có ưu đãi tham gia các hoạt động chợ xanh bốn mùa:
+                        <br/> - Tìm các cửa hàng ưu đãi
+                        <br/> - Tìm các sản phẩm ưng ý
+                        <br/> - Trao đổi , tham khảo, mua bán sản phẩm
+                        <br/> 
+                    </div>
+                    <br/> 
+            
+                    <a  class="button-71" role="button" href="/register-customer">
+                        Đăng ký khách hàng
+                    </a>
+                </div>
+                
+                <div class="container" style="margin-top:100px ;">
+                    <div class="main-view-register" >
+                        Bạn là doanh nghiệp, hay là chủ cửa hàng hay chỉ đăng ký giao vặt nhưng không có web site chính thức ? Hãy để chợ xanh bốn mùa lo nhé. Đăng ký làm người bán bạn có ưu đãi
+                        <br/> - Tự tạo cho mình link site bán sản phẩm không đụng hàng
+                        <br/> - Đăng bán sản phẩm chia sẻ sản phẩm tới cộng đồng
+                        <br/> - Trao đổi , tham khảo, mua bán sản phẩm với khách hàng
+                        <br/> 
+                    </div>
+                    <br/> 
+            
+                    <a  class="button-71" role="button"  href="/register-company">
+                        Đăng ký doanh nghiệp
+                    </a>
+                </div>
+        </div>
+    </main>
+    
+
+    <% include ./layout/footer.ejs %>
+  </body>
+</html>

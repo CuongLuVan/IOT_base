@@ -1,0 +1,50 @@
+<div class="related-product">
+    <h2 class="related-product-caption text-center pb-4">RELATED PRODUCT</h2>
+    <div class="row best-seller-group grid" id="relase-info-product">
+      <div class="best-seller-item">
+       
+      </div>
+    </div>
+  </div>
+
+  <script type="text/javascript">  
+            function dataAPIForSliderInfo (element){
+                    var dataInfor =
+                    `<div class="best-seller-item">
+                          <div class="image-block-view">
+                            <div class="image-block-view-250">
+                              <img src="${element.image}"  class="best-seller-item-image img-fluid" alt="chợ xanh 4 mùa" />
+                            </div>
+                          </div>
+                          <div class="best-seller-item-info">
+                              <span><a class="info-name" href="/other/${setPadamDetailSale(element)}">
+                                    ${element.name}</a>
+                              </span><!--
+                              <div class="info-star">
+                                  <i class="fa fa-star"></i>
+                                  <i class="fa fa-star"></i>
+                                  <i class="fa fa-star"></i>
+                                  <i class="fa fa-star"></i>
+                                  <i class="fa fa-star"></i>
+                              </div> -->
+                              <div class="info-price">
+                                  <span class="info-price-discount">${setValueCost(element.cost_detail,"VND") }</span>
+                              </div>
+                          </div>
+                     </div>`;
+                    return dataInfor;
+            };
+            const urlParams = new URLSearchParams(window.location.search);
+            var product_block = urlParams.get('block');
+            if(isNaN(parseInt(product_block))) product_block = 10;
+            getInfoHtml('/api/customers/info_product?type='+product_block+"&ver=1",(data)=>{
+                  if(data==false) return; 
+                  var htmlItem='';
+                  data.result.forEach((element,index) => {
+                    if(index<6) htmlItem+= dataAPIForSliderInfo(element);
+                  });
+                  $("#relase-info-product").html(htmlItem);    
+            });
+          
+
+  </script>

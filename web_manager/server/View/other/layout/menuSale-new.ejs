@@ -1,0 +1,55 @@
+
+<div class="header-page">
+  
+  <div class="header-menu">
+    <div class="img-logo">
+      <a href="/tree"><img width="80px" height="auto" src="/img/tree.png" class="header-logo" alt="chợ xanh 4 mùa" /></a>
+    </div>
+    <% include ./menu-header-check.ejs %>
+    <% include ./menu-header-info.ejs %>
+    <a href="javascript:void(0)" class="icon-responsive fa fa-bars fa-2x my-auto" onclick="toggleMenuResponsive()"></a>
+  </div>
+</div>
+
+
+<script type="text/javascript">
+
+    function toggleMenuResponsive () {
+        var listNav = document.getElementById("header-menu-groups");
+        var listLogin = document.getElementById("info-user-view");
+        if (listNav.className === "header-menu-group") {
+          listNav.className += " responsive-navbar";
+          listLogin.className += " header-info-hiden";
+        }
+        else {
+          listNav.className = "header-menu-group";
+          listLogin.className = "header-info";
+        }
+    }
+  
+
+  
+    function addProductToCart(numberData,product_id,infoData,locatiom){
+              var infoDetailProduct = {product_id:product_id,number:1 ,imageInfo:"" };
+               // Get saved data from localStorage
+              var data = localStorage.getItem('cart');
+              var dataCart={name:"info",value:[]};
+              if(data!=null){
+                  dataCart= JSON.parse(data);
+              }
+              infoDetailProduct.number= numberData;
+              infoDetailProduct.imageInfo=dataSaveInfo[infoData][locatiom];
+              var fillter =dataCart.value.filter(o=>o.imageInfo.image_id==infoDetailProduct.imageInfo.image_id);
+              if(fillter.length>0){
+                  // đơn hàng tồn tại
+                  return;
+              }
+              dataCart.value.push(infoDetailProduct);
+             
+             // Save data to localStorage
+              localStorage.setItem('cart', JSON.stringify(dataCart));
+              onReload();
+    }
+  
+
+</script>

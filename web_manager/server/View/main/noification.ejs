@@ -1,0 +1,302 @@
+<html lang="en">
+    <% include ./layout/header.ejs %>
+    <script src="/js/statistical.js"></script>
+  <style>
+      .info-company-data{
+        width: 90%;
+        position: absolute;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        gap: 20px;
+        display: grid;
+        justify-content: center;
+        text-align: center;
+        padding-top: 50px;
+      }
+      
+      .info-company-name{
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        text-align: initial;
+      }
+        @media (min-width:1080px) {
+
+            .info-company-image{
+                width: 100px;
+                margin-top: 40px;
+                position: absolute;
+            }
+            .info-company-image-div{
+                width: 120px;
+                position: absolute;
+            }
+        }
+        @media screen and (max-width: 1079px) {
+
+            .info-company-image{
+                width: 100px;
+                margin-top: 40px;
+            }
+            .info-company-image-div{
+                width: 120px;
+            }
+        }
+
+
+        @media (min-width:1080px) {
+
+            
+        }
+      
+   
+     
+  </style>
+  <body>
+    <% include ./layout/menuSale.ejs %>
+    
+    <script src="/static/city.js"></script>
+    <script src="/static/province.js"></script>            
+    
+    
+    <div class="container">
+        
+        <div class="detail-review mb-5">
+            <div class="row mt-5">
+              <div class="col-lg-12 col-xs-12 product-bg border-bottom-review">
+                <div class="nav-detail ml-3, my-4">
+                  <a><span class="text-detail mr-5" id="click-descrip" onclick="selectInfo()">Thông báo</span></a>
+                  <a><span class="comment text-detail my-4" id="click-review" onclick="selectReview()" >Đơn hàng</span></a>
+                </div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="col-lg-12 col-xs-12 product-bg pt-4">
+                <div class="product-description" id="homeDescription">
+                  </p>
+                    <center><h2> Thông báo </h2> </center>
+                    <section id="history-p-product" style="text-align: left; ">
+                    </section>
+                </div>
+                <div class="product-description" id="root_comment">
+                  </p>
+                    <center><h2> Lịch sử đơn hàng </h2> </center>
+                    <section id="history-p-product">
+                        <div class="row">
+                            <div class="col-lg-2 col-xs-12 image-product my-auto text-center" style="margin-top: 0px !important">
+                                
+                                <div class="product-main-history" > Đơn hàng </div>
+                                <div  id="lstBillInfo"> </div> 
+                                <div class="product-main-history" > Thông báo </div>
+                                
+                            </div>
+                            <div class="col-lg-8 col-xs-12 detail-product" style="margin-top: 0px !important">
+                                <div class="detail-name-star border-bottom">
+                                    <center> <h3 id="cart_item_adress" >  </h3> </center> 
+                                </div>
+                                <div class="mb-2 detail-price-method">
+                                    <table cellspacing="0" class="shop_table cart">
+                                        <thead>
+                                            <tr>
+                                                <th class="product-remove">stt</th>
+                                                <th class="product-thumbnail">Hình ảnh</th>
+                                                <th class="product-name">Sản Phẩm</th>
+                                                <th class="product-price">Giá</th>
+                                                <th class="product-quantity">Số lượng</th>
+                                                <th class="product-subtotal">Tổng giá trị</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="cart_item_detail">
+                                            
+                                        </tbody>
+                                    </table>
+                                    <div id="info_return_product" class="product-setup-history">
+                                        <button> Hủy đơn hàng </button>    
+                                        <button> Mua lại lần nữa </button>  
+                                        <button> Trạng thái đơn hàng </button>  
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+              </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script type="text/javascript">  
+            /*Dropdown Menu*/
+            selectInfo();
+            function selectInfo(){
+                document.getElementById('homeDescription').style.visibility ='visible';   
+                document.getElementById('root_comment').style.visibility ='hidden';   
+                document.getElementById('homeDescription').style.display = "block";
+                document.getElementById('root_comment').style.display = "none";
+                document.getElementById('click-descrip').style.borderBottom = '2px solid #33a0ff';
+                document.getElementById('click-review').style.border = 'none';
+
+           }
+
+           function selectReview(){
+             document.getElementById('homeDescription').style.visibility ='hidden';   
+             document.getElementById('root_comment').style.visibility ='visible';   
+             document.getElementById('homeDescription').style.display = "none";
+             document.getElementById('root_comment').style.display = "block";
+             document.getElementById('click-review').style.borderBottom = '2px solid #33a0ff';
+             document.getElementById('click-descrip').style.border = 'none';
+           }
+           function setItemByDatePage(item) {
+               item.sort((el1, el2) => {
+                   element1 = el1.updated_at.toUpperCase();
+                   element2 = el2.updated_at.toUpperCase();
+                   if (element1 > element2) return -1;
+                   else return 1;
+               });
+               return item;
+           }
+
+           dataNoificationInfo();
+           async function dataNoificationInfo(){
+                var dataInfo = await checkNoificationOfUser(true);
+                dataInfo =[ {
+                                id_user:10001,
+                                title:"đơn hàng đang giao",
+                                content:"đơn hàng giao thành công",
+                                type_noification:"",
+                                read:true,
+                                time : (new Date()).getTime()/1000
+                            },{
+                                id_user:10001,
+                                title:"đơn hàng đã nhận",
+                                content:"đơn hàng giao thành công",
+                                type_noification:"",
+                                read:true,
+                                time : (new Date()).getTime()/1000
+                            },{
+                                id_user:10001,
+                                title:"đơn hàng bi tre",
+                                content:"đơn hàng giao thành công",
+                                type_noification:"",
+                                read:true,
+                                time : (new Date()).getTime()/1000
+                            },{
+                                id_user:10001,
+                                title:"đơn hàng x2",
+                                content:"đơn hàng giao thành công",
+                                type_noification:"",
+                                read:true,
+                                time : (new Date()).getTime()/1000
+                            },
+                ];
+
+                var html = `<p/>`;
+                var htmlLeft = `<ul>`;
+                for(var i =0;i<dataInfo.length;i++){
+                    html = html +` `;
+                    htmlLeft =htmlLeft + `<li>${dataInfo[i].title} </li>`;
+                }
+
+                htmlLeft = htmlLeft + `</ul>`;
+                var htmlData = `
+                        <div class="row">
+                            <div class="col-lg-2 col-xs-12 " style="text-align: left;">
+                                ${htmlLeft}
+                            </div>
+                            <div class="col-lg-8 col-xs-12 detail-product" style="margin-top: 0px !important">
+                                <div class="detail-name-star border-bottom">
+                                    <center> <h3 id="cart_item_adress" >   ${dataInfo[0].title} </h3> </center> 
+                                </div>
+                                <div class="mb-2 detail-price-method">
+                                    ${dataInfo[0].content}
+                                   
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                
+                $('#history-p-product').html(htmlData);
+                
+            }
+        var lstBill = [];
+        var lstToBuy =[];
+        postInfoData('/api/customers/lst_bill',{},(data)=>{
+                if(!data.error) {
+                    var html='';
+                    var loadfistData = {buyproduct_id:-1};
+                    data.data.result.forEach(element => {
+                        html= html+  `<label class='product-detail-history'  onclick='getInfoThebill(${JSON.stringify(element)})' > ${element.name} </label> <br/>`
+                        if(loadfistData.buyproduct_id==-1){
+                            loadfistData = element;
+                        } 
+                    });
+                    $('#lstBillInfo').html(html);
+                    if(loadfistData.buyproduct_id!=-1) {
+                        getInfoThebill(loadfistData);
+                    } 
+                }
+                else {
+                   
+                    
+                }
+        });
+
+        function getInfoThebill(dataView){
+            var element = dataView;
+            var dataInfo = "";
+            if(element.status ==0){
+                dataInfo = `<button class="product-button-history-enable"  onclick='cancelTheBill(${JSON.stringify(dataView)})' > Hủy đơn hàng </button>    
+                            <button class="product-button-history-enable"   onclick='buyTheBill(${JSON.stringify(dataView)})'  > Mua lại lần nữa </button>  
+                            <button class="product-button-history-enable"  onclick='statusTheBill(${JSON.stringify(dataView)})'  > Trạng thái đơn hàng </button>`;
+            }
+            else  if(element.status ==30)
+            {
+                dataInfo = `<button class="product-button-history-disable"  > Hủy đơn hàng </button>    
+                            <button class="product-button-history-enable"  onclick='buyTheBill(${JSON.stringify(dataView)})' > Mua lại lần nữa </button>  
+                            <button class="product-button-history-enable"  onclick='statusTheBill(${JSON.stringify(dataView)})' > Trạng thái đơn hàng </button>`;
+            } else  if(element.status ==40){
+                dataInfo = `<button class="product-button-history-disable" > Hủy đơn hàng </button>    
+                            <button class="product-button-history-enable"  onclick='buyTheBill(${JSON.stringify(dataView)})' > Mua lại lần nữa </button>  
+                            <button class="product-button-history-enable"  onclick='statusTheBill(${JSON.stringify(dataView)})'  > Trạng thái đơn hàng </button>`;
+            }
+            else
+            {
+                dataInfo = `<button class="product-button-history-enable"  onclick='cancelTheBill(${JSON.stringify(dataView)})' > Hủy đơn hàng </button>    
+                            <button class="product-button-history-enable"  onclick='buyTheBill(${JSON.stringify(dataView)})' > Mua lại lần nữa </button>  
+                            <button class="product-button-history-enable"  onclick='statusTheBill(${JSON.stringify(dataView)})' > Trạng thái đơn hàng </button>`;
+                  
+            }
+            $('#info_return_product').html(dataInfo);
+
+
+            Swal.showLoading();
+            
+                setTimeout(()=>{
+                    var infodata = element.buyproduct_id;
+                    var dataPhone = localStorage.getItem('phone_info_lock');
+                    //dataPhone ='0983828382';
+                    if((dataPhone!=null)&&(dataPhone.length>5)) infodata["phone_info_lock"] = dataPhone;
+                    postInfoData('/api/customers/detail_bill',{bill:element.buyproduct_id},(data)=>{
+                        if(!data.error) {
+                            onLoadData(data.data.result.data);
+                            onLoadDataAdress(data.data.result.bill);
+                        }
+                        else {
+                        
+                        }
+                    });
+                    Swal.hideLoading();
+                    Swal.close();
+                },1000);
+          
+        }
+
+    </script>
+
+
+    
+    
+    <% include ./layout/footer.ejs %>
+  </body>
+</html>

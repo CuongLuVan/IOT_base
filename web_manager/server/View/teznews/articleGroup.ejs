@@ -1,0 +1,87 @@
+﻿<% include /layout/head/header.ejs %>
+
+    <div class="page">
+        <div class="container">
+            <% include /layout/head/headerAds.ejs %>
+            <!--menu-->
+            <% include /layout/menu/pcMenu.ejs %>
+
+            <div class="row">
+                <!--colleft-->
+                <div class="col-md-8 col-sm-12">
+                    <!--post-detail-->
+                    <article class="post-detail" id="htmlToView">
+                        
+
+                    </article>
+                    
+                   <!-- include /layout/compoment/tip/nearRealease.ejs
+                     include /layout/compoment/tip/comment.ejs -->
+                </div>
+
+                <!--colright-->
+                <div class="col-md-4 col-sm-12">
+                    <!--tab popular-->
+                    <% include /layout/compoment/tip/pageGroup.ejs %>
+                    <% include /layout/compoment/tip/ads.ejs %>
+                </div>
+            </div>
+        </div>
+        <!--footer-->
+        <% include /layout/menu/footer.ejs %>
+    </div>
+<% include /layout/head/endhead.ejs %>
+
+<script type="text/javascript">
+    var dataView = '<%= detail %>';
+    var linkAcess = "";
+    var linkAcessDetail = '/api/document/group_page';
+    var onselectIndex = 0;
+    function getContentHtml(linkData){
+      getInfoHtml(linkData,(data)=>{
+            if(data==false) return; 
+            $('#htmlToView').html(data); //.replaceAll("</p>","<br/>").replaceAll("<p>","<br/>")
+            $('html, body').animate({ scrollTop: 0 }, 'fast');
+      });
+    }
+
+    var dataViewLstLink=[];
+    function infoGroupPagesToShow(item){
+        var html="";
+       
+        for(var i=0;i<item.length;i++){
+            var linkInfo=getInfoLink(item[i]);
+            
+            if(i==onselectIndex){
+                //loadDataPage(i);
+                html=  html+    `
+                                <h4 style="color: blueviolet;" onclick="loadDataPage(`+i+`)"><a>`+item[i].title+`</a></h4>
+                            `;
+            } 
+            else
+            {
+                html=  html+    `
+                                <h4 onclick="loadDataPage(`+i+`)"><a>`+item[i].title+`</a></h4>
+                            `;
+            }
+        }
+        return html;
+    }
+
+    function loadDataPage(int){
+        onselectIndex=int;
+      let valueData = dataViewLstLink[int];
+      getContentHtml("/"+ valueData.filesave);
+      var curentHtml = infoGroupPagesToShow(dataViewLstLink);
+        $("#tool_description1").html(curentHtml);
+    }
+    postInfoData(linkAcessDetail,{is_main_pages_id:dataView},(dataJson)=>{
+        if(!dataJson.error){
+            dataViewLstLink= dataJson.data;
+            loadDataPage(0);
+        }
+        
+    });
+
+  </script>
+

@@ -1,0 +1,73 @@
+
+<center>   <span ><h3> Công cụ</h3> </span> </center> 
+
+<ul role="tablist" class="tab-popular">
+    <li class="active">
+        <a href="#tab1" role="tab" data-toggle="tab">
+            Toán-Kinh tế
+        </a>
+    </li>
+    <li>
+        <a href="#tab2" role="tab" data-toggle="tab">
+            Ảnh-Design
+        </a>
+    </li>
+
+    <li>
+        <a href="#tab3" role="tab" data-toggle="tab">
+            IOT
+        </a>
+    </li>
+</ul>
+<div class="tab-content">
+    <div role="tabpanel" class="tab-pane active" id="tab1">
+        <ul class="list-news-popular" id="tool_description1">
+        </ul>
+    </div>
+    <div role="tabpanel" class="tab-pane " id="tab2">
+        <ul class="list-news-popular" id="tool_description2">
+        </ul>
+    </div>
+    <div role="tabpanel" class="tab-pane " id="tab3">
+        <ul class="list-news-popular" id="tool_description3">
+        </ul>
+    </div>
+</div>
+<script type="text/javascript">
+    function infoToolToShow(itemCurent,valueStart){
+        var html="";
+        var item =itemCurent.filter(o => (o.group_content_sub_id==valueStart));
+        for(var i=0;((i<3)&&(i<item.length));i++){
+            var linkInfo=getInfoLink(item[i]);
+            var stringInfo = item[i].content.length >69 ?item[i].content.substring(0, 69) + "...":item[i].content; 
+            html=  html+    `<li>
+                                <a href="`+linkInfo+`">
+                                    <img alt="chợ xanh 4 mùa" src="`+item[i].content_img+`">
+                                </a>
+                                <h3><a href="`+linkInfo+`">`+stringInfo+`</a></h3>
+                                <div class="meta-post">
+                                    <a href="`+linkInfo+`">
+                                        công cụ miễn phí
+                                    </a>
+                                    <em></em>
+                                    <span>
+                                        `+(new Date(item[i].created_at)).toLocaleDateString()+`
+                                    </span>
+                                </div>
+                            </li>`;
+        }
+        return html;
+    }
+
+    getInfoDataPublic('/api/document/get_tool',(dataJson)=>{
+        if(dataJson!=false){
+            var curentHtml = infoToolToShow(dataJson,41)+infoToolToShow(dataJson,42);
+            $("#tool_description1").html(curentHtml);
+            var curentHtml1 = infoToolToShow(dataJson,43)+infoToolToShow(dataJson,44);
+            $("#tool_description2").html(curentHtml1);
+            $("#tool_description3").html(infoToolToShow(dataJson,45));
+        }
+        
+    });
+
+</script>

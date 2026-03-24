@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+    <% include ./layout/header.ejs %>
+    <body>
+        <% include ./layout/menuSale.ejs %>
+        <% include ./layout/menuSaleCSS.ejs %>
+        <div class="product-container">
+          <div class="container">
+            <div class="product-box">
+              <!--
+                - PRODUCT GRID
+              -->
+              <div class="product-main" style=" width: 90vw; ">
+                <center>  <h2 class="title">Thanh toán đơn hàng</h2></center>
+                <div style="overflow-x:auto;">
+                  <table id="cart_item_detail" >
+                    <tr>
+                      
+                    </tr>
+                  </table>
+                </div>
+                
+                <div class="checkout-voucher-total">
+                  <div class="row" id="total_category_checkout">
+                    <div class="btn-checkout-row">
+                      <div class="checkout-total d-flex flex-column pb-3 border-bottom">
+                        <div class="subtotal pb-3 d-flex justify-content-between">
+                          <span>Tổng giá trị sản phẩm</span>
+                          <span id="sum_all_product">200.000VND</span>
+                        </div>
+                        <div class="shipping-fee pb-3 d-flex justify-content-between">
+                          <span>Phí ship</span>
+                          <span>Tự thỏa thuận</span>
+                        </div>
+            
+                      </div>
+            
+                  <!---    <div class="price-total d-flex justify-content-between pt-3">
+                        <span>TOTAL</span>
+                        <span id="total_ship_product">220.000VND</span>
+                      </div> --->
+            
+                      <button class="btn-checkout-btn"  onclick="uploadTheBill()" >Thanh toán</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+        <% include ./layout/layout_pages.ejs %>
+        <% include ./layout/footer.ejs %>
+    </body>
+    <script type="text/javascript">  
+        var is_moble = false;
+        if( /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ) {
+          // remove menu title_category_checkout
+          is_moble= true;
+        }
+
+        var itemTableHtml = ` <tr> 
+                                  <th>THAO TÁC</th> <th></th>
+                                  <th>SẢN PHẨM</th><th>GIÁ</th>
+                                  <th>SỐ LƯỢNG</th> <th>TỔNG</th> 
+                              </tr>`;
+        if(is_moble) itemTableHtml = `<tr> <th style="width: 30px;">THAO TÁC</th>
+                                          <th>SẢN PHẨM</th> <th>TỔNG</th> 
+                                      </tr>`;
+        function onAddOrRemove(id,number,fied){
+            var data = localStorage.getItem('cart');
+            var dataCart={name:"info",value:[]};
+          
+            if(data!=null){
+                dataCart= JSON.parse(data);
+            }
+            if(number==-1&&dataCart.value[id].number<2){
+                dataCart.value[id].number = 1; 
+            } else   dataCart.value[id].number += number;
+    
+            localStorage.setItem('cart', JSON.stringify(dataCart));
+            onReload();
+            onReloadMenu();
+        }
+    
+    
+        function removeItemInvoice(location){
+            Swal.fire({
+                    title: 'Bạn muốn xóa sản phẩm này trong đơn này không?',
+                    showDenyButton: true,
+                    confirmButtonText: 'Có',
+                    denyButtonText: `Không`,
+                    allowOutsideClick: false,
+                    showCloseButton: true
+                }).then((result) => {
+                /* Read more about isConfirmed, isDenied below */
+                if (result.isConfirmed) {
+                    var data = localStorage.getItem('cart');
+                    var dataCart={name:"info",value:[]};
+                    if(data!=null){
+                        dataCart= JSON.parse(data);
+                    }
+                    dataCart.value.splice(location, 1);
+                    localStorage.setItem('cart', JSON.stringify(dataCart));
+                    onReload();
+                } else if (result.isDenied) {
+                    Swal.fire('Bạn đã hủy bỏ  việc xóa đơn hàng', '', 'Đồng ý')
+                }
+            });
+            
+        }    
+        function loadItemProduct(item,location){
+              var costSum=item.number* item.imageInfo.cost_detail;
+                if(is_moble){
+                  return (`<tr>
+                              <td> <ion-icon name="close-circle-outline" class="btn-checkout-delete" onclick="removeItemInvoice(`+location+`)" ></ion-icon> </td>
+                              <td><img  src="`+item.imageInfo.image_info_detail+`" width=90 alt="chợ xanh 4 mùa" /></td>
+                              <td><a href="/product/product_detail?type=`+item.product_id+`">
+                                    <span class="text-cart-item">` +item.imageInfo.name+" - "
+                                      + item.imageInfo.name_image_detail+`</span> 
+                                  </a>
+                                  <span class="text-cart-item">Giá: `+setValueCost(item.imageInfo.cost_detail ,"VND")+` </span>
+                                  <span class="text-cart-item pl-3">Tổng: `+ setValueCost(costSum,"VND") +`</span>
+                                  <div class="item-inner-button">
+                                    <button class="btn-text-point"  onClick="onAddOrRemove(`+location+`,-1,1)"  >-</button>
+                                    <button class="btn-text-point-center">`+item.number+`</button>
+                                    <button class="btn-text-point"  onClick="onAddOrRemove(`+location+`,1,1)" >+</button>
+                                  </div> 
+                                </td>
+                          </tr>`);
+                }
+                else 
+                return (`<tr>
+                              <td> <ion-icon name="close-circle-outline" class="btn-checkout-delete" onclick="removeItemInvoice(`+location+`)" ></ion-icon> </td>
+                              <td><img  src="`+item.imageInfo.image_info_detail+`" width=90 alt="chợ xanh 4 mùa" /></td>
+                              <td><a href="/product/product_detail?type=`+item.product_id+`">
+                                    <span class="text-cart-item">` +item.imageInfo.name+" - "
+                                      + item.imageInfo.name_image_detail+`</span> 
+                                  </a></td>
+                              <td><span class="text-cart-item">`+setValueCost(item.imageInfo.cost_detail,"VND") +`</span></td>
+                              <td>
+                                <div class="item-inner-button">
+                                  <button class="btn-text-point"  onClick="onAddOrRemove(`+location+`,-1,1)"  >-</button>
+                                  <button class="btn-text-point-center">`+item.number+`</button>
+                                  <button class="btn-text-point"  onClick="onAddOrRemove(`+location+`,1,1)" >+</button>
+                                </div> </td>
+                              <td> <span class="text-cart-item pl-3">`+setValueCost(costSum,"VND") +` </span></td>
+                          </tr>`);
+            }
+            var costValue=0;
+    
+            async function onReload(){
+                var data = localStorage.getItem('cart');
+                var dataCart={name:"info",value:[]};
+                if((data!=null)&&(data!="")){
+                    dataCart= JSON.parse(data);
+                }
+                else
+                {
+                    await Swal.fire({ title: 'Không tồn tại sản phẩm để đặt hàng!',allowOutsideClick: false,
+                                    showCloseButton: true});
+                    window.location.href = `/`;
+                    return;
+                }
+                console.log(dataCart);
+                var numberProduct=dataCart.value.length;
+                var htmlInfo= itemTableHtml ;
+                var lstCompany = [];
+                var lstCompanyData =[];
+                costValue=0;
+                for(var i=0;i<dataCart.value.length;i++){
+                    let item =dataCart.value[i];
+                    if(!lstCompany.includes(item.imageInfo.company_id)){
+                      lstCompany.push(item.imageInfo.company_id);
+                      lstCompanyData.push(item.imageInfo.companyname);
+                    }
+                }
+                for(var j=0;j<lstCompany.length;j++){
+                    htmlInfo =htmlInfo + `<div class="cart-item border-bottom mb-4">
+                                              <div class="row"><h3> ${lstCompanyData[j]}</h3>
+                                              </div>
+                                          </div>`
+                    for(var i=0;i<dataCart.value.length;i++){
+                        let item =dataCart.value[i];
+                        if(lstCompany[j]==item.imageInfo.company_id){
+                            var costSum=item.number* item.imageInfo.cost_detail;
+                            costValue += costSum;
+                            htmlInfo =htmlInfo + loadItemProduct(item,i);
+                        }
+                    }
+                }
+                
+                $('#cart_item_detail').html(htmlInfo);
+                $('#sum_all_product').html(setValueCost(costValue,"VND"));
+                //$('#total_ship_product').html((costValue+20000)+' VND');
+                /*
+                setTimeout(()=>{
+                    Swal.hideLoading();
+                    Swal.close();
+                },1000);
+                setTimeout(()=>{loadInfoCustomer();},1500);*/
+            }
+    
+            onReload();
+            
+            function checkDataInval(){
+                var dataInval=localStorage.getItem('token');
+                if((dataInval==null)||(dataInval.length<100)){
+                    return false;
+                }
+                return true;
+            }
+    
+            function uploadTheBill()
+            {
+                var dataJsonData = localStorage.getItem('cart');
+                localStorage.setItem('phone_info_lock',null);
+                if(!checkDataInval()){
+                  Swal.fire({ title: 'Bạn muốn sử dụng tài khoản hệ thống?',
+                              showDenyButton: true,
+                              showCancelButton: true,
+                              confirmButtonText: 'Sử dụng',
+                              denyButtonText: `Không. Đặt hàng tiếp `,
+                              cancelButtonText:`Hủy`,
+                              allowOutsideClick: false,
+                              showCloseButton: true
+                      }).then((result) => {
+                              /* Read more about isConfirmed, isDenied below */
+                              if (result.isConfirmed) {
+                                  loginCustomerMenu();
+                              } else if (result.isDenied) {
+                                Swal.fire({
+                                              title: 'Thông tin liên hệ cá nhân ',
+                                              html: `<input type="text" class="text-cart-edit" id="name_new_info"
+                                                            name="name_new_info" placeholder="Tên người liên hệ" /> <br/> 
+                                                      <input type="text" class="text-cart-edit" id="sdt_new_info"
+                                                            name="sdt_new_info" placeholder="số điện thoại" /> <br/> 
+                                                      <input type="text" class="text-cart-edit" id="adress_new_info"
+                                                            name="adress_new_info" placeholder="Địa chỉ" />
+                                                      `,
+                                              confirmButtonText: 'Đặt hàng',
+                                              focusConfirm: false,
+                                              allowOutsideClick: false,
+                                              showCloseButton: true,
+                                              preConfirm: () => {
+                                                infoDataUser = {};
+                                                infoDataUser["is_s_lock"] =true;
+                                                infoDataUser["name"] = Swal.getPopup().querySelector('#name_new_info').value;
+                                                infoDataUser["phone"] = Swal.getPopup().querySelector('#sdt_new_info').value;
+                                                infoDataUser["address"] = Swal.getPopup().querySelector('#adress_new_info').value;
+                                                return infoDataUser;
+                                              }
+                                          }).then((result) => {
+                                                if(result.isConfirmed) {
+                                                  localStorage.setItem('phone_info_lock',infoDataUser["phone"]);
+                                                  finishBill(dataJsonData,false);
+                                                }
+                                          });
+                              }
+                      });
+    
+                // loginCustomerMenu();
+                    return;
+                }
+            //     var dataJsonnew=getDataInval(JSON.parse(dataJsonData));
+            //     postInfoData('/api/customers/bill',dataJsonnew,(data)=> {
+            //     window.location.href = "http://localhost:3000/sale/finish?type="+data.result;
+            // })
+                finishBill(dataJsonData);
+            }
+    
+            function creatInfoUser(){
+    
+    
+            }
+            async function endProcessFinish(dataJsonData){
+              var dataJsonInfo = JSON.parse(dataJsonData);
+                if(dataJsonInfo==null){
+                  await Swal.fire({ title: 'Không tồn tại sản phẩm để đặt hàng!',allowOutsideClick: false,
+                                    showCloseButton: true});
+    
+                  return;
+                }
+               
+                //  ['address','name','note',"phone","Total","KM"];
+                for(var k in infoDataUser) {
+                    dataJsonInfo[k] = infoDataUser[k];
+                }
+                dataJsonInfo["Total"] = costValue;
+                dataJsonInfo["KM"] = 0;
+
+                //return;
+                await postInfoData('/api/customers/bill',dataJsonInfo,(data)=> {
+                    if(!data.error){
+                        localStorage.setItem("bill_detail",JSON.stringify(data.data.result));
+                        localStorage.removeItem('cart');
+                        window.location.href = `/finish?type=1`;
+                    }
+                });
+            }
+            async function finishBill(dataJsonData,checkAdress=true) {
+                if(checkAdress){
+                    if(infoDataUser==null){
+                        loadInfoCustomer((loadData)=>{
+                            if(loadData)  endProcessFinish(dataJsonData);
+                        });
+                        return;
+                    }
+                    var dataDialogue =  await checkAdrressInfo();
+                    if(!dataDialogue.isConfirmed) return;
+                }
+                await endProcessFinish(dataJsonData);
+                
+            }
+            var infoDataUser = null;
+          
+            var infoCustumerString = null;
+            function loadInfoCustomer(callback=null){
+                getInfoData('/api/auth/info_customer',{},(data)=> {
+                    if(data.hasOwnProperty('user')){
+                      infoDataUser= data.user;
+                      // ['address','name','note',"phone","Total","KM"];
+                      infoCustumerString =  infoDataUser["name"]  
+                          + " - Số điện thoại : " +infoDataUser["phone"]
+                          + " - address : " +infoDataUser["address"];
+                      // localStorage.removeItem('cart');
+                      //  window.location.href = "./sale/finish?type="+data.data.result;
+                      callback(true);
+                    }
+                    else
+                    {
+                      callback(false);
+                      loginCustomerMenu();
+                    }     
+                });
+            }
+            
+            async function  checkAdrressInfo(){
+              return await Swal.fire({
+                    title: 'Vị trí giao hàng',
+                    html: `<div class="dialogue-cart-info"> <input type="checkbox" id="defauld_adress" 
+                              name="defauld_adress"  onChange="onchangeLocation()">
+                              <label for="vehicle1"> Thay đổi địa chỉ giao hàng </label><br>
+                              <div id="location_info_change_id">${infoCustumerString} </div>  </div> `,
+                    confirmButtonText: 'Đặt hàng',
+                    focusConfirm: false,
+                    allowOutsideClick: false,
+                    showCloseButton: true,
+                    preConfirm: () => {
+                      if(infoDataUser==null)  return {};
+                      if($('#defauld_adress').is(':checked'))
+                      {
+                          infoDataUser["name"] = Swal.getPopup().querySelector('#name_new_info').value;
+                          infoDataUser["phone"] = Swal.getPopup().querySelector('#sdt_new_info').value;
+                          infoDataUser["address"] = Swal.getPopup().querySelector('#adress_new_info').value;
+                      }
+                      return infoDataUser;
+                    }
+                  });
+            }
+            function onchangeLocation(){
+                if(!$('#defauld_adress').is(':checked')){
+                    $('#location_info_change_id').html(infoCustumerString);
+                }
+                else
+                {
+                    $('#location_info_change_id').html(` Địa chỉ mới: <br/> 
+                                    <input type="text" class="text-cart-edit" id="name_new_info" name="name_new_info" placeholder="Tên người liên hệ" /> <br/> 
+                                    <input type="text" class="text-cart-edit" id="sdt_new_info" name="sdt_new_info" placeholder="số điện thoại" /> <br/> 
+                                    <input type="text" class="text-cart-edit" id="adress_new_info" name="adress_new_info" placeholder="Địa chỉ" />
+                                    `);
+                }
+            }
+    
+    </script>
+</html>

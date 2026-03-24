@@ -1,0 +1,112 @@
+<style>
+    .form__group {
+        position: relative;
+        padding: 15px 0 0;
+        margin-top: 10px;
+        width: 50%;
+    }
+    .form__field {
+        font-family: inherit;
+        width: 100%;
+        border: 0;
+        border-bottom: 2px solid #9b9b9b;
+        outline: 0;
+        font-size: 1.3rem;
+        color: #3e0eff;
+        padding: 7px 0;
+        background: transparent;
+        transition: border-color 0.2s;
+    }
+
+    .form__field:required, .form__field:invalid {
+        box-shadow: none;
+    }
+    .form__label {
+        position: absolute;
+        top: 0;
+        display: block;
+        transition: 0.2s;
+        font-size: 1rem;
+        color: #9b9b9b;
+    }
+    .form__field:placeholder-shown ~ .form__label {
+        font-size: 1.3rem;
+        cursor: text;
+        top: 20px;
+    }
+
+    .form__field::-webkit-input-placeholder { /* WebKit, Blink, Edge */
+        color:    #909;
+        opacity:  0;
+    }
+    .form__field:-moz-placeholder { /* Mozilla Firefox 4 to 18 */
+        color:    #909;
+        opacity:  0;
+    }
+    .form__field::-moz-placeholder { /* Mozilla Firefox 19+ */
+        color:    #909;
+        opacity:  0;
+    }
+    .form__field:-ms-input-placeholder { /* Internet Explorer 10-11 */
+        color:    #909;
+        opacity:  0;
+    }
+    .form__field::-ms-input-placeholder { /* Microsoft Edge */
+        color:    #909;
+        opacity:  0;
+    }
+
+    .form__field::placeholder { /* Most modern browsers support this now. */
+        color:    #909;
+        opacity:  0;
+    }
+    .button-71 {
+            background-color: #0078d0;
+            border: 0;
+            color: #fff !important;
+            border-radius: 56px;
+            width: 300px;
+            color: #fff;
+            cursor: pointer;
+            display: inline-block;
+            font-family: system-ui,-apple-system,system-ui,"Segoe UI",Roboto,Ubuntu,"Helvetica Neue",sans-serif;
+            font-size: 18px;
+            font-weight: 600;
+            outline: 0;
+            padding: 16px 21px;
+            margin-bottom: 30px;
+            position: relative;
+            text-align: center;
+            text-decoration: none;
+            transition: all .3s;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+        }
+
+        .button-71:before {
+            background-color: initial;
+            background-image: linear-gradient(#fff 0, rgba(255, 255, 255, 0) 100%);
+            border-radius: 125px;
+            content: "";
+            height: 50%;
+            left: 4%;
+            opacity: .5;
+            position: absolute;
+            top: 0;
+            transition: all .3s;
+      
+        }
+
+        .button-71:hover {
+            box-shadow: rgba(255, 255, 255, .2) 0 3px 15px inset, rgba(0, 0, 0, .1) 0 3px 5px, rgba(0, 0, 0, .1) 0 10px 13px;
+            transform: scale(1.05);
+        }
+        
+        @media (min-width: 768px) {
+            .button-71 {
+                padding: 16px 18px;
+            }
+        }
+
+</style>

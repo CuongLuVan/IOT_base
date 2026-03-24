@@ -1,0 +1,77 @@
+<header class="header">
+    <div class="row">
+        <div class="col-md-3 col-sm-6 col-xs-12">
+            <a href="/" class="logo">
+                <img alt="Logo" src="/teznews/images/sparc-lab-logo.png" />
+            </a>
+        </div>
+        <div class="col-md-6 col-md-offset-3 col-sm-8  text-right col-xs-12 hidden-xs">
+            <div class="owl-carousel owl-special" id="head_ads_fist">
+                
+            </div>
+            <!---
+            <ul class="hidden-sm hidden-xs">
+                <li >
+                    <span style=" font-size: 14px; " > <img src="<%= __('langgue') %>" style=" height: 32px; " alt=""/>     </span>
+                    <ul class="submenu" style=" width: 60px!important; "  >
+                        <li >
+                            <a href="/change-lang/vi"> <img src="/img/vn_langue.jpg"  alt="chợ xanh 4 mùa"  style=" height: 32px; " /> </a>
+                        </li>
+                        <li >
+                            <a href="/change-lang/en"> <img src="/img/United_Kingdom.jpg"   alt="chợ xanh 4 mùa"  style=" height: 32px; " /> </a>
+                        </li>
+                    </ul>
+                </li>
+                
+            </ul>   ----->
+        </div>
+        
+
+    </div>
+</header>
+
+<script type="text/javascript">
+    function getDataInfoAdvertisementHeader(data){
+        var htmlToView = '';
+
+        for(var i=0;i<data.length ;i++){
+            var linkInfo=getInfoLink(data[i]);
+           // <img alt="chợ xanh 4 mùa" src="`+data[i].content_img+`" />
+            htmlToView =htmlToView+
+                        `<div>
+                                <div class="special-news">
+                                    <a href="`+linkInfo+`">
+                                        <img alt="chợ xanh 4 mùa" src="`+data[i].content_img+`" />
+                                    </a>
+                                    <h3><a href="`+linkInfo+`">`+data[i].title+`</a></h3>
+                                    <div class="meta-post">
+                                        <a href="`+linkInfo+`">
+                                            `+data[i].content+`
+                                        </a>
+                                    </div>
+                                </div>
+                        </div>`;
+        }
+        $("#head_ads_fist").html(htmlToView);
+        if(typeof $('.owl-special').data('owlCarousel') != 'undefined') {
+            $('.owl-special').data('owlCarousel').destroy();
+            $('.owl-special').removeClass('owl-carousel');
+        }
+//        $('.owl-special').data('owlCarousel').destroy();
+        $('.owl-special').owlCarousel({
+            loop: true,
+            nav: false,
+            dots: false,
+            autoplay: true,
+            items: 1,
+            mouseDrag: false,
+        });
+     
+    }
+    postInfoData('/api/document/get_advertisement',{group_content_sub_id:0},(dataJson)=>{
+        if(!dataJson.error){
+            getDataInfoAdvertisementHeader(dataJson.data);
+        }
+        
+    });
+</script>    

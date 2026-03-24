@@ -1,0 +1,63 @@
+<div class="info-quantity-cart pt-4 d-flex justify-content-between" id="cart_detiail_id_check">
+    <div class="info-quantity">
+      <button class="btn text-point " onclick="addNumberProduct(-1)" >-</button>
+      <button class="btn " id="numberProduct" >1</button>
+      <button class="btn  text-point" onclick="addNumberProduct(1)" >+</button>
+    </div>
+    <div class="info-cart d-flex" onclick="addProductToCart()" >
+      <button class="fa fa-shopping-cart btn text-point"></button>
+      <span class="text-point m-auto pr-3" ><%= __('cartPage') %></span>
+    </div>
+</div>
+<script type="text/javascript"> 
+        function addNumberProduct(number){
+               var infoDataHtml=document.getElementById("numberProduct").innerHTML ;
+               var infoData = parseInt(infoDataHtml);
+               infoData =infoData+number;
+               if(infoData<1) infoData=1;
+               document.getElementById("numberProduct").innerHTML = infoData
+        }
+        var dataView = ('<%= detail %>').replaceAll('type=', '');
+        var infoDetailProduct = {product_id:parseInt(dataView) ,number:1 ,imageInfo:"" };
+        function addProductToCart(){
+                 // Get saved data from loca
+                 if(dataInfo[numberSelect].cost_detail<0){
+
+
+                  return;
+                 }
+                 if(dataInfo[numberSelect].store==1){
+
+
+                    return;
+                  }
+
+                var data = localStorage.getItem('cart');
+                var dataCart={name:"info",value:[]};
+                if((data!=null)&&(data!="")){
+                    dataCart= JSON.parse(data);
+                }
+                var numberData = document.getElementById("numberProduct").innerHTML;
+                infoDetailProduct.number= parseInt(numberData);
+                infoDetailProduct.imageInfo=dataInfo[numberSelect];
+                var fillter =dataCart.value.filter(o=>o.imageInfo.image_id==infoDetailProduct.imageInfo.image_id);
+                if(fillter.length>0){
+                    // đơn hàng tồn tại
+                    Swal.fire({
+                      title: "<i>Sản phẩm này đã tồn tại giỏ hàng!</i>", 
+                      html: 'Chú ý',  
+                      allowOutsideClick: false,
+                      confirmButtonText: "<u>Đồng ý</u>", 
+                      allowOutsideClick: false,
+                      showCloseButton: true
+                    });
+                    return;
+                }
+                dataCart.value.push(infoDetailProduct);
+                localStorage.setItem('cart', JSON.stringify(dataCart));
+                onReloadMenu();
+                  // đơn hàng tồn tại
+                Swal.fire( "Thêm sản phẩm","<i>Đã thêm sản phẩm này vào giỏ hàng thành công!</i>", "<u>Đồng ý</u>");
+        }
+
+</script>

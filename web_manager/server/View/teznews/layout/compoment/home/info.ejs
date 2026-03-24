@@ -1,0 +1,147 @@
+<section class="box-news">
+    <div class="box-caption">
+        <span> Thông tin</span>
+    </div>
+    <article class="news-two-large news-three-large">
+        <div class="row" id="tech_description">
+            
+        </div>
+    </article>
+    <div class="row">
+        <div class="col-md-6 col-sm-6 col-xs-12">
+            <ul class="list-news-popular" id="tech_description1"> 
+            </ul>
+        </div>
+        <div class="col-md-6 col-sm-6 col-xs-12">
+            <ul class="list-news-popular" id="tech_description2">
+            </ul>
+        </div>
+    </div>
+</section>
+
+<section class="box-news">
+    <div class="box-caption">
+        <span> Tài liệu</span>
+    </div>
+    <article class="news-two-large news-three-large">
+        <div class="row" id="documnet_description">
+            
+        </div>
+    </article>
+    <div class="row">
+        <div class="col-md-6 col-sm-6 col-xs-12">
+            <ul class="list-news-popular" id="documnet_description1"> 
+            </ul>
+        </div>
+        <div class="col-md-6 col-sm-6 col-xs-12">
+            <ul class="list-news-popular" id="documnet_description2">
+            </ul>
+        </div>
+    </div>
+</section>
+
+<script type="text/javascript">
+        function infoValueDataTheNewFist(itemCurent,valueStart,valueEnd){
+            var html="";
+            var item =itemCurent.filter(o => (o.group_content_sub_id>valueStart
+                                                &&o.group_content_sub_id<valueEnd));
+            if(item.length>0){
+                var linkInfo=getInfoLink(item[0]);
+                var contentSub=getDetailContent(item[0].group_content_sub_id);
+                html =  `<a href="`+linkInfo+`">
+                            <img alt="chợ xanh 4 mùa" src="`+item[0].content_img+`" />
+                        </a>
+                        <h3><a href="`+linkInfo+`">`+item[0].title+`</a></h3>
+                        <div class="meta-post">
+                            <a href="`+linkInfo+`">
+                            `+contentSub+`
+                            </a>
+                            <em></em>
+                            <span>
+                                `+(new Date(item[0].created_at)).toLocaleDateString()+`
+                            </span>
+                        </div>
+                        <p>`+item[0].content+`</p>`;
+            }
+            return html;
+        }
+
+        function infoValueDataTheNewFistCircum(itemCurent,valueStart,valueEnd){
+            var html="";
+            var item =itemCurent.filter(o => (o.group_content_sub_id>valueStart
+                                                &&o.group_content_sub_id<valueEnd));
+            if(item.length>0){
+                var linkInfo=getInfoLink(item[0]);
+                var contentSub=getDetailContent(item[0].group_content_sub_id);
+                var stringInfo = item[0].content.length >360 ?item[0].content.substring(0, 360) + "...":item[0].content; 
+                html = `<div class="col-md-6 col-sm-6 col-xs-12 info-head-fist-pages-crop">
+                            <a href="`+linkInfo+`">
+                                <img alt="chợ xanh 4 mùa" src="`+item[0].content_img+`" />
+                            </a>
+                        </div>
+                        <div class="col-md-6 col-sm-6 col-xs-12">
+                            <h3 class="title-fix-margin"><a href="`+linkInfo+`">`+item[0].title+`</a></h3>
+                            <div class="meta-post">
+                                <a href="`+linkInfo+`">
+                                    `+contentSub+`
+                                </a>
+                                <em></em>
+                                <span>
+                                    `+(new Date(item[0].created_at)).toLocaleDateString()+`
+                                </span>
+                            </div>
+                            <p>`+stringInfo+`</p>
+                        </div>`;
+                            
+                
+            }
+            return html;
+        }
+
+        function infoValueDataTheNew(itemCurent,valueStart,valueEnd,countStart=1,countEnd=10){
+            var html="";
+            var item =itemCurent.filter(o => (o.group_content_sub_id>valueStart&&o.group_content_sub_id<valueEnd));
+            for(var i=countStart;((i< countEnd)&&(i<item.length));i++){
+                var linkInfo=getInfoLink(item[i]);
+                var contentSub=getDetailContent(item[i].group_content_sub_id);
+                var stringInfo = item[i].title.length >98 ?item[i].title.substring(0, 98) + "...":item[i].title; 
+                html = html +
+                        `<li title="`+item[i].title+`">
+                            <a href="`+linkInfo+`">
+                                <img alt="chợ xanh 4 mùa" src="`+item[i].content_img+`">
+                            </a>
+                            <h3><a href="`+linkInfo+`" >`+stringInfo+`</a></h3>
+                            <div class="meta-post">
+                                <a href="`+linkInfo+`">
+                                    `+contentSub+`
+                                </a>
+                                <em></em>
+                                <span>
+                                    `+(new Date(item[i].created_at)).toLocaleDateString()+`
+                                </span>
+                            </div>
+                        </li>`;
+            }
+            return html;
+        }
+
+
+        getInfoDataPublic('/api/document/get_new',(dataJson)=>{
+/*            $("#tech_description").html(infoValueDataTheNew(dataJson,0,9));
+            $("#tech_description_fist").html(infoValueDataTheNewFist(dataJson,0,9));
+            $("#documnet_description").html(infoValueDataTheNew(dataJson,20,29));
+            $("#documnet_description_fist").html(infoValueDataTheNewFist(dataJson,20,29));
+
+*/  
+            if(dataJson!=false){
+                $("#tech_description1").html(infoValueDataTheNew(dataJson,0,9,1,5));
+                $("#tech_description2").html(infoValueDataTheNew(dataJson,0,9,5,9));
+                $("#tech_description").html(infoValueDataTheNewFistCircum(dataJson,0,9));
+                $("#documnet_description1").html(infoValueDataTheNew(dataJson,20,29,1,5));
+                $("#documnet_description2").html(infoValueDataTheNew(dataJson,20,29,5,9));
+                $("#documnet_description").html(infoValueDataTheNewFistCircum(dataJson,20,29));
+            }
+            
+            
+        });
+</script>
