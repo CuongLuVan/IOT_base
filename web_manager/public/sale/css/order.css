@@ -1,0 +1,12 @@
+
+/* css for input in confirm order page */
+.input-invoice-info {
+    width: 79.8%;
+    margin-bottom: 5px;
+    outline: none;
+}
+
+.textarea-invoice-info {
+    outline: none;
+
+}

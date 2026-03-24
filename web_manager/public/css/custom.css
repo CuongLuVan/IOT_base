@@ -1,0 +1,127 @@
+/*-----------------------------------
+            COMMON
+-------------------------------------*/
+
+body {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 12px !important;
+}
+
+.modal-content1 {
+  background-color: #fefefe;
+  margin: auto;
+  padding: 20px;
+  width: 600px;
+  border: 1px solid #888;
+}
+
+/* The Close Button */
+.close {
+  color: #aaaaaa;
+  float: right;
+  font-size: 28px;
+  font-weight: bold;
+}
+
+.close:hover,
+.close:focus {
+  color: #000;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+
+.label-header {
+    font-size: 12px;
+}
+
+.date-input {
+    height: 24px;
+    border: 1px solid #ced4da;
+}
+.select-section {
+    margin-bottom: 10px;
+}
+.export-button {
+    font-size: 11px;
+    margin-top: -3px;
+}
+#datatable_wrapper{
+    width: 100%;
+}
+th { font-size: 12px; }
+td { font-size: 11px; }
+.nav-brand {
+    margin-top: 30px;
+}
+.table.dataTable tbody tr.selected {
+background-color: #B0BED9 !important;
+}
+
+html {
+    position: relative;
+    min-height: 100%;
+}
+
+footer {
+    position: absolute !important;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    overflow: hidden;
+}
+
+.header-area {
+    margin-bottom: 30px;
+}
+
+.data-table thead tr th {
+    text-align: center;
+}
+
+div.table-action p {
+    display: inline;
+    margin-right: 5px;
+}
+
+h3.datatable-title {
+    margin-bottom: 3rem;
+}
+
+.datatable-add-btn {
+    float: right;
+}
+
+#add-modal-header {
+    margin-left: auto;
+    margin-right: auto;
+}
+
+#resume {
+    padding-bottom: 3.5rem;
+}
+
+.select-date {
+    width: 100%;
+    text-align: right;
+    margin-bottom: 0 !important;
+}
+
+.select-date input {
+    width: 20%;
+    display: inline;
+}
+/*-----------------------------------
+            LOGIN FORM
+-------------------------------------*/
+.invalid-input {
+    text-align: center;
+    padding-bottom: 15px;
+    color: red;
+}
+
+.valid-input {
+    text-align: center;
+    padding-bottom: 15px;
+    color: #0268d5;
+}

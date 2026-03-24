@@ -1,0 +1,60 @@
+#checkout-section {
+  padding: 40px 125px 90px 125px;
+}
+
+#checkout-section .text-category-checkout {
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 30px;
+  color: #22262a;
+}
+
+#checkout-section .text-cart-item {
+  font-style: 18px;
+  line-height: 27px;
+  font-weight: 400;
+  color: #262626;
+}
+
+#checkout-section .cart-item {
+  padding: 25px;
+}
+
+#checkout-section .cart-item .col-5 img {
+  width: 135px;
+  height: auto;
+  padding-right: 20px;
+}
+
+#checkout-section .info-quantity {
+  /* width: 80px; */
+  margin: 0 20px;
+}
+
+#checkout-section .cart-item .remove-item {
+  background-color: white;
+  color: red;
+}
+
+#checkout-section .checkout-voucher-total form button {
+  background-color: var(--bg-main);
+  color: white;
+  border-radius: 0 5px 5px 0;
+}
+
+#checkout-section .checkout-voucher-total .price-total span {
+  font-size: 25px;
+  font-weight: 500;
+  line-height: 45px;
+  color: #22262a;
+}
+
+#checkout-section .checkout-voucher-total .checkout-btn {
+  width: 100%;
+  height: 60px;
+
+  background-color: var(--bg-main);
+  color: white;
+
+  margin-top: 24px;
+}
