@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>MQTT Config ESP32</title>
+
+<style>
+body {
+  font-family: Arial;
+  background: #f0f2f5;
+  display: flex;
+  justify-content: center;
+  padding-top: 30px;
+}
+
+.box {
+  background: #fff;
+  padding: 20px;
+  width: 350px;
+  border-radius: 10px;
+  box-shadow: 0 0 10px rgba(0,0,0,0.1);
+}
+
+input {
+  width: 100%;
+  margin: 6px 0;
+  padding: 8px;
+}
+
+button {
+  width: 100%;
+  padding: 10px;
+  background: #28a745;
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+</style>
+</head>
+
+<body>
+
+<div class="box">
+  <h3>MQTT Setup</h3>
+
+  <input id="mqtt_host" placeholder="MQTT Host">
+  <input id="mqtt_port" placeholder="Port" type="number">
+  <input id="mqtt_client" placeholder="Client ID">
+  <input id="mqtt_user" placeholder="User">
+  <input id="mqtt_pwd" placeholder="Password">
+  <input id="public_topic" placeholder="Public Topic">
+  <input id="subcribe_topic" placeholder="Subcribe Topic">
+  <input id="mqtt_grptopic" placeholder="Group Topic">
+  <input id="web_password" placeholder="Web Password">
+
+  <button onclick="sendData()">Gửi cấu hình</button>
+</div>
+
+<script>
+async function sendData() {
+  const data = {
+    mqtt_fingerprint: "",
+
+    mqtt_host: document.getElementById("mqtt_host").value,
+    mqtt_port: parseInt(document.getElementById("mqtt_port").value),
+
+    mqtt_client: document.getElementById("mqtt_client").value,
+    mqtt_user: document.getElementById("mqtt_user").value,
+    mqtt_pwd: document.getElementById("mqtt_pwd").value,
+
+    public_topic: document.getElementById("public_topic").value,
+    subcribe_topic: document.getElementById("subcribe_topic").value,
+    mqtt_grptopic: document.getElementById("mqtt_grptopic").value,
+
+    web_password: document.getElementById("web_password").value
+  };
+
+  try {
+    const res = await fetch("http://192.168.0.1/setup", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: "data=" + encodeURIComponent(JSON.stringify(data))
+    });
+
+    const text = await res.text();
+    alert("OK: " + text);
+
+  } catch (e) {
+    alert("Lỗi: " + e);
+  }
+}
+</script>
+
+</body>
+</html>

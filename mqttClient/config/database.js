@@ -1,0 +1,25 @@
+require('dotenv').config();
+
+module.exports =  {
+  client: process.env.DB_CLIENT,
+  connection: {
+    host: process.env.DB_HOST || '127.0.0.1',
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    charset: 'utf8',
+    port: 3306,
+  //  connectionLimit: 15,
+  //  queueLimit: 3000,
+   // useConnectionPooling: true,
+    queueTimeout: 200000,
+    acquireTimeout: 1000000,
+ //   multipleStatements: true
+    // socketPath: process.env.SOCKET_PATH,
+  },
+  migrations: {
+    tableName: 'migrations',
+    directory: process.cwd() + '/server/migrations',
+  },
+  debug: false,
+};

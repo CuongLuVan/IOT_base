@@ -1,0 +1,144 @@
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+</head>
+
+<body>
+    <div class="container position-relative">
+        <div id="alert-error"></div>
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">Bảng điều khiển</div>
+            </div>
+            <div class="card-body">
+                <div class="form-group row">
+                    <div class="col-3">Mount</div>
+                    <div class="col-9">
+                        <input type="text" class="form-control" id="mount" value="music">
+                    </div>
+                </div>
+                <div class="form-group row">
+                    <div class="col-3">Format</div>
+                    <div class="col-9">
+                        <select class="form-control" name="format" id="format">
+                            <option value="1" selected>mp3</option>
+                            <option value="0">ogg</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group row">
+                    <div class="col-3">Bitrate </div>
+                    <div class="col-9">
+                        <select class="form-control" name="bitrate" id="bitrate">
+                            <option value="32">32 kbit/s</option>
+                            <option value="96">96 kbit/s</option>
+                            <option value="128">128 kbit/s</option>
+                            <option value="192" selected>192 kbit/s</option>
+                            <option value="256">256 kbit/s</option>
+                            <option value="320">320 kbit/s</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group row">
+                    <div class="col-3">Sample rate</div>
+                    <div class="col-9">
+                        <input type="text" class="form-control" value="44100" id="samplerate">
+                    </div>
+                </div>
+                <div class="form-group row">
+                    <div class="col-3">Channel</div>
+                    <div class="col-9">
+                        <input type="text" class="form-control" value="2" id="channel">
+                    </div>
+                </div>
+                <div class="form-grroup row">
+                    <div class="col-3">Music</div>
+                    <div class="col-9">
+                        <select id="music" class="form-control"></select>
+                    </div>
+                </div>
+                <div class="form-group row mt-3">
+                    <button class="btn btn-success mr-2" id="btn-play">PLAY</button>
+                    <button class="btn btn-danger" id="btn-pause">PAUSE</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        $.ajax({
+            url : '/get-all-music-file',
+            type: 'get',
+            success: function(data){
+                data = data.map((value, index)=>{
+                    return `<option value="${value}">${value}</option>`;
+                })
+                $('#music').html(data);
+            },
+            error: function(){
+
+            }
+        })
+
+        $('#btn-play').on('click', function(){
+            var mount = $('#mount').val();
+            var format = $('#format').val();
+            var bitrate = $('#bitrate').val();
+            var samplerate = $('#samplerate').val();
+            var channel = $('#channel').val();
+            var link = $('#music').val();
+
+            $.ajax({
+                url: '/play',
+                type:'post',
+                data: {
+                    mount: mount,
+                    format: format,
+                    bitrate: bitrate,
+                    samplerate: samplerate,
+                    channel: channel,
+                    link: link
+                },
+                success: function(data){
+
+                    $('#alert-error').html(`
+                        <div class="position-absolute alert alert-success" style="top:10px; right: 10px; z-index: 10000">Thành công</div>
+                    `);
+                },
+                error: function(){
+                    $('#alert-error').html(`
+                        <div class="position-absolute alert alert-danger" style="top:10px; right: 10px; z-index: 10000">Có lỗi xảy ra</div>
+                    `);
+                }
+            })
+        })
+
+
+        $('#btn-pause').on('click', function(){
+            $.ajax({
+                url: '/pause',
+                type:'post',
+               
+                success: function(data){
+
+                    $('#alert-error').html(`
+                        <div class="position-absolute alert alert-success" style="top:10px; right: 10px; z-index: 10000">Thành công</div>
+                    `);
+                },
+                error: function(){
+                    $('#alert-error').html(`
+                        <div class="position-absolute alert alert-danger" style="top:10px; right: 10px; z-index: 10000">Có lỗi xảy ra</div>
+                    `);
+                }
+            })
+        })
+       
+    </script>
+</body>
+
+</html>
