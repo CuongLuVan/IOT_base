@@ -49,8 +49,8 @@ class oAuthen2Customer extends CommonModel {
 
     responseLogin(res,user){
         var dataTocken= getRamdomData(256);
-        var permission_id=user.get('permission_id');
-        var current_id=user.get('customer_id');
+        var permission_id=user.permission_id;
+        var current_id=user.customer_id;
         var listDataContain="";
         var listDataEnterprise_id="";
         listDataContain+=current_id;
@@ -69,7 +69,7 @@ class oAuthen2Customer extends CommonModel {
         console.log(authen2.toString());
         knex.raw(authen2.toString()).then(function(x) {
             //console.log(" knex err1 .....",x);
-            return returnOKCustom(res,{success: true,token:dataTocken,email: user.get('email')});
+            return returnOKCustom(res,{success: true,token:dataTocken,email: user});
         }).catch(function(err1){
             //console.log("err1 .....",err1);
             return returnNotAuthen(res,err1);

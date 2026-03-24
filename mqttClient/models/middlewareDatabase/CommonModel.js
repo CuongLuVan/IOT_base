@@ -1,4 +1,4 @@
-const bookshelf = require('../../config/bookshelf.js');
+
 const TableView= require('./TableView.js');
 const TypeModel= require('./TypeModel.js');
 var squel = require("squel");
@@ -8,9 +8,48 @@ const  defineManifest  = require('../../middlewares/CheckManifest.js');
 const knex = require('../../config/knex.js');
 const CustomerAcess= require('./CustomerAcess.js');
 const bcrypt = require('bcrypt');
+const { QueryBuilder } = require('objection');
+class CustomQueryBuilder extends QueryBuilder {
+  
+    async fetch() {
+      // Nếu có điều kiện `.where`, lấy 1 record đầu tiên
+      return this.first();
+    }
+  
+    async fetchAll() {
+      // Trả về tất cả records theo query
+      return this;
+    }
+    
+}
+class BaseModelBookshelf extends bookshelf {
+    static get QueryBuilder() {
+      return CustomQueryBuilder;
+    }
+  
+    static get tableName() {
+      throw new Error('TableName is missing');
+    }
+  
+    async save() {
+      if (this.id) {
+        return this.$query().patchAndFetch();
+      } else {
+        return this.$query().insert();
+      }
+    }
+  
+    async destroy() {
+      return this.$query().delete();
+    }
+  
+    async related(relationName) {
+      return this.$relatedQuery(relationName);
+    }
+}
 
 
-class CommonModel extends bookshelf.Model {
+class CommonModel extends  BaseModelBookshelf  {
 
     checkAcessGetDatabase(permission_id,type){
         //console.log("dataTableSQL   ",permission_id,type);

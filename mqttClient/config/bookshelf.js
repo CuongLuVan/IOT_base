@@ -1,4 +1,5 @@
-const bookshelf = require('bookshelf');
+const { Model } = require('objection');
 const knex = require('./knex.js');
 
-module.exports =  bookshelf(knex);
+Model.knex(knex);
+module.exports =  Model;

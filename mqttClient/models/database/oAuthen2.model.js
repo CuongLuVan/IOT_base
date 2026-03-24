@@ -96,8 +96,8 @@ class Oauthen2 extends CommonModel {
 
     responseLogin(res,user){
         var dataTocken= getRamdomData(256);
-        var permission_id=user.get('permission_id');
-        var current_id=user.get('users_id');
+        var permission_id=user.permission_id;
+        var current_id=user.users_id;
         var listDataContain="";
         var listDataEnterprise_id="";
         listDataContain+=current_id;
@@ -115,7 +115,7 @@ class Oauthen2 extends CommonModel {
         if(permission_id<TableManifest.NEW_REGISTER) {
                 authen2.set("value_manifest",listDataContain);
                 knex.raw(authen2.toString()).then(function(x) {
-                    returnOKCustom(res,{success: true, token:dataTocken, email: user.get('email')});
+                    returnOKCustom(res,{success: true, token:dataTocken, email: user.email});
                 }).catch(function(err1){ returnNotFound(res,err1,204); });
         } 
         else 
@@ -143,7 +143,7 @@ class Oauthen2 extends CommonModel {
                     authen2.set("value_manifest",listDataContain)
                         .set("enterprise_id",listDataEnterprise_id);
                     knex.raw(authen2.toString()).then(function(xa) {
-                        returnOKCustom(res,{success: true, token:dataTocken, email: user.get('email')});
+                        returnOKCustom(res,{success: true, token:dataTocken, email: user.email});
                     }).catch(function(err1){ returnNotFound(res,err1,204); });
                 }).catch(function(err1){ returnNotFound(res,err1,204); });
                 
