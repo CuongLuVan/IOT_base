@@ -1,8 +1,8 @@
 const cron = require('node-cron');
 const axios = require('axios');
 
-
-cron.schedule('* * * * *', () => {
+//Every day at midnight: '0 0 * * *'
+cron.schedule('0 0 * * *', () => {
     console.log('I am ready');
 
      axios.put(process.env.MQTT_CLIENT + 'cron/delete_oauthen2_tables')
