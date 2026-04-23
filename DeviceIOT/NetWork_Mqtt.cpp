@@ -8,6 +8,7 @@
 #include "Memory.h" 
 #include "MemoryData.h"
 #include "define_All.h"
+#include "DebugInfo.h"
 
 
 WiFiClient EspClient;
@@ -77,6 +78,7 @@ void MqttDataCallback(char* topic, byte* data, unsigned int data_len)
 
 
 bool parseJsonToSettings(String json) {
+  DEVICE_LOG_INFO("start NetWork_Mqtt::parseJsonToSettings");
   DeserializationError error = deserializeJson(jsonBufferMqtt, json);
   if (error) {
     Serial.print(F("deserializeJson() failed: "));
@@ -94,6 +96,7 @@ bool parseJsonToSettings(String json) {
   strlcpy(Settings.subcribe_topic,  jsonBufferMqtt["subcribe_topic"] | "",  sizeof(Settings.subcribe_topic));
   strlcpy(Settings.mqtt_grptopic,   jsonBufferMqtt["mqtt_grptopic"] | "",   sizeof(Settings.mqtt_grptopic));
   strlcpy(Settings.web_password,    jsonBufferMqtt["web_password"] | "",    sizeof(Settings.web_password));
+  DEVICE_LOG_INFO("end NetWork_Mqtt::parseJsonToSettings");
   return true;
 }
 
@@ -102,18 +105,21 @@ void NetWork_Mqtt::setupInfoMQTT()
 
     String payload = Memory::GetInstance()->readString(WIFI_SETUP_JSON);
     if(!parseJsonToSettings(payload)){
+      DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT skipped due parseJsonToSettings failure");
       return;
     }
     MqttClient.setCallback(MqttDataCallback);
     MqttClient.setServer(Settings.mqtt_host, Settings.mqtt_port);
     if (MqttClient.connect(Settings.mqtt_client, Settings.mqtt_user, Settings.mqtt_pwd, Settings.subcribe_topic, 1, true, "")) {
 
-    } 
+    }
+    DEVICE_LOG_INFO("end NetWork_Mqtt::setupInfoMQTT");
 }
 
 
 void NetWork_Mqtt::getAllDataSetup(){
-   
+   DEVICE_LOG_INFO("start NetWork_Mqtt::getAllDataSetup");
+   DEVICE_LOG_INFO("end NetWork_Mqtt::getAllDataSetup");
 }
 
 
@@ -123,6 +129,7 @@ void NetWork_Mqtt::disconnetMqtt(){
 }
 
 void NetWork_Mqtt::connectMqtt(){
+  DEVICE_LOG_INFO("start NetWork_Mqtt::connectMqtt");
   MqttClient.setCallback(MqttDataCallback);
   MqttClient.setServer(Settings.mqtt_host, Settings.mqtt_port);
 
@@ -130,6 +137,7 @@ void NetWork_Mqtt::connectMqtt(){
     this->sendMessageInfo("test");
     
   }
+  DEVICE_LOG_INFO("end NetWork_Mqtt::connectMqtt");
 }
 
 
@@ -137,11 +145,11 @@ unsigned char  NetWork_Mqtt::checkStatusMqtt(){
     return 0;
 }
 void NetWork_Mqtt::sendMessageInfo(char * data){
-
+  DEVICE_LOG_INFO("start NetWork_Mqtt::sendMessageInfo");
   if (MqttClient.publish(Settings.subcribe_topic, data, 1)) {
       
   }
-   
+  DEVICE_LOG_INFO("end NetWork_Mqtt::sendMessageInfo");
 }
 
 
@@ -154,11 +162,14 @@ void NetWork_Mqtt::MqttSubscribe(char *topic)
 }
 
 void NetWork_Mqtt::lisenMqtt(){
+  DEVICE_LOG_INFO("start NetWork_Mqtt::lisenMqtt");
   MqttClient.loop(); 
+  DEVICE_LOG_INFO("end NetWork_Mqtt::lisenMqtt");
 }
 
 void NetWork_Mqtt::MqttReconnect()
 {
+  DEVICE_LOG_INFO("start NetWork_Mqtt::MqttReconnect");
 
   EspClient.stop();
   if (!EspClient.connect(Settings.mqtt_host, Settings.mqtt_port)) {
@@ -169,6 +180,7 @@ void NetWork_Mqtt::MqttReconnect()
   yield();
   
   this->connectMqtt();
+  DEVICE_LOG_INFO("end NetWork_Mqtt::MqttReconnect");
 }
 
 

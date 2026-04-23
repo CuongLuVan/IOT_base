@@ -2,6 +2,7 @@
 #include "TaskSensor.h"
 #include "TaskDevice.h"
 #include "define_All.h"
+#include "DebugInfo.h"
 
 
 TaskNetWork task_NetWork;
@@ -14,6 +15,7 @@ TaskHandle_t Task3;
 
 
 void setup() {
+    DEVICE_LOG_INFO("start DeviceIOT::setup");
     Serial.begin(115200);
 
     taskDevice.setup();
@@ -33,6 +35,7 @@ void setup() {
     // Non RTOS mode: run all tasks cooperatively in loop
     // No extra task creation needed.
 #endif
+    DEVICE_LOG_INFO("end DeviceIOT::setup");
 }
 
 void loop() {

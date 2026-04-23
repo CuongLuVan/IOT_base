@@ -20,6 +20,7 @@
 #include <DHT.h>
 #include "PMS.h"
 #include "Common.h"
+#include "DebugInfo.h"
 
 #define DHTPIN 12 // what digital 
 #define DHTTYPE DHT11  //DHT 11
@@ -39,6 +40,7 @@ static const uint32_t SENSOR_TASK_INTERVAL_MS = 1000; // Adjustable interval (ms
 static uint8_t sensorReadStep = 0; // 0..3 read schedule
 
 void TaskSensor::setup(void){
+    DEVICE_LOG_INFO("start TaskSensor::setup");
     dataSensor.valueHumi =0;
     dataSensor.valueTemp =0;
     dataSensor.valueDust =0;
@@ -59,6 +61,7 @@ void TaskSensor::setup(void){
         }
     }
 #endif
+    DEVICE_LOG_INFO("end TaskSensor::setup");
 }
 
 void TaskSensor::readSensor(void){
@@ -66,7 +69,7 @@ void TaskSensor::readSensor(void){
 }
 int checkDataNumber = 0;
 void TaskSensor::readSensorDust(void){
-    
+    DEVICE_LOG_INFO("start TaskSensor::readSensorDust");
     if (pms.read(data))
     {
       dataSensor.valueDust_PM2_5 = data.PM_AE_UG_2_5;
@@ -94,7 +97,7 @@ void TaskSensor::readSensorDust(void){
       Serial1.println(data.PM_AE_UG_10_0);
       Serial1.println();*/
     }
-
+    DEVICE_LOG_INFO("end TaskSensor::readSensorDust");
 }
 void TaskSensor::readSensorTemp(void){
     dataSensor.valueTemp =(int) dht.readTemperature()*100;
@@ -108,6 +111,7 @@ extern QueueHandle_t sensorDataQueue;
 #endif
 
 void TaskSensor::taskRun(void * parameter) {
+    DEVICE_LOG_INFO("start TaskSensor::taskRun");
     using SensorReadFn = void (*)();
     static SensorReadFn readOps[4] = {
         TaskSensor::readSensor,

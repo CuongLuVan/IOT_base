@@ -2,7 +2,7 @@
 #include "Memory.h"
 #include <EEPROM.h>
 #include "define_All.h"
-
+#include "DebugInfo.h"
 
 
 Memory* Memory::pinstance_{nullptr};
@@ -25,8 +25,10 @@ Memory *Memory::GetInstance()
 }
 
 void Memory::initEEPROM(int size) {
+      DEVICE_LOG_INFO("start Memory::initEEPROM");
       EEPROM.begin(size);
       _size = size;
+      DEVICE_LOG_INFO("end Memory::initEEPROM");
 }
 
 // Ghi int

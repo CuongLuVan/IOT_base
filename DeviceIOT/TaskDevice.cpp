@@ -4,6 +4,7 @@
 #include "Common.h"
 #include "define_All.h"
 #include "MemoryData.h"
+#include "DebugInfo.h"
 
 #if SUPPORT_RTOS
 #include <freertos/FreeRTOS.h>
@@ -22,6 +23,7 @@ InfoDeviceControl control;
 #define BUTTON_PIN 14
 void TaskDevice::setup(void)
 {
+    DEVICE_LOG_INFO("start TaskDevice::setup");
     control.device_port = 0x00;
     control.button_click = 0x00;
     control.button_status = 0x00;
@@ -30,6 +32,7 @@ void TaskDevice::setup(void)
     pinMode(INPUT_PULLUP,INPUT); 
     pinMode(OUTPUT_PUMP,OUTPUT); 
     pinMode(OUTPUT_DEVICE_1,OUTPUT); 
+    DEVICE_LOG_INFO("end TaskDevice::setup");
 }
 
 void TaskDevice::readButton(void)
@@ -91,12 +94,15 @@ void TaskDevice::controlDevice(void){
     }
 }
 void TaskDevice::taskRun(void * parameter) {
+    DEVICE_LOG_INFO("start TaskDevice::taskRun");
     for(;;)
     { 
       TaskDevice::readButton();
       TaskDevice::controlPump();
       TaskDevice::controlDevice();
-
+        #if SUPPORT_RTOS
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
+        #endif
         if(control.device_port!=control.device_port_last){
             control.device_port_last = control.device_port;
            #if SUPPORT_RTOS

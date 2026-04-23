@@ -14,6 +14,7 @@
 #include "esp_log.h"
 #include "Common.h"
 #include "define_All.h"
+#include "DebugInfo.h"
 
 
 NetWork_Wifi netWork_Wifi;
@@ -93,7 +94,8 @@ void getRTCInfo(){
 }
 
 void TaskNetWork::setup(void){
-     Serial.println("Setup TaskNetWork::setup");
+    DEVICE_LOG_INFO("start TaskNetWork::setup");
+
     Memory::GetInstance()->initEEPROM(2048);
     modeStatus = Memory::GetInstance()->readChar(MODE_WIFI_ADRESS);
     pinMode(BUTTON_PIN, INPUT_PULLUP); // N�t n?i GND, n�n d�ng INPUT_PULLUP
@@ -160,6 +162,7 @@ void TaskNetWork::setup(void){
         netWork_Wifi.startWebserverRoot();
     }
     Serial.println("Setup done");
+    DEVICE_LOG_INFO("end TaskNetWork::setup");
 }
 
 unsigned long compaireTimeInfo(unsigned long time){
@@ -171,6 +174,7 @@ unsigned long compaireTimeInfo(unsigned long time){
 }
 
 bool checkNetWorkInConnect(void){  
+    DEVICE_LOG_INFO("start checkNetWorkInConnect");
     static bool networkTimeInitialized = false;
 
     if(!netWork_Wifi.checkModeHostPost()){
@@ -198,22 +202,26 @@ bool checkNetWorkInConnect(void){
                 testTimeData.state =1;
             }
           }
-        }           
+        }
     }
 
+    DEVICE_LOG_INFO("end checkNetWorkInConnect");
     return true;   
 }
 
 
 bool checkNetWorkDisconnect(void){
+    DEVICE_LOG_INFO("start checkNetWorkDisconnect");
     netWork_Wifi.disconnetWifi();
     testTimeData.numberCheck = 0;
     testTimeData.state = 2; 
+    DEVICE_LOG_INFO("end checkNetWorkDisconnect");
     return true;          
 }
 
 
 bool checkNetWorkReConnect(void){
+    DEVICE_LOG_INFO("start checkNetWorkReConnect");
     testTimeData.numberCheck++;
     if(testTimeData.numberCheck>4){
         netWork_Wifi.connectWifi();
@@ -224,11 +232,13 @@ bool checkNetWorkReConnect(void){
        // netWork_Mqtt.setupInfoMQTT();
         //if(netWork_Mqtt.checkStatusMqtt()) netWork_Mqtt.sendMessageInfo("mqtt");
     }
+    DEVICE_LOG_INFO("end checkNetWorkReConnect");
     return true;   
 }
 
 
 bool checkNetWorkRealTimeServer(void){
+      DEVICE_LOG_INFO("start checkNetWorkRealTimeServer");
       testTimeData.numberCheck++;
       if(netWork_Wifi.checkWifi()== WL_CONNECTED){
           testTimeData.state==4;
@@ -244,19 +254,23 @@ bool checkNetWorkRealTimeServer(void){
         }
       }
 
+      DEVICE_LOG_INFO("end checkNetWorkRealTimeServer");
       return true;
 }
 
 
 bool checkMQTTConnect(void){
+  DEVICE_LOG_INFO("start checkMQTTConnect");
   testTimeData.numberCheck = 0;
   netWork_Mqtt.MqttReconnect();
   testTimeData.state=0;
+  DEVICE_LOG_INFO("end checkMQTTConnect");
   return true;   
 }
 
 
 bool checkNetWorkERRORConnect(void){
+    DEVICE_LOG_INFO("start checkNetWorkERRORConnect");
     if(testTimeData.countNetWorkWorng>100){
       // reset device
     
@@ -264,6 +278,7 @@ bool checkNetWorkERRORConnect(void){
     
     testTimeData.state=0;
     testTimeData.numberCheck=0;
+    DEVICE_LOG_INFO("end checkNetWorkERRORConnect");
     return true;
 }
 
@@ -340,6 +355,7 @@ bool (* arrayNetworkFunction[])(void) ={
 
 
 void TaskNetWork::loopNetWork(void) {
+  DEVICE_LOG_INFO("start TaskNetWork::loopNetWork");
   if(WIFI_START_CONNECT==modeStatus){
       // check wifi netWor
         if(compaireTimeInfo(testTimeData.timeStart)>30000){
@@ -408,9 +424,11 @@ void TaskNetWork::loopNetWork(void) {
     // Non-RTOS mode: use simple flags for latest data
    // MemoryData::GetInstance().sensorData_=(&dataSensor);
 #endif
+    DEVICE_LOG_INFO("end TaskNetWork::loopNetWork");
 }
 
 void TaskNetWork::taskRun(void * parameter) {
+    DEVICE_LOG_INFO("start TaskNetWork::taskRun");
 #if SUPPORT_RTOS
     Serial.print("Task2 is running on core ");
     Serial.println(xPortGetCoreID());
@@ -418,10 +436,12 @@ void TaskNetWork::taskRun(void * parameter) {
     for(;;) {
         loopNetWork();
         getRTCInfo();
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 #else
     // In non-RTOS mode, this function is called from loop() and should not block.
     loopNetWork();
     getRTCInfo();
+    DEVICE_LOG_INFO("end TaskNetWork::taskRun");
 #endif
 }

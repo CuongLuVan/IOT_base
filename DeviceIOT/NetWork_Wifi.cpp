@@ -17,6 +17,7 @@
 #include "define_All.h"
 #include <WiFiProv.h>
 #include "Common.h"
+#include "DebugInfo.h"
 #include <time.h>
 #include "MemoryData.h"
 
@@ -50,6 +51,7 @@ void NetWork_Wifi::handleRoot(){
 }
 
 void NetWork_Wifi::handleSetUp(){
+    DEVICE_LOG_INFO("start NetWork_Wifi::handleSetUp");
     String data = webServer->arg("data");
     deserializeJson(jsonBuffer, data);
     Memory::GetInstance()->writeString(WIFI_SETUP_JSON,data);
@@ -58,10 +60,12 @@ void NetWork_Wifi::handleSetUp(){
     webServer->send(200, "application/json", "{'data':true}");
     delay(2000);
     ESP.restart();            // Restart ESP
+    DEVICE_LOG_INFO("end NetWork_Wifi::handleSetUp");
 }
 extern DeviceCommand cmd;
 extern QueueHandle_t deviceCommandQueue;
 void NetWork_Wifi::handleControl(){
+    DEVICE_LOG_INFO("start NetWork_Wifi::handleControl");
     String data = webServer->arg("data");
    
     cmd.commandType = webServer->arg("com").toInt();
@@ -94,10 +98,12 @@ void NetWork_Wifi::handleUpdate(){
 
 void NetWork_Wifi::startWebServer()
 {
+    DEVICE_LOG_INFO("start NetWork_Wifi::startWebServer");
     webServer = new class WebServer(80);
     webServer->on("/control", this->handleControl);
     webServer->on("/update", this->handleUpdate);
     webServer->begin(); // Web server start 
+    DEVICE_LOG_INFO("end NetWork_Wifi::startWebServer");
 }
 
 void NetWork_Wifi::startWebserverRoot()
@@ -110,6 +116,7 @@ void NetWork_Wifi::startWebserverRoot()
 
 
 void NetWork_Wifi::setupHostPost(void){
+    DEVICE_LOG_INFO("start NetWork_Wifi::setupHostPost");
     Serial.begin(115200);
     // Set WiFi to station mode and disconnect from an AP if it was previously connected
      WiFi.disconnect();
@@ -125,10 +132,13 @@ void NetWork_Wifi::setupHostPost(void){
     WiFi.softAP(HOST_POST_INFO,HOST_POST_INFO);
     WiFi.begin();
     Serial.println("Setup done"); 
+    DEVICE_LOG_INFO("end NetWork_Wifi::setupHostPost");
 }
 
 void NetWork_Wifi::loopHostPost(void){
+    DEVICE_LOG_INFO("start NetWork_Wifi::loopHostPost");
     webServer->handleClient();
+    DEVICE_LOG_INFO("end NetWork_Wifi::loopHostPost");
 }
 
 bool NetWork_Wifi::checkModeHostPost(void){
@@ -172,6 +182,7 @@ bool isVersionNewer(const String& current, const String& server) {
 }
 
 void NetWork_Wifi::setupOTA(void){
+    DEVICE_LOG_INFO("start NetWork_Wifi::setupOTA");
     if (WiFi.status() == WL_CONNECTED) {
         HTTPClient http;
         http.begin(linkOTA_ESP_32);
@@ -255,6 +266,7 @@ void NetWork_Wifi::setupOTA(void){
       } else {
         Serial.println("Failed to connect to WiFi");
       }
+    DEVICE_LOG_INFO("end NetWork_Wifi::setupOTA");
 }
 
 void NetWork_Wifi::loopOTA(void){
@@ -262,12 +274,14 @@ void NetWork_Wifi::loopOTA(void){
 }
 
 void NetWork_Wifi::connectWifi(void){
+    DEVICE_LOG_INFO("start NetWork_Wifi::connectWifi");
 
   ssid = "";
   password = "";
   Memory::GetInstance()->getWiFiCredentials(WIFI_SSSID,WIFI_PASS,ssid,password);
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
+    DEVICE_LOG_INFO("end NetWork_Wifi::connectWifi");
 
   
 
@@ -333,6 +347,7 @@ unsigned char NetWork_Wifi::pingNetWork(){
 
 
 void NetWork_Wifi::disconnetWifi(){
+    DEVICE_LOG_INFO("start NetWork_Wifi::disconnetWifi");
     if (webServer != nullptr) {
         webServer->close();
         delete webServer;
@@ -349,6 +364,7 @@ void NetWork_Wifi::disconnetWifi(){
 
     //WiFi.mode(WIFI_OFF);
     delay(100);
+    DEVICE_LOG_INFO("end NetWork_Wifi::disconnetWifi");
 }
 
 void NetWork_Wifi::handerHospost(){
@@ -465,6 +481,7 @@ void NetWork_Wifi::startProvisioning(){
 }
 
 void NetWork_Wifi::setupProvisioning(){
+  DEVICE_LOG_INFO("start NetWork_Wifi::setupProvisioning");
   // clear esp
   WiFi.onEvent(sysProvEvent);
 
@@ -486,15 +503,16 @@ void NetWork_Wifi::setupProvisioning(){
   WiFiProv.printQR(service_name, pop, "ble");
   enableProvisioningBle =  SmartProvisioningBle::START_BLE;
   timeSmartConfig = Memory::GetInstance()->getTimeStamp();
-
+  DEVICE_LOG_INFO("end NetWork_Wifi::setupProvisioning");
 }
 
 void NetWork_Wifi::loopProvisioning(){
+  DEVICE_LOG_INFO("start NetWork_Wifi::loopProvisioning");
   // clear esp
   if((Memory::GetInstance()->getTimeStamp()-timeSmartConfig)>MAX_TIME_WAIT_CONFIG){
     ESP.restart();            // Restart ESP
   }
-  
+  DEVICE_LOG_INFO("end NetWork_Wifi::loopProvisioning");
 }
 
 
