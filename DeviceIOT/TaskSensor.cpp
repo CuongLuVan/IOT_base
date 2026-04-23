@@ -21,7 +21,7 @@
 #include "PMS.h"
 #include "Common.h"
 
-#define DHTPIN 7 // what digital 
+#define DHTPIN 12 // what digital 
 #define DHTTYPE DHT11  //DHT 11
 
 

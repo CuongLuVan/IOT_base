@@ -16,17 +16,20 @@ extern QueueHandle_t deviceStatusQueue;
 #endif
 
 InfoDeviceControl control;
-#define INPUT_PULLUP 1
+#define INPUT_PULLUP 13
 #define OUTPUT_PUMP 22
 #define OUTPUT_DEVICE_1 23
-#define BUTTON_PIN 2
+#define BUTTON_PIN 14
 void TaskDevice::setup(void)
 {
     control.device_port = 0x00;
     control.button_click = 0x00;
     control.button_status = 0x00;
     control.count_info = 0x00;
-    pinMode(21, INPUT_PULLUP); 
+    pinMode(BUTTON_PIN,INPUT); 
+    pinMode(INPUT_PULLUP,INPUT); 
+    pinMode(OUTPUT_PUMP,OUTPUT); 
+    pinMode(OUTPUT_DEVICE_1,OUTPUT); 
 }
 
 void TaskDevice::readButton(void)

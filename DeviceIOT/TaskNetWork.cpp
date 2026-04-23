@@ -93,7 +93,7 @@ void getRTCInfo(){
 }
 
 void TaskNetWork::setup(void){
-    
+     Serial.println("Setup TaskNetWork::setup");
     Memory::GetInstance()->initEEPROM(2048);
     modeStatus = Memory::GetInstance()->readChar(MODE_WIFI_ADRESS);
     pinMode(BUTTON_PIN, INPUT_PULLUP); // N�t n?i GND, n�n d�ng INPUT_PULLUP
