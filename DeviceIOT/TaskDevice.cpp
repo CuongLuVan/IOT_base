@@ -95,17 +95,15 @@ void TaskDevice::controlDevice(void){
 }
 void TaskDevice::taskRun(void * parameter) {
     DEVICE_LOG_INFO("start TaskDevice::taskRun");
-    for(;;)
-    { 
-      TaskDevice::readButton();
-      TaskDevice::controlPump();
-      TaskDevice::controlDevice();
-        #if SUPPORT_RTOS
+    #if SUPPORT_RTOS
+        for(;;)
+        { 
+            TaskDevice::readButton();
+            TaskDevice::controlPump();
+            TaskDevice::controlDevice();
             vTaskDelay(1000 / portTICK_PERIOD_MS);
-        #endif
-        if(control.device_port!=control.device_port_last){
-            control.device_port_last = control.device_port;
-           #if SUPPORT_RTOS
+            if(control.device_port!=control.device_port_last){
+                control.device_port_last = control.device_port;
                 // Report current device status to network
                 if (deviceStatusQueue != NULL) {
                     xQueueSend(deviceStatusQueue, &control, pdMS_TO_TICKS(50));
@@ -123,20 +121,27 @@ void TaskDevice::taskRun(void * parameter) {
                         Serial.printf("[TaskDevice] Exec command type=%d value=%d\n", cmd_to_device.commandType, cmd_to_device.commandValue);
                     }
                 }
-            #else
-                MemoryData::GetInstance().deviceStatus_ = &control;
-                if(MemoryData::GetInstance().deviceCommand_ != NULL) {
-                    DeviceCommand* cmd_to_device = MemoryData::GetInstance().deviceCommand_;
-                    if(cmd_to_device->commandType== COMMAND_TYPE_CONTROL) {
-                        control.device_port = cmd_to_device->commandValue;
-                        cmd_to_device->reserved = 0; // Mark as processed
-                        control.count_info++;
-                    }
-                }
-            #endif
+            }
         }
+        
+    #else
+        TaskDevice::readButton();
+        TaskDevice::controlPump();
+        TaskDevice::controlDevice();
+
+        if(control.device_port!=control.device_port_last){
+            control.device_port_last = control.device_port;
+            MemoryData::GetInstance().deviceStatus_ = &control;
+            if(MemoryData::GetInstance().deviceCommand_ != NULL) {
+                DeviceCommand* cmd_to_device = MemoryData::GetInstance().deviceCommand_;
+                if(cmd_to_device->commandType== COMMAND_TYPE_CONTROL) {
+                    control.device_port = cmd_to_device->commandValue;
+                    cmd_to_device->reserved = 0; // Mark as processed
+                    control.count_info++;
+                }
+            }
+        }
+    #endif
 
 
-
-    }
 }

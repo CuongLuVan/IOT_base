@@ -27,6 +27,11 @@ Memory *Memory::GetInstance()
 void Memory::initEEPROM(int size) {
       DEVICE_LOG_INFO("start Memory::initEEPROM");
       EEPROM.begin(size);
+      if (!EEPROM.begin(size)) {
+          Serial.println("EEPROM init failed");
+          // Có thể delay ngắn hoặc dừng hẳn
+          while(1) { delay(100); }
+      }
       _size = size;
       DEVICE_LOG_INFO("end Memory::initEEPROM");
 }

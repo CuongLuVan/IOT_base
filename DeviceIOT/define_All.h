@@ -1,7 +1,7 @@
 
 
 #define MODE_WIFI_ADRESS          1
-#define SUPPORT_RTOS true
+#define SUPPORT_RTOS false
 
 #define COMMAND_TYPE_CONTROL      0x01
 #define COMMAND_TYPE_OTHER        0x02

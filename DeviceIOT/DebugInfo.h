@@ -2,7 +2,7 @@
 #define DEVICE_LOG_DEFAULT_LEVEL 4
 
 
-inline  void DEVICE_LOG_INTERNAL_MODULE( int level, const char* log_info){
+inline  void DEVICE_LOG_INTERNAL_MODULE( int level, String log_info){
     if(level <= DEVICE_LOG_DEFAULT_LEVEL)                                                
     {                                                                                       
         Serial.println(log_info);                                                                       \

@@ -119,47 +119,48 @@ void TaskSensor::taskRun(void * parameter) {
         TaskSensor::readSensorTemp,
         TaskSensor::readSensorHumi
     };
+    #if SUPPORT_RTOS
+        for(;;)
+        {
+            // Chu kỳ 1 giây / step: 0..3
+            if (sensorReadStep >= 4) {
+                sensorReadStep = 0;
+            }
+            if (sensorDataMutex != NULL) {
+                if (xSemaphoreTake(sensorDataMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+                    readOps[sensorReadStep]();
+                    xSemaphoreGive(sensorDataMutex);
+                }
+            } else {
+                readOps[sensorReadStep]();
+            }
 
-    for(;;)
-    {
-        // Chu kỳ 1 giây / step: 0..3
+            if (sensorDataQueue != NULL) {
+                // Luôn gửi bản ghi hiện tại mỗi lúc sau khi cập nhật ô cùng
+                xQueueSend(sensorDataQueue, &dataSensor, pdMS_TO_TICKS(100));
+            }
+            if (sensorDataMutex != NULL) {
+                // có thể dùng mutex nếu cần đọc dataSensor ở nơi khác, có thể for dữ liệu trên queue
+                if (xSemaphoreTake(sensorDataMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+                    MemoryData::GetInstance().sensorData_ = &dataSensor;
+                    xSemaphoreGive(sensorDataMutex);
+                }
+            } else {
+                MemoryData::GetInstance().sensorData_ = &dataSensor;
+            }
+            vTaskDelay(SENSOR_TASK_INTERVAL_MS / portTICK_PERIOD_MS);
+            sensorReadStep++;
+        }
+    #else
+         // Chu kỳ 1 giây / step: 0..3
         if (sensorReadStep >= 4) {
             sensorReadStep = 0;
         }
-
-#if SUPPORT_RTOS
-        if (sensorDataMutex != NULL) {
-            if (xSemaphoreTake(sensorDataMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-                readOps[sensorReadStep]();
-                xSemaphoreGive(sensorDataMutex);
-            }
-        } else {
-            readOps[sensorReadStep]();
-        }
-#else
         readOps[sensorReadStep]();
-#endif
-
-#if SUPPORT_RTOS
-        if (sensorDataQueue != NULL) {
-            // Luôn gửi bản ghi hiện tại mỗi lúc sau khi cập nhật ô cùng
-            xQueueSend(sensorDataQueue, &dataSensor, pdMS_TO_TICKS(100));
-        }
-        if (sensorDataMutex != NULL) {
-            // có thể dùng mutex nếu cần đọc dataSensor ở nơi khác, có thể for dữ liệu trên queue
-            if (xSemaphoreTake(sensorDataMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-                MemoryData::GetInstance().sensorData_ = &dataSensor;
-                xSemaphoreGive(sensorDataMutex);
-            }
-        } else {
-            MemoryData::GetInstance().sensorData_ = &dataSensor;
-        }
-        vTaskDelay(SENSOR_TASK_INTERVAL_MS / portTICK_PERIOD_MS);
-#else
         MemoryData::GetInstance().sensorData_ = &dataSensor;
         delay(SENSOR_TASK_INTERVAL_MS);
-#endif
-
         sensorReadStep++;
-    }
+    #endif
+
+    
 }

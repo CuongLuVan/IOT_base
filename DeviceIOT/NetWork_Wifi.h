@@ -43,6 +43,7 @@ class NetWork_Wifi {
 
         static void    handleRoot(void);
         static void   handleSetUp(void);
+        static void   handleSetUpWifi(void);
         static void   handleControl(void);
         static void   handleUpdate(void);
 
@@ -52,6 +53,9 @@ class NetWork_Wifi {
         void startWebserverRoot(void);
         void setupHostPost(void);
         void loopHostPost(void);
+        void startWebserverAP(void);
+        void setupAP(void);
+        void loopAP(void);
         void setupOTA(void);
         void loopOTA(void);
         void connectWifi(void);

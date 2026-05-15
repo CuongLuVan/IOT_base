@@ -99,7 +99,7 @@ void TaskNetWork::setup(void){
     Memory::GetInstance()->initEEPROM(2048);
     modeStatus = Memory::GetInstance()->readChar(MODE_WIFI_ADRESS);
     pinMode(BUTTON_PIN, INPUT_PULLUP); // N�t n?i GND, n�n d�ng INPUT_PULLUP
-
+    DEVICE_LOG_INFO("start TaskNetWork::setup ==>"+ String(modeStatus));
     if(WIFI_START_CONNECT==modeStatus){
         netWork_Wifi.connectWifi();
         if (netWork_Wifi.checkWifi() == WL_CONNECTED) {
@@ -150,10 +150,13 @@ void TaskNetWork::setup(void){
         netWork_Wifi.startSmartConfig();
         netWork_Wifi.setupSmartConfig();
     }else if(WIFI_BLE_SMART_CONFIG==modeStatus){
-        netWork_Wifi.startProvisioning();
-        netWork_Wifi.setupProvisioning();
-        netWork_Wifi.startSmartConfig();
-        netWork_Wifi.setupSmartConfig();
+        //netWork_Wifi.startProvisioning();
+        //netWork_Wifi.setupProvisioning();
+        //netWork_Wifi.startSmartConfig();
+        //netWork_Wifi.setupSmartConfig();
+        DEVICE_LOG_INFO("WIFI_BLE_SMART_CONFIG .. ");
+        netWork_Wifi.setupAP();
+        netWork_Wifi.startWebserverAP();
     }else if(WIFI_START_OTA==modeStatus){
         netWork_Wifi.setupOTA();
     }
@@ -331,10 +334,10 @@ void checkButton(){
         netWork_Wifi.startSmartConfig();
         netWork_Wifi.setupSmartConfig();
       }else if(WIFI_BLE_SMART_CONFIG==valueButton){
-        netWork_Wifi.startProvisioning();
-        netWork_Wifi.setupProvisioning();
-        netWork_Wifi.startSmartConfig();
-        netWork_Wifi.setupSmartConfig();
+        //netWork_Wifi.startProvisioning();
+        //netWork_Wifi.setupProvisioning();
+        //netWork_Wifi.startSmartConfig();
+       // netWork_Wifi.setupSmartConfig();
       }else if(WIFI_START_OTA==valueButton){
         netWork_Wifi.setupOTA();
       }
@@ -369,7 +372,8 @@ void TaskNetWork::loopNetWork(void) {
     }else if(WIFI_SMART_CONFIG==modeStatus){
       netWork_Wifi.loopSmartConfig();
     }else if(WIFI_BLE_SMART_CONFIG==modeStatus){
-        netWork_Wifi.loopSmartConfig();
+        //netWork_Wifi.loopSmartConfig();
+        //netWork_Wifi.loopProvisioning();
         netWork_Wifi.loopProvisioning();
     }else if(WIFI_START_OTA==modeStatus){
       netWork_Wifi.loopOTA();
@@ -429,19 +433,20 @@ void TaskNetWork::loopNetWork(void) {
 
 void TaskNetWork::taskRun(void * parameter) {
     DEVICE_LOG_INFO("start TaskNetWork::taskRun");
-#if SUPPORT_RTOS
-    Serial.print("Task2 is running on core ");
-    Serial.println(xPortGetCoreID());
+    #if SUPPORT_RTOS
+      Serial.print("Task2 is running on core ");
+      Serial.println(xPortGetCoreID());
 
-    for(;;) {
-        loopNetWork();
-        getRTCInfo();
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-    }
-#else
-    // In non-RTOS mode, this function is called from loop() and should not block.
-    loopNetWork();
-    getRTCInfo();
+      for(;;) {
+          loopNetWork();
+          getRTCInfo();
+          vTaskDelay(1000 / portTICK_PERIOD_MS);
+      }
+    #else
+      // In non-RTOS mode, this function is called from loop() and should not block.
+      loopNetWork();
+      getRTCInfo();
+    
+    #endif
     DEVICE_LOG_INFO("end TaskNetWork::taskRun");
-#endif
 }

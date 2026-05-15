@@ -29,8 +29,8 @@ void setup() {
     vTaskDelay(pdMS_TO_TICKS(500));
     xTaskCreatePinnedToCore(taskSensor.taskRun, "TaskSensor", 10000, NULL, 1, &Task2, 1);
     vTaskDelay(pdMS_TO_TICKS(500));
-    xTaskCreatePinnedToCore(task_NetWork.taskRun, "TaskNetwork", 10000, NULL, 1, &Task3, 0);
-    vTaskDelay(pdMS_TO_TICKS(500));
+  //  xTaskCreatePinnedToCore(task_NetWork.taskRun, "TaskNetwork", 10000, NULL, 1, &Task3, 2);
+   // vTaskDelay(pdMS_TO_TICKS(500));
 #else
     // Non RTOS mode: run all tasks cooperatively in loop
     // No extra task creation needed.

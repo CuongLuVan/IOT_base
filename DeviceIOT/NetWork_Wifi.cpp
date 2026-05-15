@@ -62,6 +62,24 @@ void NetWork_Wifi::handleSetUp(){
     ESP.restart();            // Restart ESP
     DEVICE_LOG_INFO("end NetWork_Wifi::handleSetUp");
 }
+
+void NetWork_Wifi::handleSetUpWifi(){
+    DEVICE_LOG_INFO("start NetWork_Wifi::handleSetUpWifi  xxxxxxxxxxxxxxx");
+    String data = webServer->arg("data");
+    deserializeJson(jsonBuffer, data);
+    Memory::GetInstance()->writeString(WIFI_SETUP_JSON,data);
+    //WIFI_BLE_PROVISION  WIFI_SMART_CONFIG
+    Memory::GetInstance()->writeChar(WIFI_MODE,WIFI_START_CONNECT);
+    Memory::GetInstance()->writeString(WIFI_SSSID, jsonBuffer["ssid"].as<String>());
+    Memory::GetInstance()->writeString(WIFI_PASS,jsonBuffer["password"].as<String>());
+
+    webServer->send(200, "application/json", "{'data':true}");
+     DEVICE_LOG_INFO("end NetWork_Wifi::end................................");
+    delay(2000);
+    ESP.restart();            // Restart ESP
+    DEVICE_LOG_INFO("end NetWork_Wifi::handleSetUpWifi");
+}
+
 extern DeviceCommand cmd;
 extern QueueHandle_t deviceCommandQueue;
 void NetWork_Wifi::handleControl(){
@@ -133,6 +151,47 @@ void NetWork_Wifi::setupHostPost(void){
     WiFi.begin();
     Serial.println("Setup done"); 
     DEVICE_LOG_INFO("end NetWork_Wifi::setupHostPost");
+}
+
+void NetWork_Wifi::startWebserverAP()
+{
+  DEVICE_LOG_INFO("end NetWork_Wifi::startWebserverAP ........... 1 ");
+    webServer = new class WebServer(80);
+    DEVICE_LOG_INFO("end NetWork_Wifi::startWebserverAP ........... 2 ");
+    webServer->on("/wifi", this->handleSetUpWifi);
+    DEVICE_LOG_INFO("end NetWork_Wifi::startWebserverAP ........... 3 ");
+    webServer->begin(); // Web server start
+    DEVICE_LOG_INFO("end NetWork_Wifi::startWebserverAP ........... 4 ");
+}
+
+void NetWork_Wifi::setupAP(void){
+   DEVICE_LOG_INFO("end NetWork_Wifi::setupAP ...........1 ");
+    WiFi.disconnect();
+    DEVICE_LOG_INFO("end NetWork_Wifi::setupAP ........... 2");
+    WiFi.mode(WIFI_STA);      // Disable AP mode
+    DEVICE_LOG_INFO("end NetWork_Wifi::setupAP ........... 3");
+    WiFi.enableSTA(true);
+    DEVICE_LOG_INFO("end NetWork_Wifi::setupAP ........... 4");
+    if (!WiFi.getAutoReconnect()) {
+        WiFi.setAutoReconnect(true);
+    }
+    DEVICE_LOG_INFO("end NetWork_Wifi::setupAP ........... 5 ");
+    WiFi.config(ip_address[0], ip_address[1], ip_address[2], ip_address[3]); 
+    DEVICE_LOG_INFO("end NetWork_Wifi::setupAP ........... 6 ");
+    delay(100);
+    DEVICE_LOG_INFO("end NetWork_Wifi::setupAP ........... 7 ");
+    WiFi.setHostname(HOST_POST_INFO);
+    DEVICE_LOG_INFO("end NetWork_Wifi::setupAP ...........  8 ");
+    WiFi.softAP("ESP_Config", "12345678");
+    DEVICE_LOG_INFO("end NetWork_Wifi::setupAP ........... 9 ");
+    WiFi.begin();
+    DEVICE_LOG_INFO("end NetWork_Wifi::setupAP ........... 10 ");
+}
+
+void NetWork_Wifi::loopAP(void){
+    DEVICE_LOG_INFO("start NetWork_Wifi::loopAP");
+    webServer->handleClient();
+    DEVICE_LOG_INFO("end NetWork_Wifi::loopAP");
 }
 
 void NetWork_Wifi::loopHostPost(void){
@@ -377,7 +436,7 @@ void NetWork_Wifi::handerClient(){
 
 void NetWork_Wifi::startSmartConfig(){
   // clear esp
-  ESP.restart();            // Restart ESP
+ // ESP.restart();            // Restart ESP
 }
 
 void NetWork_Wifi::setupSmartConfig(){
