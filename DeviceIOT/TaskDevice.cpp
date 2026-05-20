@@ -94,7 +94,7 @@ void TaskDevice::controlDevice(void){
     }
 }
 void TaskDevice::taskRun(void * parameter) {
-    DEVICE_LOG_INFO("start TaskDevice::taskRun");
+    //DEVICE_LOG_INFO("start TaskDevice::taskRun");
     #if SUPPORT_RTOS
         for(;;)
         { 

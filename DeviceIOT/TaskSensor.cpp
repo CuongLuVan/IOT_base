@@ -110,15 +110,17 @@ void TaskSensor::readSensorHumi(void){
 extern QueueHandle_t sensorDataQueue;
 #endif
 
+using SensorReadFn = void (*)();
+static SensorReadFn readOps[4] = {
+    TaskSensor::readSensor,
+    TaskSensor::readSensorDust,
+    TaskSensor::readSensorTemp,
+    TaskSensor::readSensorHumi
+};
+
 void TaskSensor::taskRun(void * parameter) {
-    DEVICE_LOG_INFO("start TaskSensor::taskRun");
-    using SensorReadFn = void (*)();
-    static SensorReadFn readOps[4] = {
-        TaskSensor::readSensor,
-        TaskSensor::readSensorDust,
-        TaskSensor::readSensorTemp,
-        TaskSensor::readSensorHumi
-    };
+    //DEVICE_LOG_INFO("start TaskSensor::taskRun");
+  
     #if SUPPORT_RTOS
         for(;;)
         {

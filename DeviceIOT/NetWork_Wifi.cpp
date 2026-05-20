@@ -189,9 +189,9 @@ void NetWork_Wifi::setupAP(void){
 }
 
 void NetWork_Wifi::loopAP(void){
-    DEVICE_LOG_INFO("start NetWork_Wifi::loopAP");
+   // DEVICE_LOG_INFO("start NetWork_Wifi::loopAP");
     webServer->handleClient();
-    DEVICE_LOG_INFO("end NetWork_Wifi::loopAP");
+    //DEVICE_LOG_INFO("end NetWork_Wifi::loopAP");
 }
 
 void NetWork_Wifi::loopHostPost(void){
@@ -340,7 +340,7 @@ void NetWork_Wifi::connectWifi(void){
   Memory::GetInstance()->getWiFiCredentials(WIFI_SSSID,WIFI_PASS,ssid,password);
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
-    DEVICE_LOG_INFO("end NetWork_Wifi::connectWifi");
+    DEVICE_LOG_INFO("end NetWork_Wifi::connectWifi"+ssid+ password);
 
   
 

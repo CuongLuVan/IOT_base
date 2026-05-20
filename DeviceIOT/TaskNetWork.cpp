@@ -184,7 +184,7 @@ bool checkNetWorkInConnect(void){
 
         if((netWork_Wifi.checkWifi()!= WL_CONNECTED)||(!netWork_Mqtt.checkStatusMqtt())){
           if(!netWork_Wifi.pingNetWork()){
-              testTimeData.numberCheck=0;;
+              testTimeData.numberCheck=0;
               testTimeData.state =1;
           }
           else
@@ -224,11 +224,11 @@ bool checkNetWorkDisconnect(void){
 
 
 bool checkNetWorkReConnect(void){
-    DEVICE_LOG_INFO("start checkNetWorkReConnect");
+    DEVICE_LOG_INFO("start checkNetWorkReConnect"+ String(testTimeData.numberCheck));
     testTimeData.numberCheck++;
     if(testTimeData.numberCheck>4){
         netWork_Wifi.connectWifi();
-        testTimeData.state==3;
+        testTimeData.state=3;
         testTimeData.numberCheck = 0;
         netWork_Wifi.startWebServer();
        // netWork_Mqtt.getAllDataSetup();
@@ -244,14 +244,15 @@ bool checkNetWorkRealTimeServer(void){
       DEVICE_LOG_INFO("start checkNetWorkRealTimeServer");
       testTimeData.numberCheck++;
       if(netWork_Wifi.checkWifi()== WL_CONNECTED){
-          testTimeData.state==4;
+         DEVICE_LOG_INFO("netWork_Wifi.checkWifi()== WL_CONNECTED .......................ok");
+          testTimeData.state=4;
       }
       else
       {
-        if(testTimeData.numberCheck>4){
+        if(testTimeData.numberCheck>240){
           testTimeData.countNetWorkWorng  ++;
           if(testTimeData.countNetWorkWorng>3){
-            testTimeData.state==5;
+            testTimeData.state=0;
           }
           testTimeData.numberCheck = 0;
         }
@@ -266,7 +267,8 @@ bool checkMQTTConnect(void){
   DEVICE_LOG_INFO("start checkMQTTConnect");
   testTimeData.numberCheck = 0;
   netWork_Mqtt.MqttReconnect();
-  testTimeData.state=0;
+  testTimeData.state=5;
+  testTimeData.countNetWorkWorng =0;
   DEVICE_LOG_INFO("end checkMQTTConnect");
   return true;   
 }
@@ -274,13 +276,16 @@ bool checkMQTTConnect(void){
 
 bool checkNetWorkERRORConnect(void){
     DEVICE_LOG_INFO("start checkNetWorkERRORConnect");
+    if(netWork_Wifi.checkWifi()!= WL_CONNECTED){
+          testTimeData.countNetWorkWorng ++;
+    }
+
     if(testTimeData.countNetWorkWorng>100){
-      // reset device
-    
+       testTimeData.state=0;
+       testTimeData.numberCheck=0;
     }
     
-    testTimeData.state=0;
-    testTimeData.numberCheck=0;
+   
     DEVICE_LOG_INFO("end checkNetWorkERRORConnect");
     return true;
 }
@@ -353,20 +358,28 @@ bool (* arrayNetworkFunction[])(void) ={
                                   &checkNetWorkReConnect,
                                   &checkNetWorkRealTimeServer,
                                   &checkMQTTConnect,
+
                                   &checkNetWorkERRORConnect
                               };
 
 
 void TaskNetWork::loopNetWork(void) {
-  DEVICE_LOG_INFO("start TaskNetWork::loopNetWork");
+  DEVICE_LOG_INFO("start TaskNetWork::loopNetWork"+ String(modeStatus));
   if(WIFI_START_CONNECT==modeStatus){
       // check wifi netWor
-        if(compaireTimeInfo(testTimeData.timeStart)>30000){
+        DEVICE_LOG_INFO("check wifi netWork compaireTimeInfo(testTimeData.timeStart)"+ String(compaireTimeInfo(testTimeData.timeStart)));
+        DEVICE_LOG_INFO("check wifi netWork testTimeData.state"+ String(testTimeData.state));
+        
+        if(compaireTimeInfo(testTimeData.timeStart)>500){
           arrayNetworkFunction[testTimeData.state]();
           testTimeData.timeStart = millis();
         } 
-        netWork_Wifi.handerClient();
-        netWork_Mqtt.lisenMqtt();
+        if(testTimeData.state==5){
+          netWork_Wifi.handerClient();
+          netWork_Mqtt.lisenMqtt();
+        }
+        //netWork_Wifi.handerClient();
+        //netWork_Mqtt.lisenMqtt();
     } else if(WIFI_BLE_PROVISION==modeStatus){
       netWork_Wifi.loopProvisioning();
     }else if(WIFI_SMART_CONFIG==modeStatus){
@@ -374,7 +387,7 @@ void TaskNetWork::loopNetWork(void) {
     }else if(WIFI_BLE_SMART_CONFIG==modeStatus){
         //netWork_Wifi.loopSmartConfig();
         //netWork_Wifi.loopProvisioning();
-        netWork_Wifi.loopProvisioning();
+        netWork_Wifi.loopAP();
     }else if(WIFI_START_OTA==modeStatus){
       netWork_Wifi.loopOTA();
     }else
@@ -432,7 +445,7 @@ void TaskNetWork::loopNetWork(void) {
 }
 
 void TaskNetWork::taskRun(void * parameter) {
-    DEVICE_LOG_INFO("start TaskNetWork::taskRun");
+  //  DEVICE_LOG_INFO("start TaskNetWork::taskRun");
     #if SUPPORT_RTOS
       Serial.print("Task2 is running on core ");
       Serial.println(xPortGetCoreID());
@@ -448,5 +461,5 @@ void TaskNetWork::taskRun(void * parameter) {
       getRTCInfo();
     
     #endif
-    DEVICE_LOG_INFO("end TaskNetWork::taskRun");
+    //DEVICE_LOG_INFO("end TaskNetWork::taskRun");
 }
