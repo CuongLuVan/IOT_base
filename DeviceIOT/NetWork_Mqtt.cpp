@@ -142,7 +142,7 @@ void NetWork_Mqtt::connectMqtt(){
 
 
 unsigned char  NetWork_Mqtt::checkStatusMqtt(){
-    return 0;
+  return (MqttClient.connected() ? 1 : 0);
 }
 void NetWork_Mqtt::sendMessageInfo(char * data){
   DEVICE_LOG_INFO("start NetWork_Mqtt::sendMessageInfo");

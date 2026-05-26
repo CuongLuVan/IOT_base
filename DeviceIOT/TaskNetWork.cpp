@@ -38,7 +38,10 @@ QueueHandle_t deviceCommandQueue = NULL;
 
 
 unsigned char modeStatus = 0;
-TestTimeData testTimeData;
+ProcessTimeData processTimeData;
+// External network ping tracking (check once per hour)
+static unsigned long lastExternalPingTime = 0;
+static const unsigned long EXTERNAL_PING_INTERVAL = 3600000UL; // 1 hour
 #define BUTTON_PIN 0   // GPIO n�t nh?n
 #define UART_NUM        UART_NUM_0   // UART0
 #define TXD_PIN         GPIO_NUM_1   // TXD0 (m?c d?nh l� GPIO1)
@@ -81,15 +84,15 @@ void updateStatusUART(void){
 
 
 void getRTCInfo(){
-    testTimeData.time_counter_end = millis();
-    if (testTimeData.time_counter_end <= testTimeData.time_counter_start) {
-        testTimeData.timestamp = testTimeData.timeStart + ((testTimeData.time_counter_end - testTimeData.time_counter_start) / 1000);
+    processTimeData.time_counter_end = millis();
+    if (processTimeData.time_counter_end <= processTimeData.time_counter_start) {
+        processTimeData.timestamp = processTimeData.timeStart + ((processTimeData.time_counter_end - processTimeData.time_counter_start) / 1000);
     } else {
         // Horizontal rollover due millis() (32-bit unsigned overflow)
-        unsigned long elapsed = (0xFFFFFFFFUL - testTimeData.time_counter_start + testTimeData.time_counter_end + 1UL);
-        testTimeData.timestamp = testTimeData.timeStart + (elapsed / 1000);
-        testTimeData.time_counter_start = testTimeData.time_counter_end;
-        testTimeData.timeStart = testTimeData.timestamp;
+        unsigned long elapsed = (0xFFFFFFFFUL - processTimeData.time_counter_start + processTimeData.time_counter_end + 1UL);
+        processTimeData.timestamp = processTimeData.timeStart + (elapsed / 1000);
+        processTimeData.time_counter_start = processTimeData.time_counter_end;
+        processTimeData.timeStart = processTimeData.timestamp;
     }
 }
 
@@ -105,9 +108,9 @@ void TaskNetWork::setup(void){
         if (netWork_Wifi.checkWifi() == WL_CONNECTED) {
             uint32_t netTs = netWork_Wifi.getNetworkTimestamp();
             if (netTs > 0) {
-                testTimeData.timeStart = netTs;
+                processTimeData.timeStart = netTs;
             }
-            testTimeData.time_counter_start = millis();
+            processTimeData.time_counter_start = millis();
         } else {
             loopNetWork();
         }
@@ -140,8 +143,8 @@ void TaskNetWork::setup(void){
         netWork_Mqtt.setupInfoMQTT();
         if(netWork_Mqtt.checkStatusMqtt()) netWork_Mqtt.sendMessageInfo("mqtt");
         modeStatus = WIFI_START_CONNECT;
-        testTimeData.state=0;
-        testTimeData.numberCheck=0;
+        processTimeData.state=0;
+        processTimeData.numberCheck=0;
         setupUART();
     }else if(WIFI_BLE_PROVISION==modeStatus){
         netWork_Wifi.startProvisioning();
@@ -184,25 +187,25 @@ bool checkNetWorkInConnect(void){
 
         if((netWork_Wifi.checkWifi()!= WL_CONNECTED)||(!netWork_Mqtt.checkStatusMqtt())){
           if(!netWork_Wifi.pingNetWork()){
-              testTimeData.numberCheck=0;
-              testTimeData.state =1;
+              processTimeData.numberCheck=0;
+              processTimeData.state =1;
           }
           else
           {
-              testTimeData.numberCheck++;
-              if(testTimeData.numberCheck>10){
-                  testTimeData.numberCheck=0;
-                  testTimeData.state =1;
+              processTimeData.numberCheck++;
+              if(processTimeData.numberCheck>10){
+                  processTimeData.numberCheck=0;
+                  processTimeData.state =1;
               }
           }
         }
         else
         {
-          testTimeData.numberCheck++;
-          if(testTimeData.numberCheck>120) {
+          processTimeData.numberCheck++;
+          if(processTimeData.numberCheck>120) {
             if(!netWork_Wifi.pingNetWork()){
-                testTimeData.numberCheck=0;
-                testTimeData.state =1;
+                processTimeData.numberCheck=0;
+                processTimeData.state =1;
             }
           }
         }
@@ -216,20 +219,20 @@ bool checkNetWorkInConnect(void){
 bool checkNetWorkDisconnect(void){
     DEVICE_LOG_INFO("start checkNetWorkDisconnect");
     netWork_Wifi.disconnetWifi();
-    testTimeData.numberCheck = 0;
-    testTimeData.state = 2; 
+    processTimeData.numberCheck = 0;
+    processTimeData.state = 2; 
     DEVICE_LOG_INFO("end checkNetWorkDisconnect");
     return true;          
 }
 
 
 bool checkNetWorkReConnect(void){
-    DEVICE_LOG_INFO("start checkNetWorkReConnect"+ String(testTimeData.numberCheck));
-    testTimeData.numberCheck++;
-    if(testTimeData.numberCheck>4){
+    DEVICE_LOG_INFO("start checkNetWorkReConnect"+ String(processTimeData.numberCheck));
+    processTimeData.numberCheck++;
+    if(processTimeData.numberCheck>4){
         netWork_Wifi.connectWifi();
-        testTimeData.state=3;
-        testTimeData.numberCheck = 0;
+        processTimeData.state=3;
+        processTimeData.numberCheck = 0;
         netWork_Wifi.startWebServer();
        // netWork_Mqtt.getAllDataSetup();
        // netWork_Mqtt.setupInfoMQTT();
@@ -242,19 +245,19 @@ bool checkNetWorkReConnect(void){
 
 bool checkNetWorkRealTimeServer(void){
       DEVICE_LOG_INFO("start checkNetWorkRealTimeServer");
-      testTimeData.numberCheck++;
+      processTimeData.numberCheck++;
       if(netWork_Wifi.checkWifi()== WL_CONNECTED){
          DEVICE_LOG_INFO("netWork_Wifi.checkWifi()== WL_CONNECTED .......................ok");
-          testTimeData.state=4;
+          processTimeData.state=4;
       }
       else
       {
-        if(testTimeData.numberCheck>240){
-          testTimeData.countNetWorkWorng  ++;
-          if(testTimeData.countNetWorkWorng>3){
-            testTimeData.state=0;
+        if(processTimeData.numberCheck>240){
+          processTimeData.countNetWorkWorng  ++;
+          if(processTimeData.countNetWorkWorng>3){
+            processTimeData.state=0;
           }
-          testTimeData.numberCheck = 0;
+          processTimeData.numberCheck = 0;
         }
       }
 
@@ -265,10 +268,10 @@ bool checkNetWorkRealTimeServer(void){
 
 bool checkMQTTConnect(void){
   DEVICE_LOG_INFO("start checkMQTTConnect");
-  testTimeData.numberCheck = 0;
+  processTimeData.numberCheck = 0;
   netWork_Mqtt.MqttReconnect();
-  testTimeData.state=5;
-  testTimeData.countNetWorkWorng =0;
+  processTimeData.state=5;
+  processTimeData.countNetWorkWorng =0;
   DEVICE_LOG_INFO("end checkMQTTConnect");
   return true;   
 }
@@ -276,16 +279,29 @@ bool checkMQTTConnect(void){
 
 bool checkNetWorkERRORConnect(void){
     DEVICE_LOG_INFO("start checkNetWorkERRORConnect");
-    if(netWork_Wifi.checkWifi()!= WL_CONNECTED){
-          testTimeData.countNetWorkWorng ++;
-    }
+  // Check WiFi connectivity
+  if(netWork_Wifi.checkWifi() != WL_CONNECTED){
+      processTimeData.countNetWorkWorng ++;
+  }
 
-    if(testTimeData.countNetWorkWorng>100){
-       testTimeData.state=0;
-       testTimeData.numberCheck=0;
-    }
-    
-   
+  // Check MQTT connectivity (netWork_Mqtt.checkStatusMqtt should return non-zero when connected)
+  if(netWork_Mqtt.checkStatusMqtt() == 0){
+      processTimeData.countNetWorkWorng ++;
+  }
+
+  // Periodic external ping (e.g. Google) - only run once per hour to avoid frequent network traffic
+  if (compaireTimeInfo(lastExternalPingTime) >= EXTERNAL_PING_INTERVAL) {
+    lastExternalPingTime = millis();
+    if (!netWork_Wifi.pingNetWork()) {
+      processTimeData.state = 0;
+      processTimeData.numberCheck = 0;
+    } 
+  }
+
+  if(processTimeData.countNetWorkWorng > 200){
+     processTimeData.state = 0;
+     processTimeData.numberCheck = 0;
+  }
     DEVICE_LOG_INFO("end checkNetWorkERRORConnect");
     return true;
 }
@@ -367,14 +383,14 @@ void TaskNetWork::loopNetWork(void) {
   DEVICE_LOG_INFO("start TaskNetWork::loopNetWork"+ String(modeStatus));
   if(WIFI_START_CONNECT==modeStatus){
       // check wifi netWor
-        DEVICE_LOG_INFO("check wifi netWork compaireTimeInfo(testTimeData.timeStart)"+ String(compaireTimeInfo(testTimeData.timeStart)));
-        DEVICE_LOG_INFO("check wifi netWork testTimeData.state"+ String(testTimeData.state));
+        DEVICE_LOG_INFO("check wifi netWork compaireTimeInfo(processTimeData.timeStart)"+ String(compaireTimeInfo(processTimeData.timeStart)));
+        DEVICE_LOG_INFO("check wifi netWork processTimeData.state"+ String(processTimeData.state));
         
-        if(compaireTimeInfo(testTimeData.timeStart)>500){
-          arrayNetworkFunction[testTimeData.state]();
-          testTimeData.timeStart = millis();
+        if(compaireTimeInfo(processTimeData.timeStart)>500){
+          arrayNetworkFunction[processTimeData.state]();
+          processTimeData.timeStart = millis();
         } 
-        if(testTimeData.state==5){
+        if(processTimeData.state==5){
           netWork_Wifi.handerClient();
           netWork_Mqtt.lisenMqtt();
         }

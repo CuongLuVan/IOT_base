@@ -35,6 +35,7 @@ struct TestTimeData
     unsigned long timestamp;
     unsigned char state;
     unsigned long countNetWorkWorng;
+    unsigned long lastExternalPingTime;
     /* data */
 };
 
