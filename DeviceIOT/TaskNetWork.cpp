@@ -290,8 +290,8 @@ bool checkNetWorkERRORConnect(void){
   }
 
   // Periodic external ping (e.g. Google) - only run once per hour to avoid frequent network traffic
-  if (compaireTimeInfo(lastExternalPingTime) >= EXTERNAL_PING_INTERVAL) {
-    lastExternalPingTime = millis();
+  if (compaireTimeInfo(processTimeData.lastExternalPingTime) >= EXTERNAL_PING_INTERVAL) {
+    processTimeData.lastExternalPingTime = millis();
     if (!netWork_Wifi.pingNetWork()) {
       processTimeData.state = 0;
       processTimeData.numberCheck = 0;
