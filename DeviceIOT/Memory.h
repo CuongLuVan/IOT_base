@@ -5,7 +5,7 @@
 #define  WIFI_SSSID    50
 #define  WIFI_PASS    100
 #define  WIFI_SETUP_JSON    150
-
+#define  VERSJON_SETUP_JSON    1250
 
 class Memory
 {

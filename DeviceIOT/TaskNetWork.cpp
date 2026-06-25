@@ -1,6 +1,7 @@
 #include "TaskNetWork.h"
 #include "NetWork_Wifi.h"
 #include "NetWork_Mqtt.h"
+#include "NetWork_RF.h"
 #include "NetWork_config.h"
 #include "define_All.h"
 #include "Memory.h"
@@ -19,8 +20,10 @@
 
 NetWork_Wifi netWork_Wifi;
 NetWork_Mqtt netWork_Mqtt;
+NetWork_RF netWork_RF;
 InfoSensor sensorValue;
 InfoDeviceControl statusDevice;
+String lastLoraPayload;
 #if SUPPORT_RTOS
 QueueHandle_t sensorDataQueue = NULL;
 QueueHandle_t deviceStatusQueue = NULL;
@@ -141,11 +144,19 @@ void TaskNetWork::setup(void){
         
         netWork_Mqtt.getAllDataSetup();
         netWork_Mqtt.setupInfoMQTT();
-        if(netWork_Mqtt.checkStatusMqtt()) netWork_Mqtt.sendMessageInfo("mqtt");
+        //if(netWork_Mqtt.checkStatusMqtt()) netWork_Mqtt.sendMessageInfo("mqtt");
         modeStatus = WIFI_START_CONNECT;
         processTimeData.state=0;
         processTimeData.numberCheck=0;
         setupUART();
+#if SUPPORT_LORA
+        if (!netWork_RF.begin()) {
+            Serial.println("[TaskNetWork] LoRa init failed");
+        } else {
+            Serial.println("[TaskNetWork] LoRa init OK");
+        }
+        lastLoraPayload = String();
+#endif
     }else if(WIFI_BLE_PROVISION==modeStatus){
         netWork_Wifi.startProvisioning();
         netWork_Wifi.setupProvisioning();
@@ -248,6 +259,7 @@ bool checkNetWorkRealTimeServer(void){
       processTimeData.numberCheck++;
       if(netWork_Wifi.checkWifi()== WL_CONNECTED){
          DEVICE_LOG_INFO("netWork_Wifi.checkWifi()== WL_CONNECTED .......................ok");
+          netWork_Wifi.getWifiStatusIP();
           processTimeData.state=4;
       }
       else
@@ -268,6 +280,7 @@ bool checkNetWorkRealTimeServer(void){
 
 bool checkMQTTConnect(void){
   DEVICE_LOG_INFO("start checkMQTTConnect");
+ 
   processTimeData.numberCheck = 0;
   netWork_Mqtt.MqttReconnect();
   processTimeData.state=5;
@@ -279,6 +292,7 @@ bool checkMQTTConnect(void){
 
 bool checkNetWorkERRORConnect(void){
     DEVICE_LOG_INFO("start checkNetWorkERRORConnect");
+    netWork_Wifi.printWifiStatusIP();
   // Check WiFi connectivity
   if(netWork_Wifi.checkWifi() != WL_CONNECTED){
       processTimeData.countNetWorkWorng ++;
@@ -290,8 +304,8 @@ bool checkNetWorkERRORConnect(void){
   }
 
   // Periodic external ping (e.g. Google) - only run once per hour to avoid frequent network traffic
-  if (compaireTimeInfo(processTimeData.lastExternalPingTime) >= EXTERNAL_PING_INTERVAL) {
-    processTimeData.lastExternalPingTime = millis();
+  if (compaireTimeInfo(lastExternalPingTime) >= EXTERNAL_PING_INTERVAL) {
+    lastExternalPingTime = millis();
     if (!netWork_Wifi.pingNetWork()) {
       processTimeData.state = 0;
       processTimeData.numberCheck = 0;
@@ -411,6 +425,22 @@ void TaskNetWork::loopNetWork(void) {
       netWork_Wifi.loopHostPost();
     }
     checkButton();  
+#if SUPPORT_LORA
+    if (netWork_RF.available()) {
+        uint8_t buffer[255];
+        size_t receivedLen = 0;
+        if (netWork_RF.receiveData(buffer, sizeof(buffer) - 1, receivedLen)) {
+            buffer[receivedLen] = '\0';
+            lastLoraPayload = String((char*)buffer);
+            if (netWork_Mqtt.checkStatusMqtt()) {
+                String mqttPayload = "{\"data\":\"" + lastLoraPayload + "\"}";
+                char mqttBuf[512];
+                mqttPayload.toCharArray(mqttBuf, sizeof(mqttBuf));
+                netWork_Mqtt.sendMessageInfo(mqttBuf);
+            }
+        }
+    }
+#endif
      updateStatusUART();
 #if SUPPORT_RTOS
     // Process sensor queue data if any

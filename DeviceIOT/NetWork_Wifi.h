@@ -46,7 +46,8 @@ class NetWork_Wifi {
         static void   handleSetUpWifi(void);
         static void   handleControl(void);
         static void   handleUpdate(void);
-
+        static void   handleLoraGet(void);
+        static void   handleLoraPost(void);
 
         void setHeader(void);
         void startWebServer(void);
@@ -59,6 +60,8 @@ class NetWork_Wifi {
         void setupOTA(void);
         void loopOTA(void);
         void connectWifi(void);
+        void getWifiStatusIP(void);
+        void printWifiStatusIP(void);
         unsigned char checkWifi();
         uint32_t getNetworkTimestamp();
         unsigned char pingNetWork();

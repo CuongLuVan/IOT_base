@@ -20,7 +20,7 @@ StaticJsonDocument<512> jsonBufferMqtt;
 
 struct SYSCFG {
   char          mqtt_fingerprint[60];      // 1AD To be freed by binary fingerprint
-  char          mqtt_host[33];             // 1E9
+  char          mqtt_host[128];             // 1E9
   uint16_t      mqtt_port;                 // 20A
   char          mqtt_client[33];           // 20C
   char          mqtt_user[33];             // 22D
@@ -79,6 +79,7 @@ void MqttDataCallback(char* topic, byte* data, unsigned int data_len)
 
 bool parseJsonToSettings(String json) {
   DEVICE_LOG_INFO("start NetWork_Mqtt::parseJsonToSettings");
+  DEVICE_LOG_INFO(json);
   DeserializationError error = deserializeJson(jsonBufferMqtt, json);
   if (error) {
     Serial.print(F("deserializeJson() failed: "));
@@ -108,11 +109,19 @@ void NetWork_Mqtt::setupInfoMQTT()
       DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT skipped due parseJsonToSettings failure");
       return;
     }
-    MqttClient.setCallback(MqttDataCallback);
+    
+    DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT  mqtt_host ==>"+String(Settings.mqtt_host));
+    DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT mqtt_port ==>"+String(Settings.mqtt_port));
+    DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT mqtt_client ==>"+String(Settings.mqtt_client));
+    DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT mqtt_user ==>"+String(Settings.mqtt_user));
+    DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT mqtt_pwd ==>"+String(Settings.mqtt_pwd));
+    DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT subcribe_topic ==>"+String(Settings.subcribe_topic));
+    
     MqttClient.setServer(Settings.mqtt_host, Settings.mqtt_port);
-    if (MqttClient.connect(Settings.mqtt_client, Settings.mqtt_user, Settings.mqtt_pwd, Settings.subcribe_topic, 1, true, "")) {
+    MqttClient.setCallback(MqttDataCallback);
+    //if (MqttClient.connect(Settings.mqtt_client, Settings.mqtt_user, Settings.mqtt_pwd, Settings.subcribe_topic, 1, true, "")) {
 
-    }
+    //}
     DEVICE_LOG_INFO("end NetWork_Mqtt::setupInfoMQTT");
 }
 
@@ -132,11 +141,23 @@ void NetWork_Mqtt::connectMqtt(){
   DEVICE_LOG_INFO("start NetWork_Mqtt::connectMqtt");
   MqttClient.setCallback(MqttDataCallback);
   MqttClient.setServer(Settings.mqtt_host, Settings.mqtt_port);
+   while (!MqttClient.connected())
+    {
+        Serial.print("Attempting MQTT connection...");
+        if (MqttClient.connect(Settings.mqtt_client, Settings.mqtt_user, Settings.mqtt_pwd)) {
+            Serial.println("connected");
+            MqttClient.subscribe(Settings.subcribe_topic);
+            this->sendMessageInfo("test");
+            break;
+        } else {
+            Serial.print("failed, rc=");
+            Serial.print(MqttClient.state());
+            Serial.println(" try again in 5 seconds");
+            delay(5000);
+        }
+    }
 
-  if (MqttClient.connect(Settings.mqtt_client, Settings.mqtt_user, Settings.mqtt_pwd, Settings.subcribe_topic, 1, true, "")) {
-    this->sendMessageInfo("test");
-    
-  }
+
   DEVICE_LOG_INFO("end NetWork_Mqtt::connectMqtt");
 }
 
@@ -170,14 +191,14 @@ void NetWork_Mqtt::lisenMqtt(){
 void NetWork_Mqtt::MqttReconnect()
 {
   DEVICE_LOG_INFO("start NetWork_Mqtt::MqttReconnect");
-
+/*
   EspClient.stop();
   if (!EspClient.connect(Settings.mqtt_host, Settings.mqtt_port)) {
     return;
   }
 
   EspClient.stop();
-  yield();
+  yield();*/
   
   this->connectMqtt();
   DEVICE_LOG_INFO("end NetWork_Mqtt::MqttReconnect");

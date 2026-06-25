@@ -26,7 +26,7 @@ struct DeviceCommand {
     uint16_t reserved;
 };
 
-struct TestTimeData
+struct ProcessTimeData
 {
     unsigned long timeStart;
     unsigned long time_counter_start;

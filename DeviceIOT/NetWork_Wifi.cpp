@@ -1,4 +1,5 @@
 #include "NetWork_Wifi.h"
+#include "NetWork_RF.h"
 #include "NetWork_config.h"
 #include <WiFi.h>
 #include <WiFiClient.h>
@@ -21,6 +22,9 @@
 #include <time.h>
 #include "MemoryData.h"
 
+extern NetWork_RF netWork_RF;
+extern String lastLoraPayload;
+
 uint32_t      ip_address[4] ={192,168,0,1};             // 544
 WebServer *webServer;
 StaticJsonDocument<512> jsonBuffer;
@@ -31,6 +35,8 @@ static  SmartConfigStatus enableSmartConfig = SmartConfigStatus::DISABLE_SMARTCO
 static  SmartProvisioningBle enableProvisioningBle = SmartProvisioningBle::DISABLE_BLE;
 extern InfoSensor sensorValue;
 extern InfoDeviceControl statusDevice;
+
+String wifiIp = "";
 
 
 
@@ -67,7 +73,7 @@ void NetWork_Wifi::handleSetUpWifi(){
     DEVICE_LOG_INFO("start NetWork_Wifi::handleSetUpWifi  xxxxxxxxxxxxxxx");
     String data = webServer->arg("data");
     deserializeJson(jsonBuffer, data);
-    Memory::GetInstance()->writeString(WIFI_SETUP_JSON,data);
+    //Memory::GetInstance()->writeString(WIFI_SETUP_JSON,data);
     //WIFI_BLE_PROVISION  WIFI_SMART_CONFIG
     Memory::GetInstance()->writeChar(WIFI_MODE,WIFI_START_CONNECT);
     Memory::GetInstance()->writeString(WIFI_SSSID, jsonBuffer["ssid"].as<String>());
@@ -109,17 +115,49 @@ void NetWork_Wifi::handleControl(){
 }
 
 void NetWork_Wifi::handleUpdate(){
+    DEVICE_LOG_INFO("start NetWork_Wifi::handleUpdate ...............  ");
     webServer->send(200, "application/json", getInfoDevice(sensorValue,statusDevice));
 }
 
 
 
+void NetWork_Wifi::handleLoraGet(){
+    String payload = "{\"data\":\"\"}";
+    if (lastLoraPayload.length() > 0) {
+        String esc = lastLoraPayload;
+        esc.replace("\\", "\\\\");
+        esc.replace("\"", "\\\"");
+        payload = "{\"data\":\"" + esc + "\"}";
+    }
+    webServer->send(200, "application/json", payload);
+}
+
+void NetWork_Wifi::handleLoraPost(){
+    String data = webServer->arg("data");
+    bool ok = false;
+    if (data.length() > 0 && netWork_RF.sendData(data)) {
+        ok = true;
+    }
+    String payload = "{\"success\":" + String(ok ? "true" : "false") + ",\"data\":\"";
+    if (ok) {
+        String esc = data;
+        esc.replace("\\", "\\\\");
+        esc.replace("\"", "\\\"");
+        payload += esc;
+    }
+    payload += "\"}";
+    webServer->send(200, "application/json", payload);
+}
+
 void NetWork_Wifi::startWebServer()
 {
     DEVICE_LOG_INFO("start NetWork_Wifi::startWebServer");
     webServer = new class WebServer(80);
+    webServer->enableCORS(true);
     webServer->on("/control", this->handleControl);
     webServer->on("/update", this->handleUpdate);
+    webServer->on("/lora", HTTP_GET, this->handleLoraGet);
+    webServer->on("/lora", HTTP_POST, this->handleLoraPost);
     webServer->begin(); // Web server start 
     DEVICE_LOG_INFO("end NetWork_Wifi::startWebServer");
 }
@@ -127,8 +165,11 @@ void NetWork_Wifi::startWebServer()
 void NetWork_Wifi::startWebserverRoot()
 {
     webServer = new class WebServer(80);
+    webServer->enableCORS(true);
     webServer->on("/", this->handleRoot);
     webServer->on("/setup", this->handleSetUp);
+    webServer->on("/lora", HTTP_GET, this->handleLoraGet);
+    webServer->on("/lora", HTTP_POST, this->handleLoraPost);
     webServer->begin(); // Web server start
 }
 
@@ -158,6 +199,7 @@ void NetWork_Wifi::startWebserverAP()
   DEVICE_LOG_INFO("end NetWork_Wifi::startWebserverAP ........... 1 ");
     webServer = new class WebServer(80);
     DEVICE_LOG_INFO("end NetWork_Wifi::startWebserverAP ........... 2 ");
+    webServer->enableCORS(true);
     webServer->on("/wifi", this->handleSetUpWifi);
     DEVICE_LOG_INFO("end NetWork_Wifi::startWebserverAP ........... 3 ");
     webServer->begin(); // Web server start
@@ -304,7 +346,7 @@ void NetWork_Wifi::setupOTA(void){
               Serial.println("OTA update successful");
               if (Update.isFinished()) {
                 Serial.println("Update successful, saving version...");
-                Memory::GetInstance()->writeString(WIFI_SETUP_JSON,serverVersion);
+                Memory::GetInstance()->writeString(VERSJON_SETUP_JSON,serverVersion);
                 Memory::GetInstance()->writeChar(WIFI_MODE,WIFI_START_CONNECT);
                 delay(1000);
                 ESP.restart();
@@ -351,6 +393,15 @@ void NetWork_Wifi::connectWifi(void){
     WiFi.disconnect();
     delay(100);
     Serial.println("Setup done");*/
+}
+
+
+void NetWork_Wifi::getWifiStatusIP(){
+   wifiIp = WiFi.localIP().toString();
+}
+
+void NetWork_Wifi::printWifiStatusIP(){
+    DEVICE_LOG_INFO("printWifiStatusIP ------->" + wifiIp);
 }
 
 unsigned char NetWork_Wifi::checkWifi(){
