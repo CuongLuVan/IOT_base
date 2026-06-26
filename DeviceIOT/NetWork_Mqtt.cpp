@@ -1,17 +1,25 @@
 #include "NetWork_Mqtt.h"
 #include "NetWork_config.h"
 #include "Common.h"
-#include <PubSubClient.h>  
-#include <ArduinoJson.h>
-#include <WiFiClient.h>
-#include <StreamString.h>                   // Webserver, Updater                  // WifiManager
-#include "Memory.h" 
-#include "MemoryData.h"
 #include "define_All.h"
+#include <PubSubClient.h>
+#include <ArduinoJson.h>
+
+#if MQTT_NO_TLS
+#include <WiFiClientSecure.h>
+using MqttWiFiClient = WiFiClientSecure;
+#else
+#include <WiFiClient.h>
+using MqttWiFiClient = WiFiClient;
+#endif
+
+#include <StreamString.h>                   // Webserver, Updater                  // WifiManager
+#include "Memory.h"
+#include "MemoryData.h"
 #include "DebugInfo.h"
 
 
-WiFiClient EspClient;
+MqttWiFiClient EspClient;
 PubSubClient MqttClient(EspClient);         // MQTT Client
 
 extern InfoSensor sensorValue;
@@ -35,7 +43,7 @@ extern QueueHandle_t deviceCommandQueue;
 void sendMessageInfoPublish(String data){
   char *p = new char[data.length() + 1];
   strcpy(p, data.c_str());
-  if (MqttClient.publish(Settings.subcribe_topic, p, 1)) {
+  if (MqttClient.publish(Settings.public_topic, p, 1)) {
       
   }
    
@@ -44,10 +52,11 @@ DeviceCommand cmd;
 void MqttDataCallback(char* topic, byte* data, unsigned int data_len)
 {
     String payload = String((char*)data).substring(0, data_len);
+    DEVICE_LOG_INFO("MqttDataCallback................................:" + payload);
     StaticJsonDocument<128> doc; // smaller docs for commands
     DeserializationError err = deserializeJson(doc, payload);
     if (err) {
-        Serial.printf("[MQTT] JSON parse error: %s\n", err.f_str());
+         DEVICE_LOG_INFO("[MQTT] JSON parse error:" + String(err.f_str()));
         return;
     }
 
@@ -63,14 +72,15 @@ void MqttDataCallback(char* topic, byte* data, unsigned int data_len)
         #if SUPPORT_RTOS
             if (deviceCommandQueue == NULL) return;
             if (xQueueSend(deviceCommandQueue, &cmd, pdMS_TO_TICKS(50)) != pdTRUE) {
-                Serial.println("[MQTT] Failed to queue device command");
+                  DEVICE_LOG_INFO("[MQTT] Failed to queue device command");
             } else {
-                Serial.printf("[MQTT] Queued command type=%d value=%d\n", cmd.commandType, cmd.commandValue);
+                 DEVICE_LOG_INFO("[MQTT] Queued command type=%d value=%d\n", cmd.commandType, cmd.commandValue);
             }
         #else
             MemoryData::GetInstance().deviceCommand_ = &cmd;
-            //Serial.printf("[MQTT] Queued (non-RTOS) command type=%d value=%d\n", cmd.commandType, cmd.commandValue);
+            // DEVICE_LOG_INFO("[MQTT] Queued (non-RTOS) command type=%d value=%d\n", cmd.commandType, cmd.commandValue);
         #endif
+        sendMessageInfoPublish(getInfoDevice(sensorValue,statusDevice));
     }
 
 
@@ -82,8 +92,8 @@ bool parseJsonToSettings(String json) {
   DEVICE_LOG_INFO(json);
   DeserializationError error = deserializeJson(jsonBufferMqtt, json);
   if (error) {
-    Serial.print(F("deserializeJson() failed: "));
-    Serial.println(error.f_str());
+     DEVICE_LOG_INFO(F("deserializeJson() failed: "));
+      DEVICE_LOG_INFO(error.f_str());
     return false;
   }
 
@@ -116,7 +126,13 @@ void NetWork_Mqtt::setupInfoMQTT()
     DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT mqtt_user ==>"+String(Settings.mqtt_user));
     DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT mqtt_pwd ==>"+String(Settings.mqtt_pwd));
     DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT subcribe_topic ==>"+String(Settings.subcribe_topic));
-    
+
+#if MQTT_NO_TLS
+    EspClient.setInsecure();
+    if (strlen(Settings.mqtt_fingerprint) > 0) {
+        EspClient.setCACert(Settings.mqtt_fingerprint);
+    }
+#endif
     MqttClient.setServer(Settings.mqtt_host, Settings.mqtt_port);
     MqttClient.setCallback(MqttDataCallback);
     //if (MqttClient.connect(Settings.mqtt_client, Settings.mqtt_user, Settings.mqtt_pwd, Settings.subcribe_topic, 1, true, "")) {
@@ -141,21 +157,18 @@ void NetWork_Mqtt::connectMqtt(){
   DEVICE_LOG_INFO("start NetWork_Mqtt::connectMqtt");
   MqttClient.setCallback(MqttDataCallback);
   MqttClient.setServer(Settings.mqtt_host, Settings.mqtt_port);
-   while (!MqttClient.connected())
-    {
-        Serial.print("Attempting MQTT connection...");
+  if (!MqttClient.connected())
+  {
+         DEVICE_LOG_INFO("Attempting MQTT connection...");
         if (MqttClient.connect(Settings.mqtt_client, Settings.mqtt_user, Settings.mqtt_pwd)) {
-            Serial.println("connected");
+            DEVICE_LOG_INFO("connected");
             MqttClient.subscribe(Settings.subcribe_topic);
-            this->sendMessageInfo("test");
-            break;
+            this->sendMessageInfo("{\"test\":\"mqtt connect\"}");
         } else {
-            Serial.print("failed, rc=");
-            Serial.print(MqttClient.state());
-            Serial.println(" try again in 5 seconds");
-            delay(5000);
+             DEVICE_LOG_INFO("failed, rc="+String(MqttClient.state()));
+             DEVICE_LOG_INFO(" try again in 5 seconds");
         }
-    }
+  }
 
 
   DEVICE_LOG_INFO("end NetWork_Mqtt::connectMqtt");
@@ -166,8 +179,8 @@ unsigned char  NetWork_Mqtt::checkStatusMqtt(){
   return (MqttClient.connected() ? 1 : 0);
 }
 void NetWork_Mqtt::sendMessageInfo(char * data){
-  DEVICE_LOG_INFO("start NetWork_Mqtt::sendMessageInfo");
-  if (MqttClient.publish(Settings.subcribe_topic, data, 1)) {
+  DEVICE_LOG_INFO("start NetWork_Mqtt::sendMessageInfo"+ String(data));
+  if (MqttClient.publish(Settings.public_topic, data, 1)) {
       
   }
   DEVICE_LOG_INFO("end NetWork_Mqtt::sendMessageInfo");

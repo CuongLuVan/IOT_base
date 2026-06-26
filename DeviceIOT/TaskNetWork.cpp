@@ -283,8 +283,19 @@ bool checkMQTTConnect(void){
  
   processTimeData.numberCheck = 0;
   netWork_Mqtt.MqttReconnect();
-  processTimeData.state=5;
-  processTimeData.countNetWorkWorng =0;
+  if(netWork_Mqtt.checkStatusMqtt()){
+    processTimeData.state=5;
+    processTimeData.countNetWorkWorng =0;
+  }
+  else 
+  {
+    processTimeData.countNetWorkWorng ++;
+  }
+  if(processTimeData.countNetWorkWorng>30){
+    processTimeData.countNetWorkWorng =0;
+    processTimeData.state=1;
+  }
+
   DEVICE_LOG_INFO("end checkMQTTConnect");
   return true;   
 }
