@@ -16,6 +16,7 @@
 #include "Common.h"
 #include "define_All.h"
 #include "DebugInfo.h"
+#include "MemoryData.h"
 
 
 NetWork_Wifi netWork_Wifi;
@@ -106,6 +107,16 @@ void TaskNetWork::setup(void){
     modeStatus = Memory::GetInstance()->readChar(MODE_WIFI_ADRESS);
     pinMode(BUTTON_PIN, INPUT_PULLUP); // N�t n?i GND, n�n d�ng INPUT_PULLUP
     DEVICE_LOG_INFO("start TaskNetWork::setup ==>"+ String(modeStatus));
+
+    #if SUPPORT_RTOS
+
+    
+    #else
+      MemoryData::GetInstance().deviceStatus_ = &statusDevice;
+      MemoryData::GetInstance().sensorData_ = &sensorValue;
+    #endif
+    
+
     if(WIFI_START_CONNECT==modeStatus){
         netWork_Wifi.connectWifi();
         if (netWork_Wifi.checkWifi() == WL_CONNECTED) {

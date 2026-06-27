@@ -69,7 +69,7 @@ void TaskSensor::readSensor(void){
 }
 int checkDataNumber = 0;
 void TaskSensor::readSensorDust(void){
-    DEVICE_LOG_INFO("start TaskSensor::readSensorDust");
+
     if (pms.read(data))
     {
       dataSensor.valueDust_PM2_5 = data.PM_AE_UG_2_5;
@@ -97,7 +97,7 @@ void TaskSensor::readSensorDust(void){
       Serial1.println(data.PM_AE_UG_10_0);
       Serial1.println();*/
     }
-    DEVICE_LOG_INFO("end TaskSensor::readSensorDust");
+
 }
 void TaskSensor::readSensorTemp(void){
     dataSensor.valueTemp =(int) dht.readTemperature()*100;
@@ -117,6 +117,17 @@ static SensorReadFn readOps[4] = {
     TaskSensor::readSensorTemp,
     TaskSensor::readSensorHumi
 };
+
+
+void updateMemoryStatus(void){
+    MemoryData::GetInstance().sensorData_->valueHumi = dataSensor.valueHumi;
+    MemoryData::GetInstance().sensorData_->valueTemp = dataSensor.valueTemp;
+    MemoryData::GetInstance().sensorData_->valueDust = dataSensor.valueDust;
+    MemoryData::GetInstance().sensorData_->valueDust_PM2_5 = dataSensor.valueDust_PM2_5;
+    MemoryData::GetInstance().sensorData_->valueDust_PM10 = dataSensor.valueDust_PM10;
+    MemoryData::GetInstance().sensorData_->valueDust_PM1 = dataSensor.valueDust_PM1;
+    MemoryData::GetInstance().sensorData_->valueControl = dataSensor.valueControl;
+}
 
 void TaskSensor::taskRun(void * parameter) {
     //DEVICE_LOG_INFO("start TaskSensor::taskRun");
@@ -154,12 +165,13 @@ void TaskSensor::taskRun(void * parameter) {
             sensorReadStep++;
         }
     #else
+        updateMemoryStatus();
          // Chu kỳ 1 giây / step: 0..3
         if (sensorReadStep >= 4) {
             sensorReadStep = 0;
         }
         readOps[sensorReadStep]();
-        MemoryData::GetInstance().sensorData_ = &dataSensor;
+        
         delay(SENSOR_TASK_INTERVAL_MS);
         sensorReadStep++;
     #endif

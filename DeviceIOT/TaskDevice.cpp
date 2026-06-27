@@ -93,6 +93,15 @@ void TaskDevice::controlDevice(void){
         digitalWrite(OUTPUT_DEVICE_1, LOW); // Tắt thiết bị 1
     }
 }
+
+void TaskDevice::updateMemoryStatus(void){
+    MemoryData::GetInstance().deviceStatus_->device_port = control.device_port;
+    MemoryData::GetInstance().deviceStatus_->button_click = control.button_click;  
+    MemoryData::GetInstance().deviceStatus_->button_status = control.button_status; 
+    MemoryData::GetInstance().deviceStatus_->device_port_last = control.device_port_last; 
+    MemoryData::GetInstance().deviceStatus_->count_info = control.count_info; 
+}
+
 void TaskDevice::taskRun(void * parameter) {
     //DEVICE_LOG_INFO("start TaskDevice::taskRun");
     #if SUPPORT_RTOS
@@ -125,10 +134,24 @@ void TaskDevice::taskRun(void * parameter) {
         }
         
     #else
+        TaskDevice::updateMemoryStatus();
         TaskDevice::readButton();
         TaskDevice::controlPump();
         TaskDevice::controlDevice();
-
+        if(MemoryData::GetInstance().deviceCommand_ != NULL) {
+            
+            DeviceCommand* cmd_to_device = MemoryData::GetInstance().deviceCommand_;
+            DEVICE_LOG_INFO("start TaskDevice::DeviceCommand commandType "+ 
+                String(cmd_to_device->commandType) + " value=" + 
+                String(cmd_to_device->commandValue) + " reserved=" + 
+                String(cmd_to_device->reserved)  );
+            if(cmd_to_device->commandType== COMMAND_TYPE_CONTROL&&cmd_to_device->reserved) {
+                control.device_port = cmd_to_device->commandValue;
+                control.device_port_last = cmd_to_device->commandValue;
+                cmd_to_device->reserved = 0; // Mark as processed
+                control.count_info++;
+            }
+        }       
         if(control.device_port!=control.device_port_last){
             control.device_port_last = control.device_port;
             MemoryData::GetInstance().deviceStatus_ = &control;

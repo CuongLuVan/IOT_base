@@ -74,7 +74,7 @@ void MqttDataCallback(char* topic, byte* data, unsigned int data_len)
             if (xQueueSend(deviceCommandQueue, &cmd, pdMS_TO_TICKS(50)) != pdTRUE) {
                   DEVICE_LOG_INFO("[MQTT] Failed to queue device command");
             } else {
-                 DEVICE_LOG_INFO("[MQTT] Queued command type=%d value=%d\n", cmd.commandType, cmd.commandValue);
+                 //DEVICE_LOG_INFO("[MQTT] Queued command type=%d value=%d\n", cmd.commandType, cmd.commandValue);
             }
         #else
             MemoryData::GetInstance().deviceCommand_ = &cmd;
