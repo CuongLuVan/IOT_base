@@ -64,7 +64,7 @@ void NetWork_Wifi::handleSetUp(){
     //WIFI_BLE_PROVISION  WIFI_SMART_CONFIG
     Memory::GetInstance()->writeChar(WIFI_MODE,WIFI_BLE_SMART_CONFIG);
     webServer->send(200, "application/json", "{'data':true}");
-    delay(2000);
+    delay(WIFI_WEB_RESPONSE_DELAY_MS);
     ESP.restart();            // Restart ESP
     DEVICE_LOG_INFO("end NetWork_Wifi::handleSetUp");
 }
@@ -81,7 +81,7 @@ void NetWork_Wifi::handleSetUpWifi(){
 
     webServer->send(200, "application/json", "{'data':true}");
      DEVICE_LOG_INFO("end NetWork_Wifi::end................................");
-    delay(2000);
+    delay(WIFI_WEB_RESPONSE_DELAY_MS);
     ESP.restart();            // Restart ESP
     DEVICE_LOG_INFO("end NetWork_Wifi::handleSetUpWifi");
 }
@@ -152,7 +152,7 @@ void NetWork_Wifi::handleLoraPost(){
 void NetWork_Wifi::startWebServer()
 {
     DEVICE_LOG_INFO("start NetWork_Wifi::startWebServer");
-    webServer = new class WebServer(80);
+    webServer = new class WebServer(WIFI_HTTP_PORT);
     webServer->enableCORS(true);
     webServer->on("/control", this->handleControl);
     webServer->on("/update", this->handleUpdate);
@@ -164,7 +164,7 @@ void NetWork_Wifi::startWebServer()
 
 void NetWork_Wifi::startWebserverRoot()
 {
-    webServer = new class WebServer(80);
+    webServer = new class WebServer(WIFI_HTTP_PORT);
     webServer->enableCORS(true);
     webServer->on("/", this->handleRoot);
     webServer->on("/setup", this->handleSetUp);
@@ -186,7 +186,7 @@ void NetWork_Wifi::setupHostPost(void){
         WiFi.setAutoReconnect(true);
     }
     WiFi.config(ip_address[0], ip_address[1], ip_address[2], ip_address[3]);  // Set static IP
-    delay(100);
+    delay(WIFI_CONFIG_DELAY_MS);
     WiFi.setHostname(HOST_POST_INFO);
     WiFi.softAP(HOST_POST_INFO,HOST_POST_INFO);
     WiFi.begin();
@@ -197,7 +197,7 @@ void NetWork_Wifi::setupHostPost(void){
 void NetWork_Wifi::startWebserverAP()
 {
   DEVICE_LOG_INFO("end NetWork_Wifi::startWebserverAP ........... 1 ");
-    webServer = new class WebServer(80);
+    webServer = new class WebServer(WIFI_HTTP_PORT);
     DEVICE_LOG_INFO("end NetWork_Wifi::startWebserverAP ........... 2 ");
     webServer->enableCORS(true);
     webServer->on("/wifi", this->handleSetUpWifi);
@@ -220,11 +220,11 @@ void NetWork_Wifi::setupAP(void){
     DEVICE_LOG_INFO("end NetWork_Wifi::setupAP ........... 5 ");
     WiFi.config(ip_address[0], ip_address[1], ip_address[2], ip_address[3]); 
     DEVICE_LOG_INFO("end NetWork_Wifi::setupAP ........... 6 ");
-    delay(100);
+    delay(WIFI_CONFIG_DELAY_MS);
     DEVICE_LOG_INFO("end NetWork_Wifi::setupAP ........... 7 ");
     WiFi.setHostname(HOST_POST_INFO);
     DEVICE_LOG_INFO("end NetWork_Wifi::setupAP ...........  8 ");
-    WiFi.softAP("ESP_Config", "12345678");
+    WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASSWORD);
     DEVICE_LOG_INFO("end NetWork_Wifi::setupAP ........... 9 ");
     WiFi.begin();
     DEVICE_LOG_INFO("end NetWork_Wifi::setupAP ........... 10 ");
@@ -288,7 +288,7 @@ void NetWork_Wifi::setupOTA(void){
         HTTPClient http;
         http.begin(linkOTA_ESP_32);
         int httpCode = http.GET();
-        if (httpCode != 200) {
+        if (httpCode != HTTP_STATUS_OK) {
           Serial.printf("Version check failed: %d\n", httpCode);
           http.end();
           return;
@@ -333,7 +333,7 @@ void NetWork_Wifi::setupOTA(void){
                 Serial.print("Bytes written: ");
                 Serial.println(written);
               }
-            } while (written > 0 && millis() - uploadStartTime < 120000); // Continue writing until timeout or all data is written
+            } while (written > 0 && millis() - uploadStartTime < WIFI_OTA_UPLOAD_TIMEOUT_MS); // Continue writing until timeout or all data is written
             
             if (written == http.getSize()) {
               Serial.println("Firmware upload successful");
@@ -348,7 +348,7 @@ void NetWork_Wifi::setupOTA(void){
                 Serial.println("Update successful, saving version...");
                 Memory::GetInstance()->writeString(VERSJON_SETUP_JSON,serverVersion);
                 Memory::GetInstance()->writeChar(WIFI_MODE,WIFI_START_CONNECT);
-                delay(1000);
+                delay(WIFI_OTA_RESTART_DELAY_MS);
                 ESP.restart();
               } else {
                 Serial.println("Update failed: incomplete");
@@ -415,7 +415,7 @@ uint32_t NetWork_Wifi::getNetworkTimestamp(){
 
     configTime(0, 0, "pool.ntp.org", "time.nist.gov");
     struct tm timeinfo;
-    if (!getLocalTime(&timeinfo, 5000)) {
+    if (!getLocalTime(&timeinfo, NTP_LOCALTIME_TIMEOUT_MS)) {
         return 0;
     }
 
@@ -441,7 +441,7 @@ unsigned char NetWork_Wifi::pingNetWork(){
                  "Connection: close\r\n\r\n");
 
     unsigned long timeout = millis();
-    while (client.connected() && millis() - timeout < 2000) {
+    while (client.connected() && millis() - timeout < WIFI_PING_TIMEOUT_MS) {
         if (client.available()) {
             String line = client.readStringUntil('\n');
             if (line.startsWith("HTTP/1.1 204") || line.startsWith("HTTP/1.0 204")) {
@@ -473,7 +473,7 @@ void NetWork_Wifi::disconnetWifi(){
     }
 
     //WiFi.mode(WIFI_OFF);
-    delay(100);
+    delay(WIFI_CONFIG_DELAY_MS);
     DEVICE_LOG_INFO("end NetWork_Wifi::disconnetWifi");
 }
 

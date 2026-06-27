@@ -34,11 +34,38 @@ QueueHandle_t deviceCommandQueue = NULL;
 #endif
 
 
-#define UART_NUM        UART_NUM_0   // UART0
-#define TXD_PIN         GPIO_NUM_1   // TXD0 (m?c d?nh l� GPIO1)
-#define RXD_PIN         GPIO_NUM_3   // RXD0 (m?c d?nh l� GPIO3)
-#define BUF_SIZE        1024
-
+#define UART_NUM                 UART_NUM_0   // UART0
+#define TXD_PIN                  GPIO_NUM_1   // TXD0 (m?c d?nh l� GPIO1)
+#define RXD_PIN                  GPIO_NUM_3   // RXD0 (m?c d?nh l� GPIO3)
+#define BUF_SIZE                 1024
+#define UART_BAUD_RATE           115200
+#define UART_READ_TIMEOUT_MS     100
+#define EEPROM_SIZE              2048
+#define WIFI_QUEUE_SIZE_SENSOR   10
+#define WIFI_QUEUE_SIZE_STATUS   10
+#define WIFI_QUEUE_SIZE_COMMAND  10
+#define WIFI_CHECK_LIMIT         10
+#define WIFI_RECONNECT_LIMIT     4
+#define WIFI_PING_RETRY_LIMIT    120
+#define NETWORK_RECOVERY_LIMIT   3
+#define MQTT_RETRY_LIMIT         30
+#define NETWORK_ERROR_LIMIT      200
+#define REALTIME_POLL_LIMIT      240
+#define NETWORK_POLL_INTERVAL_MS 500
+#define BUTTON_PIN               0   // GPIO n�t nh�n
+#define BUTTON_HOLD_TIME_1       3000
+#define BUTTON_HOLD_TIME_2       6000
+#define BUTTON_HOLD_TIME_3       10000
+#define BUTTON_HOLD_TIME_4       20000
+#define BUTTON_VALUE_DEFAULT     1
+#define BUTTON_VALUE_2           2
+#define BUTTON_VALUE_3           3
+#define BUTTON_VALUE_4           4
+#define BUTTON_VALUE_5           5
+#define LORA_BUFFER_SIZE         255
+#define MQTT_PAYLOAD_SIZE        512
+#define SENSOR_PAYLOAD_SIZE      256
+#define DEVICE_PAYLOAD_SIZE      256
 
 
 unsigned char modeStatus = 0;
@@ -46,15 +73,10 @@ ProcessTimeData processTimeData;
 // External network ping tracking (check once per hour)
 static unsigned long lastExternalPingTime = 0;
 static const unsigned long EXTERNAL_PING_INTERVAL = 3600000UL; // 1 hour
-#define BUTTON_PIN 0   // GPIO n�t nh?n
-#define UART_NUM        UART_NUM_0   // UART0
-#define TXD_PIN         GPIO_NUM_1   // TXD0 (m?c d?nh l� GPIO1)
-#define RXD_PIN         GPIO_NUM_3   // RXD0 (m?c d?nh l� GPIO3)
-#define BUF_SIZE        1024
 
 void setupUART(void){
   uart_config_t uart_config = {
-    .baud_rate = 115200,
+    .baud_rate = UART_BAUD_RATE,
     .data_bits = UART_DATA_8_BITS,
     .parity    = UART_PARITY_DISABLE,
     .stop_bits = UART_STOP_BITS_1,
@@ -78,7 +100,7 @@ void setupUART(void){
 
 void updateStatusUART(void){
   uint8_t data[BUF_SIZE];
-  int len = uart_read_bytes(UART_NUM, data, BUF_SIZE, 100 / portTICK_PERIOD_MS);
+  int len = uart_read_bytes(UART_NUM, data, BUF_SIZE, UART_READ_TIMEOUT_MS / portTICK_PERIOD_MS);
   if (len > 0) {
     data[len] = '\0';  // Null-terminate d? li?u nh?n du?c
     Serial.print("�� nh?n: ");
@@ -103,7 +125,7 @@ void getRTCInfo(){
 void TaskNetWork::setup(void){
     DEVICE_LOG_INFO("start TaskNetWork::setup");
 
-    Memory::GetInstance()->initEEPROM(2048);
+    Memory::GetInstance()->initEEPROM(EEPROM_SIZE);
     modeStatus = Memory::GetInstance()->readChar(MODE_WIFI_ADRESS);
     pinMode(BUTTON_PIN, INPUT_PULLUP); // N�t n?i GND, n�n d�ng INPUT_PULLUP
     DEVICE_LOG_INFO("start TaskNetWork::setup ==>"+ String(modeStatus));
@@ -132,19 +154,19 @@ void TaskNetWork::setup(void){
 
 #if SUPPORT_RTOS
         if (sensorDataQueue == NULL) {
-            sensorDataQueue = xQueueCreate(10, sizeof(InfoSensor));
+            sensorDataQueue = xQueueCreate(WIFI_QUEUE_SIZE_SENSOR, sizeof(InfoSensor));
             if (sensorDataQueue == NULL) {
                 Serial.println("[TaskNetWork] Failed to create sensorDataQueue");
             }
         }
         if (deviceStatusQueue == NULL) {
-            deviceStatusQueue = xQueueCreate(10, sizeof(InfoDeviceControl));
+            deviceStatusQueue = xQueueCreate(WIFI_QUEUE_SIZE_STATUS, sizeof(InfoDeviceControl));
             if (deviceStatusQueue == NULL) {
                 Serial.println("[TaskNetWork] Failed to create deviceStatusQueue");
             }
         }
         if (deviceCommandQueue == NULL) {
-            deviceCommandQueue = xQueueCreate(10, sizeof(DeviceCommand));
+            deviceCommandQueue = xQueueCreate(WIFI_QUEUE_SIZE_COMMAND, sizeof(DeviceCommand));
             if (deviceCommandQueue == NULL) {
                 Serial.println("[TaskNetWork] Failed to create deviceCommandQueue");
             }
@@ -215,7 +237,7 @@ bool checkNetWorkInConnect(void){
           else
           {
               processTimeData.numberCheck++;
-              if(processTimeData.numberCheck>10){
+              if(processTimeData.numberCheck>WIFI_CHECK_LIMIT){
                   processTimeData.numberCheck=0;
                   processTimeData.state =1;
               }
@@ -224,7 +246,7 @@ bool checkNetWorkInConnect(void){
         else
         {
           processTimeData.numberCheck++;
-          if(processTimeData.numberCheck>120) {
+          if(processTimeData.numberCheck>WIFI_PING_RETRY_LIMIT) {
             if(!netWork_Wifi.pingNetWork()){
                 processTimeData.numberCheck=0;
                 processTimeData.state =1;
@@ -251,7 +273,7 @@ bool checkNetWorkDisconnect(void){
 bool checkNetWorkReConnect(void){
     DEVICE_LOG_INFO("start checkNetWorkReConnect"+ String(processTimeData.numberCheck));
     processTimeData.numberCheck++;
-    if(processTimeData.numberCheck>4){
+    if(processTimeData.numberCheck>WIFI_RECONNECT_LIMIT){
         netWork_Wifi.connectWifi();
         processTimeData.state=3;
         processTimeData.numberCheck = 0;
@@ -275,9 +297,9 @@ bool checkNetWorkRealTimeServer(void){
       }
       else
       {
-        if(processTimeData.numberCheck>240){
+        if(processTimeData.numberCheck>REALTIME_POLL_LIMIT){
           processTimeData.countNetWorkWorng  ++;
-          if(processTimeData.countNetWorkWorng>3){
+          if(processTimeData.countNetWorkWorng>NETWORK_RECOVERY_LIMIT){
             processTimeData.state=0;
           }
           processTimeData.numberCheck = 0;
@@ -302,7 +324,7 @@ bool checkMQTTConnect(void){
   {
     processTimeData.countNetWorkWorng ++;
   }
-  if(processTimeData.countNetWorkWorng>30){
+  if(processTimeData.countNetWorkWorng>MQTT_RETRY_LIMIT){
     processTimeData.countNetWorkWorng =0;
     processTimeData.state=1;
   }
@@ -334,7 +356,7 @@ bool checkNetWorkERRORConnect(void){
     } 
   }
 
-  if(processTimeData.countNetWorkWorng > 200){
+  if(processTimeData.countNetWorkWorng > NETWORK_ERROR_LIMIT){
      processTimeData.state = 0;
      processTimeData.numberCheck = 0;
   }
@@ -344,11 +366,10 @@ bool checkNetWorkERRORConnect(void){
 
 //boolean (* const xdrv_func_ptr[])(byte) PROGMEM = 
 //boolean (* const xdrv_func_ptr[])(byte) PROGMEM = 
-#define BUTTON_PIN 0   // GPIO n�t nh?n
 
 unsigned long pressStartTime = 0;
 bool isPressed = false;
-char valueButton = 1;
+char valueButton = BUTTON_VALUE_DEFAULT;
 
 void checkButton(){
   int buttonState = digitalRead(BUTTON_PIN);
@@ -363,16 +384,16 @@ void checkButton(){
     unsigned long heldTime = millis() - pressStartTime;
 
     // X�c d?nh gi� tr? d?a tr�n th?i gian gi?
-    if (heldTime >= 20000) {
-      valueButton = 5;
-    } else if (heldTime >= 10000) {
-      valueButton = 4;
-    } else if (heldTime >= 6000) {
-      valueButton = 3;
-    } else if (heldTime >= 3000) {
-      valueButton = 2;
+    if (heldTime >= BUTTON_HOLD_TIME_4) {
+      valueButton = BUTTON_VALUE_5;
+    } else if (heldTime >= BUTTON_HOLD_TIME_3) {
+      valueButton = BUTTON_VALUE_4;
+    } else if (heldTime >= BUTTON_HOLD_TIME_2) {
+      valueButton = BUTTON_VALUE_3;
+    } else if (heldTime >= BUTTON_HOLD_TIME_1) {
+      valueButton = BUTTON_VALUE_2;
     } else {
-      valueButton = 1;
+      valueButton = BUTTON_VALUE_DEFAULT;
     }
   }
 
@@ -422,7 +443,7 @@ void TaskNetWork::loopNetWork(void) {
         DEVICE_LOG_INFO("check wifi netWork compaireTimeInfo(processTimeData.timeStart)"+ String(compaireTimeInfo(processTimeData.timeStart)));
         DEVICE_LOG_INFO("check wifi netWork processTimeData.state"+ String(processTimeData.state));
         
-        if(compaireTimeInfo(processTimeData.timeStart)>500){
+        if(compaireTimeInfo(processTimeData.timeStart)>NETWORK_POLL_INTERVAL_MS){
           arrayNetworkFunction[processTimeData.state]();
           processTimeData.timeStart = millis();
         } 
@@ -449,14 +470,14 @@ void TaskNetWork::loopNetWork(void) {
     checkButton();  
 #if SUPPORT_LORA
     if (netWork_RF.available()) {
-        uint8_t buffer[255];
+        uint8_t buffer[LORA_BUFFER_SIZE];
         size_t receivedLen = 0;
         if (netWork_RF.receiveData(buffer, sizeof(buffer) - 1, receivedLen)) {
             buffer[receivedLen] = '\0';
             lastLoraPayload = String((char*)buffer);
             if (netWork_Mqtt.checkStatusMqtt()) {
                 String mqttPayload = "{\"data\":\"" + lastLoraPayload + "\"}";
-                char mqttBuf[512];
+                char mqttBuf[MQTT_PAYLOAD_SIZE];
                 mqttPayload.toCharArray(mqttBuf, sizeof(mqttBuf));
                 netWork_Mqtt.sendMessageInfo(mqttBuf);
             }
@@ -469,7 +490,7 @@ void TaskNetWork::loopNetWork(void) {
     if (sensorDataQueue != NULL) {
         while (xQueueReceive(sensorDataQueue, &sensorValue, 0) == pdTRUE) {
             if (netWork_Mqtt.checkStatusMqtt()) {
-                char payload[256];
+                char payload[SENSOR_PAYLOAD_SIZE];
                 snprintf(payload, sizeof(payload), "{\"humi\":%d,\"temp\":%d,\"pm2_5\":%d,\"pm10\":%d}",
                          sensorValue.valueHumi,
                          sensorValue.valueTemp,
@@ -490,7 +511,7 @@ void TaskNetWork::loopNetWork(void) {
         
         while (xQueueReceive(deviceStatusQueue, &statusDevice, 0) == pdTRUE) {
             if (netWork_Mqtt.checkStatusMqtt()) {
-                char devPayload[256];
+                char devPayload[DEVICE_PAYLOAD_SIZE];
                 snprintf(devPayload, sizeof(devPayload), "{\"device_port\":%d,\"button_click\":%d,\"button_status\":%d,\"count_info\":%d}",
                          statusDevice.device_port,
                          statusDevice.button_click,

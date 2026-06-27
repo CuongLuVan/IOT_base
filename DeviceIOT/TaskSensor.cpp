@@ -22,11 +22,7 @@
 #include "Common.h"
 #include "DebugInfo.h"
 
-#define DHTPIN 12 // what digital 
-#define DHTTYPE DHT11  //DHT 11
-
-
-DHT dht (DHTPIN, DHTTYPE); //Initialize DHT sensor.
+DHT dht (DHT_PIN, DHT_TYPE); //Initialize DHT sensor.
 PMS pms(Serial);
 PMS::DATA data;
 
@@ -36,7 +32,6 @@ InfoSensor dataSensor;
 static SemaphoreHandle_t sensorDataMutex = NULL;
 #endif
 
-static const uint32_t SENSOR_TASK_INTERVAL_MS = 1000; // Adjustable interval (ms)
 static uint8_t sensorReadStep = 0; // 0..3 read schedule
 
 void TaskSensor::setup(void){
@@ -50,7 +45,7 @@ void TaskSensor::setup(void){
 
     dataSensor.valueControl =0;
     dht.begin();
-    Serial1.begin(9600);   // GPIO1, GPIO3 (TX/RX pin on ESP-12E Development Board)
+    Serial1.begin(SENSOR_SERIAL_BAUD_RATE);   // GPIO1, GPIO3 (TX/RX pin on ESP-12E Development Board)
         //Configuro la porta Serial2 (tutti i parametri hanno anche un get per effettuare controlli)
 
 #if SUPPORT_RTOS
@@ -136,7 +131,7 @@ void TaskSensor::taskRun(void * parameter) {
         for(;;)
         {
             // Chu kỳ 1 giây / step: 0..3
-            if (sensorReadStep >= 4) {
+            if (sensorReadStep >= SENSOR_READ_STEP_COUNT) {
                 sensorReadStep = 0;
             }
             if (sensorDataMutex != NULL) {
@@ -150,11 +145,11 @@ void TaskSensor::taskRun(void * parameter) {
 
             if (sensorDataQueue != NULL) {
                 // Luôn gửi bản ghi hiện tại mỗi lúc sau khi cập nhật ô cùng
-                xQueueSend(sensorDataQueue, &dataSensor, pdMS_TO_TICKS(100));
+                xQueueSend(sensorDataQueue, &dataSensor, pdMS_TO_TICKS(SENSOR_QUEUE_SEND_DELAY_MS));
             }
             if (sensorDataMutex != NULL) {
                 // có thể dùng mutex nếu cần đọc dataSensor ở nơi khác, có thể for dữ liệu trên queue
-                if (xSemaphoreTake(sensorDataMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+                if (xSemaphoreTake(sensorDataMutex, pdMS_TO_TICKS(SENSOR_MUTEX_WAIT_MS)) == pdTRUE) {
                     MemoryData::GetInstance().sensorData_ = &dataSensor;
                     xSemaphoreGive(sensorDataMutex);
                 }

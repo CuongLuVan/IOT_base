@@ -16,7 +16,7 @@ TaskHandle_t Task3;
 
 void setup() {
     DEVICE_LOG_INFO("start DeviceIOT::setup");
-    Serial.begin(115200);
+    Serial.begin(SERIAL_BAUD_RATE);
 
     taskDevice.setup();
     taskSensor.setup();
@@ -25,10 +25,10 @@ void setup() {
 
 #if SUPPORT_RTOS
     // RTOS mode: create tasks pinned to cores (ESP32)
-    xTaskCreatePinnedToCore(taskDevice.taskRun, "TaskDevice", 10000, NULL, 1, &Task1, 0);
-    vTaskDelay(pdMS_TO_TICKS(500));
-    xTaskCreatePinnedToCore(taskSensor.taskRun, "TaskSensor", 10000, NULL, 1, &Task2, 1);
-    vTaskDelay(pdMS_TO_TICKS(500));
+    xTaskCreatePinnedToCore(taskDevice.taskRun, "TaskDevice", TASK_STACK_SIZE, NULL, 1, &Task1, 0);
+    vTaskDelay(pdMS_TO_TICKS(TASK_CREATE_DELAY_MS));
+    xTaskCreatePinnedToCore(taskSensor.taskRun, "TaskSensor", TASK_STACK_SIZE, NULL, 1, &Task2, 1);
+    vTaskDelay(pdMS_TO_TICKS(TASK_CREATE_DELAY_MS));
   //  xTaskCreatePinnedToCore(task_NetWork.taskRun, "TaskNetwork", 10000, NULL, 1, &Task3, 2);
    // vTaskDelay(pdMS_TO_TICKS(500));
 #else
@@ -44,9 +44,9 @@ void loop() {
     taskDevice.taskRun(NULL);
     taskSensor.taskRun(NULL);
     task_NetWork.taskRun(NULL);
-    delay(10);
+    delay(COOP_LOOP_DELAY_MS);
 #else
     // In RTOS mode, tasks are independent; idle loop can optionally blink LEDs
-    delay(1000);
+    delay(RTOS_IDLE_LOOP_DELAY_MS);
 #endif
 }

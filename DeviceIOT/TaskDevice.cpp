@@ -17,10 +17,6 @@ extern QueueHandle_t deviceStatusQueue;
 #endif
 
 InfoDeviceControl control;
-#define INPUT_PULLUP 13
-#define OUTPUT_PUMP 22
-#define OUTPUT_DEVICE_1 23
-#define BUTTON_PIN 14
 void TaskDevice::setup(void)
 {
     DEVICE_LOG_INFO("start TaskDevice::setup");
@@ -28,10 +24,10 @@ void TaskDevice::setup(void)
     control.button_click = 0x00;
     control.button_status = 0x00;
     control.count_info = 0x00;
-    pinMode(BUTTON_PIN,INPUT); 
-    pinMode(INPUT_PULLUP,INPUT); 
-    pinMode(OUTPUT_PUMP,OUTPUT); 
-    pinMode(OUTPUT_DEVICE_1,OUTPUT); 
+    pinMode(DEVICE_BUTTON_PIN, INPUT);
+    pinMode(INPUT_PULLUP_PIN, INPUT);
+    pinMode(OUTPUT_PUMP_PIN, OUTPUT);
+    pinMode(OUTPUT_DEVICE_1_PIN, OUTPUT);
     DEVICE_LOG_INFO("end TaskDevice::setup");
 }
 
@@ -42,10 +38,10 @@ void TaskDevice::readButton(void)
     static unsigned long lastDebounceTime = 0;
     static unsigned long pressStart = 0;
 
-    const unsigned long debounceDelay = 50;
-    const unsigned long longPressTime = 3000;
+    const unsigned long debounceDelay = BUTTON_DEBOUNCE_MS;
+    const unsigned long longPressTime = BUTTON_LONG_PRESS_MS;
 
-    int reading = digitalRead(BUTTON_PIN);
+    int reading = digitalRead(DEVICE_BUTTON_PIN);
 
     if (reading != lastButtonReading) {
         lastDebounceTime = millis();
@@ -81,16 +77,16 @@ void TaskDevice::readButton(void)
 
 void TaskDevice::controlPump(void){
     if((control.device_port|0x01) == 1) {
-        digitalWrite(OUTPUT_PUMP, HIGH); // Bật bơm
+        digitalWrite(OUTPUT_PUMP_PIN, HIGH); // Bật bơm
     } else {
-        digitalWrite(OUTPUT_PUMP, LOW); // Tắt bơm
+        digitalWrite(OUTPUT_PUMP_PIN, LOW); // Tắt bơm
     }
 }
 void TaskDevice::controlDevice(void){
      if((control.device_port|0x02) == 0x02) {
-        digitalWrite(OUTPUT_DEVICE_1, HIGH); // Bật thiết bị 1
+        digitalWrite(OUTPUT_DEVICE_1_PIN, HIGH); // Bật thiết bị 1
     } else {
-        digitalWrite(OUTPUT_DEVICE_1, LOW); // Tắt thiết bị 1
+        digitalWrite(OUTPUT_DEVICE_1_PIN, LOW); // Tắt thiết bị 1
     }
 }
 
@@ -110,12 +106,12 @@ void TaskDevice::taskRun(void * parameter) {
             TaskDevice::readButton();
             TaskDevice::controlPump();
             TaskDevice::controlDevice();
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
+            vTaskDelay(DEVICE_TASK_PERIOD_MS / portTICK_PERIOD_MS);
             if(control.device_port!=control.device_port_last){
                 control.device_port_last = control.device_port;
                 // Report current device status to network
                 if (deviceStatusQueue != NULL) {
-                    xQueueSend(deviceStatusQueue, &control, pdMS_TO_TICKS(50));
+                    xQueueSend(deviceStatusQueue, &control, pdMS_TO_TICKS(DEVICE_QUEUE_SEND_DELAY_MS));
                 }
 
                 // Receive command from network if available
