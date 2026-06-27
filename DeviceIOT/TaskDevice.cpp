@@ -115,16 +115,19 @@ void TaskDevice::taskRun(void * parameter) {
                 }
 
                 // Receive command from network if available
-                if (deviceCommandQueue != NULL) {
-                    DeviceCommand cmd_to_device;
-                    if (xQueueReceive(deviceCommandQueue, &cmd_to_device, 0) == pdTRUE) {
-                        // apply command locally
-                        if(cmd_to_device.commandType == COMMAND_TYPE_CONTROL) {
-                            control.device_port = cmd_to_device.commandValue;
-                        }
+                
+            }
+            if (deviceCommandQueue != NULL) {
+                DeviceCommand cmd_to_device;
+                if (xQueueReceive(deviceCommandQueue, &cmd_to_device, 0) == pdTRUE) {
+                    // apply command locally
+                    if(cmd_to_device.commandType == COMMAND_TYPE_CONTROL) {
+                        control.device_port = cmd_to_device.commandValue;
+                        cmd_to_device.reserved = 1; // Mark as processed
                         control.count_info++;
-                        Serial.printf("[TaskDevice] Exec command type=%d value=%d\n", cmd_to_device.commandType, cmd_to_device.commandValue);
                     }
+                    
+                    Serial.printf("[TaskDevice] Exec command type=%d value=%d\n", cmd_to_device.commandType, cmd_to_device.commandValue);
                 }
             }
         }

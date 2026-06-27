@@ -434,6 +434,11 @@ bool (* arrayNetworkFunction[])(void) ={
 
                                   &checkNetWorkERRORConnect
                               };
+void sendMessageInfo(String data){
+  char *p = new char[data.length() + 1];
+  strcpy(p, data.c_str());
+   netWork_Mqtt.sendMessageInfo(p);
+}
 
 
 void TaskNetWork::loopNetWork(void) {
@@ -488,17 +493,11 @@ void TaskNetWork::loopNetWork(void) {
 #if SUPPORT_RTOS
     // Process sensor queue data if any
     if (sensorDataQueue != NULL) {
-        while (xQueueReceive(sensorDataQueue, &sensorValue, 0) == pdTRUE) {
+        if(xQueueReceive(sensorDataQueue, &sensorValue, 0) == pdTRUE) {
             if (netWork_Mqtt.checkStatusMqtt()) {
-                char payload[SENSOR_PAYLOAD_SIZE];
-                snprintf(payload, sizeof(payload), "{\"humi\":%d,\"temp\":%d,\"pm2_5\":%d,\"pm10\":%d}",
-                         sensorValue.valueHumi,
-                         sensorValue.valueTemp,
-                         sensorValue.valueDust_PM2_5,
-                         sensorValue.valueDust_PM10);
-                netWork_Mqtt.sendMessageInfo(payload);
+              // sendMessageInfo(getInfoDevice(sensorValue,statusDevice));
             }
-            Serial.printf("[TaskNetWork] Sensor data sent queued: H=%d T=%d PM2.5=%d PM10=%d\n",
+            Serial.printf("[TaskNetWork] x1111 Sensor data sent queued: H=%d T=%d PM2.5=%d PM10=%d\n",
                           sensorValue.valueHumi,
                           sensorValue.valueTemp,
                           sensorValue.valueDust_PM2_5,
@@ -509,17 +508,11 @@ void TaskNetWork::loopNetWork(void) {
     // Process device status updates from TaskDevice
     if (deviceStatusQueue != NULL) {
         
-        while (xQueueReceive(deviceStatusQueue, &statusDevice, 0) == pdTRUE) {
+        if (xQueueReceive(deviceStatusQueue, &statusDevice, 0) == pdTRUE) {
             if (netWork_Mqtt.checkStatusMqtt()) {
-                char devPayload[DEVICE_PAYLOAD_SIZE];
-                snprintf(devPayload, sizeof(devPayload), "{\"device_port\":%d,\"button_click\":%d,\"button_status\":%d,\"count_info\":%d}",
-                         statusDevice.device_port,
-                         statusDevice.button_click,
-                         statusDevice.button_status,
-                         statusDevice.count_info);
-                netWork_Mqtt.sendMessageInfo(devPayload);
+              sendMessageInfo(getInfoDevice(sensorValue,statusDevice));
             }
-            Serial.printf("[TaskNetWork] Device status: port=%d click=%d status=%d count=%d\n",
+            Serial.printf("[TaskNetWork] x22222 Device status: port=%d click=%d status=%d count=%d\n",
                           statusDevice.device_port,
                           statusDevice.button_click,
                           statusDevice.button_status,

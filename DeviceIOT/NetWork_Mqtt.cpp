@@ -188,7 +188,6 @@ void NetWork_Mqtt::sendMessageInfo(char * data){
 
 
 
-
 void NetWork_Mqtt::MqttSubscribe(char *topic)
 {
   MqttClient.subscribe(topic);

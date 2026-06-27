@@ -1,8 +1,8 @@
 
 
 #define MODE_WIFI_ADRESS          1
-#define SUPPORT_RTOS false
-#define SUPPORT_LORA 1
+#define SUPPORT_RTOS true
+#define SUPPORT_LORA 0
 #define SUPPORT_MQTT 1
 
 // 0 = use standard WiFiClient
