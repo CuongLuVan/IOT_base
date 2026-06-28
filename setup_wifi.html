@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>ESP32 WiFi Configuration</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+            width: 100%;
+            max-width: 450px;
+            animation: slideIn 0.5s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .input-group {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: all 0.3s;
+            outline: none;
+        }
+
+        input:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .toggle-password {
+            position: absolute;
+            right: 15px;
+            cursor: pointer;
+            color: #999;
+            font-size: 18px;
+            user-select: none;
+        }
+
+        .toggle-password:hover {
+            color: #667eea;
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 12px;
+            border-radius: 10px;
+            text-align: center;
+            font-size: 14px;
+            display: none;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+
+        .status.loading {
+            background: #e7e7e7;
+            color: #333;
+            border: 1px solid #ddd;
+            display: block;
+        }
+
+        .scan-btn {
+            margin-top: 10px;
+            background: #6c757d;
+            font-size: 14px;
+            padding: 8px;
+        }
+
+        .scan-btn:hover {
+            background: #5a6268;
+        }
+
+        .network-list {
+            margin-top: 10px;
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+            display: none;
+        }
+
+        .network-list.show {
+            display: block;
+        }
+
+        .network-item {
+            padding: 10px 15px;
+            cursor: pointer;
+            transition: background 0.2s;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .network-item:hover {
+            background: #f5f5f5;
+        }
+
+        .network-item:last-child {
+            border-bottom: none;
+        }
+
+        .wifi-icon {
+            margin-right: 10px;
+        }
+
+        footer {
+            text-align: center;
+            padding: 20px;
+            background: #f8f9fa;
+            font-size: 12px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="icon">📡</div>
+            <h1>WiFi Configuration</h1>
+            <p>Vui lòng nhập thông tin mạng WiFi của bạn</p>
+        </div>
+
+        <div class="content">
+            <form id="wifiForm">
+                <div class="form-group">
+                    <label>🔐 Mật khẩu (tùy chọn)</label>
+                    <div class="input-group">
+                        <input type="password" id="adminPass" placeholder="Nhập mật khẩu quản trị (nếu có)">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>📶 Tên WiFi (SSID)</label>
+                    <div class="input-group">
+                        <input type="text" id="ssid" placeholder="Nhập tên WiFi" required autocomplete="off">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>🔒 Mật khẩu WiFi</label>
+                    <div class="input-group">
+                        <input type="password" id="password" placeholder="Nhập mật khẩu WiFi">
+                        <span class="toggle-password" onclick="togglePassword()">👁️</span>
+                    </div>
+                </div>
+
+                <button type="submit">🚀 Kết nối</button>
+            </form>
+
+            <div id="status" class="status"></div>
+        </div>
+
+        <footer>
+            ESP32 Provisioning v1.0
+        </footer>
+    </div>
+
+    <script>
+        // Toggle password visibility
+        function togglePassword() {
+            const passwordInput = document.getElementById('password');
+            const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+            passwordInput.setAttribute('type', type);
+        }
+
+        // Hiển thị status message
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.className = `status ${type}`;
+            statusDiv.innerHTML = message;
+            
+            // Tự động ẩn sau 5 giây nếu thành công hoặc lỗi
+            if (type === 'success' || type === 'error') {
+                setTimeout(() => {
+                    if (statusDiv.className === `status ${type}`) {
+                        statusDiv.style.display = 'none';
+                    }
+                }, 5000);
+            }
+        }
+
+        // Gửi dữ liệu config đến ESP32
+        async function sendConfig(ssid, password, adminPass = '') {
+            var formData = {
+                ssid: ssid,
+                password: password
+            };
+            
+            // Thêm admin password nếu có
+            if (adminPass) {
+                formData.admin = adminPass;
+            }
+            
+            try {
+                const response = await fetch('http://192.168.4.1/wifi', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: "data=" + encodeURIComponent(JSON.stringify(formData))
+                });
+				
+				
+                
+                if (response.ok) {
+                    const result = await response.text();
+                    showStatus('✅ Cấu hình thành công! ESP32 đang kết nối WiFi...', 'success');
+                    
+                    // Sau 2 giây, thử redirect về trang chủ của ESP32
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 2000);
+                } else {
+                    showStatus('❌ Lỗi: Không thể gửi cấu hình đến ESP32', 'error');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showStatus('❌ Lỗi kết nối: Không thể kết nối đến ESP32', 'error');
+            }
+        }
+
+        // Xử lý submit form
+        document.getElementById('wifiForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const ssid = document.getElementById('ssid').value.trim();
+            const password = document.getElementById('password').value;
+            const adminPass = document.getElementById('adminPass').value;
+            
+            // Validate input
+            if (!ssid) {
+                showStatus('⚠️ Vui lòng nhập tên WiFi (SSID)', 'error');
+                return;
+            }
+            
+            if (ssid.length > 32) {
+                showStatus('⚠️ Tên WiFi không được vượt quá 32 ký tự', 'error');
+                return;
+            }
+            
+            if (password.length > 64) {
+                showStatus('⚠️ Mật khẩu không được vượt quá 64 ký tự', 'error');
+                return;
+            }
+            
+            // Hiển thị loading
+            showStatus('🔄 Đang gửi cấu hình đến ESP32...', 'loading');
+            
+            // Gửi config
+            await sendConfig(ssid, password, adminPass);
+        });
+        
+        // Thêm tính năng tự động focus vào ô SSID
+        document.getElementById('ssid').focus();
+        
+        // Thêm shortcut: Enter để submit
+        document.getElementById('password').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('wifiForm').dispatchEvent(new Event('submit'));
+            }
+        });
+        
+        // Kiểm tra kết nối đến ESP32 khi trang load
+        async function checkConnection() {
+            try {
+                const response = await fetch('/ping');
+                if (response.ok) {
+                    console.log('Connected to ESP32');
+                }
+            } catch (error) {
+                console.log('Waiting for ESP32...');
+            }
+        }
+        
+        checkConnection();
+    </script>
+</body>
+</html>
