@@ -8,4 +8,8 @@ class TaskSensor {
         static void readSensorTemp(void);
         static void readSensorHumi(void);
         static void taskRun(void * parameter);
+
+    private:
+        static bool initMPU6050(void);
+        static void readMPU6050(void);
 };

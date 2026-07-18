@@ -10,6 +10,9 @@ struct InfoSensor {
     int valueDust_PM10;
     int valueDust_PM1;
     int valueControl;
+    float rollAngle;
+    float pitchAngle;
+    float yawRate;
 };
 
 struct InfoDeviceControl {
@@ -24,6 +27,11 @@ struct DeviceCommand {
     uint8_t commandType;
     uint8_t commandValue;
     uint16_t reserved;
+    uint8_t controlMode;
+    int16_t throttle;
+    int16_t moveX;
+    int16_t moveY;
+    int16_t around;
 };
 
 struct ProcessTimeData

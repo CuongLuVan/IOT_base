@@ -50,10 +50,10 @@
 
 #define DHT_PIN                        12
 #define DHT_TYPE                       DHT11
-#define SENSOR_TASK_INTERVAL_MS        1000
+#define SENSOR_TASK_INTERVAL_MS        20
 #define SENSOR_READ_STEP_COUNT         4
 #define SENSOR_SERIAL_BAUD_RATE        9600
-#define SENSOR_QUEUE_SEND_DELAY_MS     100
+#define SENSOR_QUEUE_SEND_DELAY_MS     10
 #define SENSOR_MUTEX_WAIT_MS           10
 
 #define BUTTON_DEBOUNCE_MS             50
@@ -63,8 +63,25 @@
 #define OUTPUT_PUMP_PIN                22
 #define OUTPUT_DEVICE_1_PIN            23
 
+#define MPU6050_I2C_SDA_PIN            21
+#define MPU6050_I2C_SCL_PIN            22
+#define MOTOR_FRONT_LEFT_PIN           18
+#define MOTOR_FRONT_RIGHT_PIN          19
+#define MOTOR_BACK_LEFT_PIN            25
+#define MOTOR_BACK_RIGHT_PIN           26
+#define MOTOR_PWM_FREQ                 500
+#define MOTOR_PWM_RESOLUTION           8
+#define MOTOR_PWM_MIN                  0
+#define MOTOR_PWM_MAX                  220
+#define MOTOR_PWM_SAFE_MAX             160
+#define MOTOR_ARM_START_THROTTLE       45
+#define MOTOR_DISARM_THROTTLE          20
+#define MOTOR_ARM_DELAY_MS             500
+#define MOTOR_LEVEL_TOLERANCE_DEG      12.0f
+#define MOTOR_ABORT_TILT_DEG           30.0f
+
 #define DEVICE_QUEUE_SEND_DELAY_MS     50
-#define DEVICE_TASK_PERIOD_MS          1000
+#define DEVICE_TASK_PERIOD_MS          20
 
 #define HTTP_STATUS_OK                 200
 #define OTA_STATE_TIMEOUT_MS           120000
