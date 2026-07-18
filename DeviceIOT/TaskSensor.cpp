@@ -44,6 +44,8 @@ void TaskSensor::setup(void){
     dataSensor.valueDust_PM1 =0;
 
     dataSensor.valueControl =0;
+    dataSensor.soilMoisture =0;
+    pinMode(SOIL_MOISTURE_PIN, INPUT);
     dht.begin();
     Serial1.begin(SENSOR_SERIAL_BAUD_RATE);   // GPIO1, GPIO3 (TX/RX pin on ESP-12E Development Board)
         //Configuro la porta Serial2 (tutti i parametri hanno anche un get per effettuare controlli)
@@ -59,8 +61,14 @@ void TaskSensor::setup(void){
     DEVICE_LOG_INFO("end TaskSensor::setup");
 }
 
+void TaskSensor::readSoilMoisture(void){
+    int raw = analogRead(SOIL_MOISTURE_PIN);
+    dataSensor.soilMoisture = constrain(map(raw, 0, 4095, 100, 0), 0, 100);
+}
+
 void TaskSensor::readSensor(void){
     dataSensor.valueControl =0;
+    TaskSensor::readSoilMoisture();
 }
 int checkDataNumber = 0;
 void TaskSensor::readSensorDust(void){
@@ -122,6 +130,7 @@ void updateMemoryStatus(void){
     MemoryData::GetInstance().sensorData_->valueDust_PM10 = dataSensor.valueDust_PM10;
     MemoryData::GetInstance().sensorData_->valueDust_PM1 = dataSensor.valueDust_PM1;
     MemoryData::GetInstance().sensorData_->valueControl = dataSensor.valueControl;
+    MemoryData::GetInstance().sensorData_->soilMoisture = dataSensor.soilMoisture;
 }
 
 void TaskSensor::taskRun(void * parameter) {

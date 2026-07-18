@@ -10,6 +10,7 @@ struct InfoSensor {
     int valueDust_PM10;
     int valueDust_PM1;
     int valueControl;
+    int soilMoisture;
 };
 
 struct InfoDeviceControl {

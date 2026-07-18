@@ -1,0 +1,13 @@
+Hãy đọc lại code tôi muốn  tích hợp 1 chức năng đọc cảm biến độ ẩm đất và gửi dữ liệu qua mqtt . Chú ý dữ liệu được thêm đằng sau tring ở hàm này , dữ liệu cách nhau dấu phẩy
+ String vaString =  String(sensorValue.valueHumi) + "," + String(sensorValue.valueTemp) + "," + String(sensorValue.valueDust) + "," + String(sensorValue.valueDust_PM2_5) + "," + String(sensorValue.valueDust_PM10) + "," + String(sensorValue.valueDust_PM1) + "," + String(sensorValue.valueControl);
+ 
+và gửi dữ liệu .
+Thiết bị  được xác định 1 pin ,ON ở mức 1 , OFF ở mức 0
+
+Quy tắc code như sau.
+- Mỗi Task theo chức năng riêng biệt , dữ liệu các task  trao đổi với nhau phải gửi qua  message quee nếu trong khối #if SUPPORT_RTOS
+ và ngược lại thì thông qua MemoryData::GetInstance()
+
+- Task sensor đọc thông tin  sensor  phải ở task sensor và dữ liệu task sensor sẽ gửi qua TaskDevice và TaskNetwork (NetWork_Mqtt )
+-  TaskNetwork  (NetWork_Mqtt ) gửi dữ liêu điều khiển gửi qua  TaskDevice .
+- TaskDevice Tự động đọc thông tin từ cảm biến và quyết định bật thiết bị qua 1 pin và  tự động gửi dữ liệu trang thái điều khiển qua   TaskNetwork

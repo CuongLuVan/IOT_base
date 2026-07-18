@@ -17,6 +17,8 @@ extern QueueHandle_t deviceStatusQueue;
 #endif
 
 InfoDeviceControl control;
+static unsigned long manualOverrideUntil = 0;
+
 void TaskDevice::setup(void)
 {
     DEVICE_LOG_INFO("start TaskDevice::setup");
@@ -83,11 +85,8 @@ void TaskDevice::controlPump(void){
     }
 }
 void TaskDevice::controlDevice(void){
-     if((control.device_port|0x02) == 0x02) {
-        digitalWrite(OUTPUT_DEVICE_1_PIN, HIGH); // Bật thiết bị 1
-    } else {
-        digitalWrite(OUTPUT_DEVICE_1_PIN, LOW); // Tắt thiết bị 1
-    }
+    uint8_t outputState = (control.device_port & 0x01);
+    digitalWrite(OUTPUT_DEVICE_1_PIN, outputState ? HIGH : LOW); // ON=1, OFF=0
 }
 
 void TaskDevice::updateMemoryStatus(void){
@@ -99,71 +98,76 @@ void TaskDevice::updateMemoryStatus(void){
 }
 
 void TaskDevice::taskRun(void * parameter) {
-    //DEVICE_LOG_INFO("start TaskDevice::taskRun");
     #if SUPPORT_RTOS
         for(;;)
-        { 
+        {
             TaskDevice::readButton();
-            TaskDevice::controlPump();
-            TaskDevice::controlDevice();
-            vTaskDelay(DEVICE_TASK_PERIOD_MS / portTICK_PERIOD_MS);
-            if(control.device_port!=control.device_port_last){
-                control.device_port_last = control.device_port;
-                // Report current device status to network
-                if (deviceStatusQueue != NULL) {
-                    xQueueSend(deviceStatusQueue, &control, pdMS_TO_TICKS(DEVICE_QUEUE_SEND_DELAY_MS));
-                }
 
-                // Receive command from network if available
-                
-            }
             if (deviceCommandQueue != NULL) {
                 DeviceCommand cmd_to_device;
                 if (xQueueReceive(deviceCommandQueue, &cmd_to_device, 0) == pdTRUE) {
-                    // apply command locally
                     if(cmd_to_device.commandType == COMMAND_TYPE_CONTROL) {
-                        control.device_port = cmd_to_device.commandValue;
-                        cmd_to_device.reserved = 1; // Mark as processed
+                        control.device_port = (cmd_to_device.commandValue & 0x01);
+                        manualOverrideUntil = millis() + 10000;
                         control.count_info++;
                     }
-                    
                     Serial.printf("[TaskDevice] Exec command type=%d value=%d\n", cmd_to_device.commandType, cmd_to_device.commandValue);
                 }
             }
-        }
-        
-    #else
-        TaskDevice::updateMemoryStatus();
-        TaskDevice::readButton();
-        TaskDevice::controlPump();
-        TaskDevice::controlDevice();
-        if(MemoryData::GetInstance().deviceCommand_ != NULL) {
-            
-            DeviceCommand* cmd_to_device = MemoryData::GetInstance().deviceCommand_;
-            DEVICE_LOG_INFO("start TaskDevice::DeviceCommand commandType "+ 
-                String(cmd_to_device->commandType) + " value=" + 
-                String(cmd_to_device->commandValue) + " reserved=" + 
-                String(cmd_to_device->reserved)  );
-            if(cmd_to_device->commandType== COMMAND_TYPE_CONTROL&&cmd_to_device->reserved) {
-                control.device_port = cmd_to_device->commandValue;
-                control.device_port_last = cmd_to_device->commandValue;
-                cmd_to_device->reserved = 0; // Mark as processed
-                control.count_info++;
+
+            if (manualOverrideUntil == 0 || millis() > manualOverrideUntil) {
+                if (MemoryData::GetInstance().sensorData_ != NULL) {
+                    InfoSensor latest = *MemoryData::GetInstance().sensorData_;
+                    if (latest.soilMoisture < SOIL_MOISTURE_ON_THRESHOLD) {
+                        control.device_port = 1;
+                    } else if (latest.soilMoisture > SOIL_MOISTURE_OFF_THRESHOLD) {
+                        control.device_port = 0;
+                    }
+                }
             }
-        }       
-        if(control.device_port!=control.device_port_last){
-            control.device_port_last = control.device_port;
-            MemoryData::GetInstance().deviceStatus_ = &control;
-            if(MemoryData::GetInstance().deviceCommand_ != NULL) {
-                DeviceCommand* cmd_to_device = MemoryData::GetInstance().deviceCommand_;
-                if(cmd_to_device->commandType== COMMAND_TYPE_CONTROL) {
-                    control.device_port = cmd_to_device->commandValue;
-                    cmd_to_device->reserved = 0; // Mark as processed
-                    control.count_info++;
+
+            TaskDevice::controlPump();
+            TaskDevice::controlDevice();
+            vTaskDelay(DEVICE_TASK_PERIOD_MS / portTICK_PERIOD_MS);
+
+            if(control.device_port != control.device_port_last){
+                control.device_port_last = control.device_port;
+                if (deviceStatusQueue != NULL) {
+                    xQueueSend(deviceStatusQueue, &control, pdMS_TO_TICKS(DEVICE_QUEUE_SEND_DELAY_MS));
                 }
             }
         }
+    #else
+        TaskDevice::updateMemoryStatus();
+        TaskDevice::readButton();
+
+        if(MemoryData::GetInstance().deviceCommand_ != NULL) {
+            DeviceCommand* cmd_to_device = MemoryData::GetInstance().deviceCommand_;
+            if(cmd_to_device->commandType== COMMAND_TYPE_CONTROL&&cmd_to_device->reserved) {
+                control.device_port = (cmd_to_device->commandValue & 0x01);
+                manualOverrideUntil = millis() + 10000;
+                cmd_to_device->reserved = 0;
+                control.count_info++;
+            }
+        }
+
+        if (manualOverrideUntil == 0 || millis() > manualOverrideUntil) {
+            if (MemoryData::GetInstance().sensorData_ != NULL) {
+                InfoSensor latest = *MemoryData::GetInstance().sensorData_;
+                if (latest.soilMoisture < SOIL_MOISTURE_ON_THRESHOLD) {
+                    control.device_port = 1;
+                } else if (latest.soilMoisture > SOIL_MOISTURE_OFF_THRESHOLD) {
+                    control.device_port = 0;
+                }
+            }
+        }
+
+        TaskDevice::controlPump();
+        TaskDevice::controlDevice();
+
+        if(control.device_port != control.device_port_last){
+            control.device_port_last = control.device_port;
+            MemoryData::GetInstance().deviceStatus_ = &control;
+        }
     #endif
-
-
 }
