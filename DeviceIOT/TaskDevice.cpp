@@ -17,6 +17,9 @@ extern QueueHandle_t deviceStatusQueue;
 #endif
 
 InfoDeviceControl control;
+static bool waterAlarmActive = false;
+static unsigned long lastWaterAlertMs = 0;
+
 void TaskDevice::setup(void)
 {
     DEVICE_LOG_INFO("start TaskDevice::setup");
@@ -76,17 +79,20 @@ void TaskDevice::readButton(void)
 }
 
 void TaskDevice::controlPump(void){
-    if((control.device_port|0x01) == 1) {
+    if ((control.device_port & 0x01) != 0) {
         digitalWrite(OUTPUT_PUMP_PIN, HIGH); // Bật bơm
     } else {
         digitalWrite(OUTPUT_PUMP_PIN, LOW); // Tắt bơm
     }
 }
 void TaskDevice::controlDevice(void){
-     if((control.device_port|0x02) == 0x02) {
-        digitalWrite(OUTPUT_DEVICE_1_PIN, HIGH); // Bật thiết bị 1
+    uint8_t alarmBit = (control.device_port & 0x08);
+    uint8_t outputState = (control.device_port & 0x01);
+
+    if (alarmBit != 0) {
+        digitalWrite(OUTPUT_DEVICE_1_PIN, HIGH);
     } else {
-        digitalWrite(OUTPUT_DEVICE_1_PIN, LOW); // Tắt thiết bị 1
+        digitalWrite(OUTPUT_DEVICE_1_PIN, outputState ? HIGH : LOW);
     }
 }
 
@@ -104,6 +110,22 @@ void TaskDevice::taskRun(void * parameter) {
         for(;;)
         { 
             TaskDevice::readButton();
+
+            if (MemoryData::GetInstance().sensorData_ != NULL) {
+                InfoSensor latest = *MemoryData::GetInstance().sensorData_;
+                if (latest.waterLow) {
+                    control.device_port |= 0x08;
+                    waterAlarmActive = true;
+                    if (millis() - lastWaterAlertMs > LORA_ALERT_INTERVAL_MS) {
+                        lastWaterAlertMs = millis();
+                        Serial.println("[TaskDevice] Water low alert");
+                    }
+                } else {
+                    control.device_port &= ~0x08;
+                    waterAlarmActive = false;
+                }
+            }
+
             TaskDevice::controlPump();
             TaskDevice::controlDevice();
             vTaskDelay(DEVICE_TASK_PERIOD_MS / portTICK_PERIOD_MS);
@@ -125,6 +147,13 @@ void TaskDevice::taskRun(void * parameter) {
                         control.device_port = cmd_to_device.commandValue;
                         cmd_to_device.reserved = 1; // Mark as processed
                         control.count_info++;
+                    } else if (cmd_to_device.commandType == COMMAND_TYPE_OTHER) {
+                        if ((cmd_to_device.commandValue & 0x08) != 0) {
+                            control.device_port |= 0x08;
+                        } else {
+                            control.device_port &= ~0x08;
+                        }
+                        control.count_info++;
                     }
                     
                     Serial.printf("[TaskDevice] Exec command type=%d value=%d\n", cmd_to_device.commandType, cmd_to_device.commandValue);
@@ -135,6 +164,18 @@ void TaskDevice::taskRun(void * parameter) {
     #else
         TaskDevice::updateMemoryStatus();
         TaskDevice::readButton();
+
+        if (MemoryData::GetInstance().sensorData_ != NULL) {
+            InfoSensor latest = *MemoryData::GetInstance().sensorData_;
+            if (latest.waterLow) {
+                control.device_port |= 0x08;
+                waterAlarmActive = true;
+            } else {
+                control.device_port &= ~0x08;
+                waterAlarmActive = false;
+            }
+        }
+
         TaskDevice::controlPump();
         TaskDevice::controlDevice();
         if(MemoryData::GetInstance().deviceCommand_ != NULL) {
@@ -148,6 +189,13 @@ void TaskDevice::taskRun(void * parameter) {
                 control.device_port = cmd_to_device->commandValue;
                 control.device_port_last = cmd_to_device->commandValue;
                 cmd_to_device->reserved = 0; // Mark as processed
+                control.count_info++;
+            } else if (cmd_to_device->commandType == COMMAND_TYPE_OTHER) {
+                if ((cmd_to_device->commandValue & 0x08) != 0) {
+                    control.device_port |= 0x08;
+                } else {
+                    control.device_port &= ~0x08;
+                }
                 control.count_info++;
             }
         }       

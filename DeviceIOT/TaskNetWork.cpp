@@ -33,6 +33,17 @@ QueueHandle_t deviceCommandQueue = NULL;
 
 #endif
 
+static DeviceCommand loraDeviceCommand;
+static void relayCommandToDeviceTask(const DeviceCommand& cmd) {
+#if SUPPORT_RTOS
+    if (deviceCommandQueue != NULL) {
+        xQueueSend(deviceCommandQueue, (void*)&cmd, pdMS_TO_TICKS(50));
+    }
+#else
+    loraDeviceCommand = cmd;
+    MemoryData::GetInstance().deviceCommand_ = &loraDeviceCommand;
+#endif
+}
 
 #define UART_NUM                 UART_NUM_0   // UART0
 #define TXD_PIN                  GPIO_NUM_1   // TXD0 (m?c d?nh l� GPIO1)
@@ -474,17 +485,60 @@ void TaskNetWork::loopNetWork(void) {
     }
     checkButton();  
 #if SUPPORT_LORA
-    if (netWork_RF.available()) {
-        uint8_t buffer[LORA_BUFFER_SIZE];
-        size_t receivedLen = 0;
-        if (netWork_RF.receiveData(buffer, sizeof(buffer) - 1, receivedLen)) {
-            buffer[receivedLen] = '\0';
-            lastLoraPayload = String((char*)buffer);
-            if (netWork_Mqtt.checkStatusMqtt()) {
-                String mqttPayload = "{\"data\":\"" + lastLoraPayload + "\"}";
-                char mqttBuf[MQTT_PAYLOAD_SIZE];
-                mqttPayload.toCharArray(mqttBuf, sizeof(mqttBuf));
-                netWork_Mqtt.sendMessageInfo(mqttBuf);
+    static unsigned long lastLoraTxMs = 0;
+    static bool loraAlertSent = false;
+
+    if (LORA_CLIENT == 0) {
+        bool waterLowActive = sensorValue.waterLow || ((statusDevice.device_port & 0x08) != 0);
+        if (waterLowActive && (millis() - lastLoraTxMs > LORA_ALERT_INTERVAL_MS || !loraAlertSent)) {
+            lastLoraTxMs = millis();
+            loraAlertSent = true;
+            if (netWork_RF.sendData("WATER_LOW")) {
+                lastLoraPayload = "WATER_LOW";
+                Serial.println("[TaskNetWork] LoRa sent WATER_LOW");
+            }
+        } else if (!waterLowActive) {
+            loraAlertSent = false;
+        }
+
+        if (netWork_RF.available()) {
+            uint8_t buffer[LORA_BUFFER_SIZE];
+            size_t receivedLen = 0;
+            if (netWork_RF.receiveData(buffer, sizeof(buffer) - 1, receivedLen)) {
+                buffer[receivedLen] = '\0';
+                lastLoraPayload = String((char*)buffer);
+                DeviceCommand loraCmd;
+                loraCmd.commandType = COMMAND_TYPE_OTHER;
+                loraCmd.commandValue = 0x08;
+                loraCmd.reserved = 0;
+                relayCommandToDeviceTask(loraCmd);
+
+                if (netWork_Mqtt.checkStatusMqtt()) {
+                    String mqttPayload = "{\"data\":\"" + lastLoraPayload + "\"}";
+                    char mqttBuf[MQTT_PAYLOAD_SIZE];
+                    mqttPayload.toCharArray(mqttBuf, sizeof(mqttBuf));
+                    netWork_Mqtt.sendMessageInfo(mqttBuf);
+                }
+            }
+        }
+    } else {
+        if (netWork_RF.available()) {
+            uint8_t buffer[LORA_BUFFER_SIZE];
+            size_t receivedLen = 0;
+            if (netWork_RF.receiveData(buffer, sizeof(buffer) - 1, receivedLen)) {
+                buffer[receivedLen] = '\0';
+                lastLoraPayload = String((char*)buffer);
+                if (lastLoraPayload.indexOf("WATER_LOW") >= 0) {
+                    statusDevice.device_port |= 0x08;
+                    DeviceCommand loraCmd;
+                    loraCmd.commandType = COMMAND_TYPE_OTHER;
+                    loraCmd.commandValue = 0x08;
+                    loraCmd.reserved = 0;
+                    relayCommandToDeviceTask(loraCmd);
+                    if (netWork_Mqtt.checkStatusMqtt()) {
+                        sendMessageInfo(getInfoDevice(sensorValue, statusDevice));
+                    }
+                }
             }
         }
     }
