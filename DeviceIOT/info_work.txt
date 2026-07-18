@@ -1,0 +1,15 @@
+Hãy đọc lại code tôi muốn  tích hợp 1 chức năng đọc cảm biến mực nước  và gửi dữ liệu qua mqtt . Chú ý dữ liệu được thêm đằng sau string ở hàm này , dữ liệu cách nhau dấu phẩy
+ String vaString =  String(sensorValue.valueHumi) + "," + String(sensorValue.valueTemp) + "," + String(sensorValue.valueDust) + "," + String(sensorValue.valueDust_PM2_5) + "," + String(sensorValue.valueDust_PM10) + "," + String(sensorValue.valueDust_PM1) + "," + String(sensorValue.valueControl);
+Sensor cảm biến mực nước xác định giá trị mức 1 và mức 0, ở mức 0 là nước đã hết. 
+Thiết bị  sẽ được bơm khi nước hết trạng thái bơm theo trạng thái statusDevice.device_port sẽ thêm bit 0x08 và bật 1 pin điều khiển công tắc  lên mức 1
+Khi hết nước  hệ thống sẽ gửi dữ liệu qua thiết bị  tryền sóng  lora gửi tới 1 địa chỉ xác định . Tôi muốn xác định như sau:
+#define LORA_CLIENT 0 thì coi là thiết bị có cảm biến nước là thiết bị phát sóng
+#define LORA_CLIENT 1 thì coi là thiết bị chuông báo , khi nhận thông tin thiết báo cảm biến nước , khi dữ liệu  báo hết nước thay thiết bị máy bơm bằng chuông báo , cách điều khiển như ,máy bơm và xác định bit  device_port sẽ thêm bit 0x08
+Thời gian hoạt động trao đổi truyền sóng lora là 10 phút 1 lần
+Quy tắc code như sau.
+- Mỗi Task theo chức năng riêng biệt , dữ liệu các task  trao đổi với nhau phải gửi qua  message quee nếu trong khối #if SUPPORT_RTOS
+ và ngược lại thì thông qua MemoryData::GetInstance()
+
+- Task sensor đọc thông tin  sensor  phải ở task sensor và dữ liệu task sensor sẽ gửi qua TaskDevice và TaskNetwork (NetWork_Mqtt )
+-  TaskNetwork  (NetWork_Mqtt ) gửi dữ liêu điều khiển gửi qua  TaskDevice .
+- TaskDevice Tự động đọc thông tin từ cảm biến và quyết định bật thiết bị qua 1 pin và  tự động gửi dữ liệu trang thái điều khiển qua   TaskNetwork
