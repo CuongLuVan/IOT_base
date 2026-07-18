@@ -53,14 +53,42 @@ void MqttDataCallback(char* topic, byte* data, unsigned int data_len)
 {
     String payload = String((char*)data).substring(0, data_len);
     DEVICE_LOG_INFO("MqttDataCallback................................:" + payload);
-    StaticJsonDocument<128> doc; // smaller docs for commands
+    StaticJsonDocument<256> doc;
     DeserializationError err = deserializeJson(doc, payload);
     if (err) {
          DEVICE_LOG_INFO("[MQTT] JSON parse error:" + String(err.f_str()));
         return;
     }
 
-    
+    if (doc.containsKey("control") || doc.containsKey("ver") || doc.containsKey("movex") || doc.containsKey("movey") || doc.containsKey("around")) {
+        uint8_t controlMode = doc["control"] | 0;
+        int16_t throttle = doc["ver"] | 0;
+        int16_t moveX = doc["movex"] | 0;
+        int16_t moveY = doc["movey"] | 0;
+        int16_t around = doc["around"] | 0;
+
+        cmd.commandType = COMMAND_TYPE_CONTROL;
+        cmd.commandValue = controlMode;
+        cmd.controlMode = controlMode;
+        cmd.throttle = throttle;
+        cmd.moveX = moveX;
+        cmd.moveY = moveY;
+        cmd.around = around;
+        cmd.reserved = 1;
+
+        #if SUPPORT_RTOS
+            if (deviceCommandQueue != NULL) {
+                if (xQueueSend(deviceCommandQueue, &cmd, pdMS_TO_TICKS(50)) != pdTRUE) {
+                    DEVICE_LOG_INFO("[MQTT] Failed to queue flight command");
+                }
+            }
+        #else
+            MemoryData::GetInstance().deviceCommand_ = &cmd;
+        #endif
+        sendMessageInfoPublish(getInfoDevice(sensorValue,statusDevice));
+        return;
+    }
+
     cmd.commandType = doc["com"] | 0;
     cmd.commandValue = doc["value"] | 0;
    
@@ -73,16 +101,12 @@ void MqttDataCallback(char* topic, byte* data, unsigned int data_len)
             if (deviceCommandQueue == NULL) return;
             if (xQueueSend(deviceCommandQueue, &cmd, pdMS_TO_TICKS(50)) != pdTRUE) {
                   DEVICE_LOG_INFO("[MQTT] Failed to queue device command");
-            } else {
-                 //DEVICE_LOG_INFO("[MQTT] Queued command type=%d value=%d\n", cmd.commandType, cmd.commandValue);
             }
         #else
             MemoryData::GetInstance().deviceCommand_ = &cmd;
-            // DEVICE_LOG_INFO("[MQTT] Queued (non-RTOS) command type=%d value=%d\n", cmd.commandType, cmd.commandValue);
         #endif
         sendMessageInfoPublish(getInfoDevice(sensorValue,statusDevice));
     }
-
 
 }
 

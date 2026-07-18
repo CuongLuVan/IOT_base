@@ -1,6 +1,8 @@
 
 #include "TaskSensor.h"
 #include "MemoryData.h"
+#include <Wire.h>
+#include <math.h>
 
 #if SUPPORT_RTOS
 #include "freertos/FreeRTOS.h"
@@ -22,11 +24,74 @@
 #include "Common.h"
 #include "DebugInfo.h"
 
+#define MPU6050_ADDR 0x68
+#define MPU6050_PWR_MGMT_1 0x6B
+#define MPU6050_ACCEL_XOUT_H 0x3B
+
 DHT dht (DHT_PIN, DHT_TYPE); //Initialize DHT sensor.
 PMS pms(Serial);
 PMS::DATA data;
 
 InfoSensor dataSensor;
+static bool mpuReady = false;
+static float mpuRollAngle = 0.0f;
+static float mpuPitchAngle = 0.0f;
+static float mpuYawRate = 0.0f;
+
+static void writeMpuRegister(uint8_t reg, uint8_t value)
+{
+    Wire.beginTransmission(MPU6050_ADDR);
+    Wire.write(reg);
+    Wire.write(value);
+    Wire.endTransmission(true);
+}
+
+static void initMpu6050(void)
+{
+    Wire.begin(MPU6050_SDA_PIN, MPU6050_SCL_PIN);
+    Wire.setClock(400000L);
+    writeMpuRegister(MPU6050_PWR_MGMT_1, 0x00);
+    writeMpuRegister(0x1C, 0x00);
+    writeMpuRegister(0x1B, 0x00);
+    mpuReady = true;
+}
+
+static void readSensorMpu6050(void)
+{
+    if (!mpuReady) {
+        return;
+    }
+
+    Wire.beginTransmission(MPU6050_ADDR);
+    Wire.write(MPU6050_ACCEL_XOUT_H);
+    Wire.endTransmission(false);
+    Wire.requestFrom(MPU6050_ADDR, 14, true);
+
+    int16_t ax = (Wire.read() << 8) | Wire.read();
+    int16_t ay = (Wire.read() << 8) | Wire.read();
+    int16_t az = (Wire.read() << 8) | Wire.read();
+    int16_t gx = (Wire.read() << 8) | Wire.read();
+    int16_t gy = (Wire.read() << 8) | Wire.read();
+    int16_t gz = (Wire.read() << 8) | Wire.read();
+
+    float axf = ax / 16384.0f;
+    float ayf = ay / 16384.0f;
+    float azf = az / 16384.0f;
+
+    float accelRoll = atan2f(ayf, azf) * 180.0f / PI;
+    float accelPitch = atan2f(-axf, sqrtf((ayf * ayf) + (azf * azf))) * 180.0f / PI;
+    float gyroRoll = gx / 131.0f;
+    float gyroPitch = gy / 131.0f;
+    float gyroYaw = gz / 131.0f;
+
+    mpuRollAngle = 0.98f * (mpuRollAngle + gyroRoll * 0.02f) + 0.02f * accelRoll;
+    mpuPitchAngle = 0.98f * (mpuPitchAngle + gyroPitch * 0.02f) + 0.02f * accelPitch;
+    mpuYawRate = gyroYaw;
+
+    dataSensor.rollAngle = mpuRollAngle;
+    dataSensor.pitchAngle = mpuPitchAngle;
+    dataSensor.yawRate = mpuYawRate;
+}
 
 #if SUPPORT_RTOS
 static SemaphoreHandle_t sensorDataMutex = NULL;
@@ -44,7 +109,11 @@ void TaskSensor::setup(void){
     dataSensor.valueDust_PM1 =0;
 
     dataSensor.valueControl =0;
+    dataSensor.rollAngle = 0.0f;
+    dataSensor.pitchAngle = 0.0f;
+    dataSensor.yawRate = 0.0f;
     dht.begin();
+    initMpu6050();
     Serial1.begin(SENSOR_SERIAL_BAUD_RATE);   // GPIO1, GPIO3 (TX/RX pin on ESP-12E Development Board)
         //Configuro la porta Serial2 (tutti i parametri hanno anche un get per effettuare controlli)
 
@@ -61,6 +130,7 @@ void TaskSensor::setup(void){
 
 void TaskSensor::readSensor(void){
     dataSensor.valueControl =0;
+    readSensorMpu6050();
 }
 int checkDataNumber = 0;
 void TaskSensor::readSensorDust(void){
@@ -115,6 +185,9 @@ static SensorReadFn readOps[4] = {
 
 
 void updateMemoryStatus(void){
+    if (MemoryData::GetInstance().sensorData_ == nullptr) {
+        return;
+    }
     MemoryData::GetInstance().sensorData_->valueHumi = dataSensor.valueHumi;
     MemoryData::GetInstance().sensorData_->valueTemp = dataSensor.valueTemp;
     MemoryData::GetInstance().sensorData_->valueDust = dataSensor.valueDust;
@@ -122,6 +195,9 @@ void updateMemoryStatus(void){
     MemoryData::GetInstance().sensorData_->valueDust_PM10 = dataSensor.valueDust_PM10;
     MemoryData::GetInstance().sensorData_->valueDust_PM1 = dataSensor.valueDust_PM1;
     MemoryData::GetInstance().sensorData_->valueControl = dataSensor.valueControl;
+    MemoryData::GetInstance().sensorData_->rollAngle = dataSensor.rollAngle;
+    MemoryData::GetInstance().sensorData_->pitchAngle = dataSensor.pitchAngle;
+    MemoryData::GetInstance().sensorData_->yawRate = dataSensor.yawRate;
 }
 
 void TaskSensor::taskRun(void * parameter) {
@@ -143,6 +219,7 @@ void TaskSensor::taskRun(void * parameter) {
                 readOps[sensorReadStep]();
             }
 
+            readSensorMpu6050();
             if (sensorDataQueue != NULL) {
                 // Luôn gửi bản ghi hiện tại mỗi lúc sau khi cập nhật ô cùng
                 xQueueSend(sensorDataQueue, &dataSensor, pdMS_TO_TICKS(SENSOR_QUEUE_SEND_DELAY_MS));
@@ -151,10 +228,12 @@ void TaskSensor::taskRun(void * parameter) {
                 // có thể dùng mutex nếu cần đọc dataSensor ở nơi khác, có thể for dữ liệu trên queue
                 if (xSemaphoreTake(sensorDataMutex, pdMS_TO_TICKS(SENSOR_MUTEX_WAIT_MS)) == pdTRUE) {
                     MemoryData::GetInstance().sensorData_ = &dataSensor;
+                    updateMemoryStatus();
                     xSemaphoreGive(sensorDataMutex);
                 }
             } else {
                 MemoryData::GetInstance().sensorData_ = &dataSensor;
+                updateMemoryStatus();
             }
             vTaskDelay(SENSOR_TASK_INTERVAL_MS / portTICK_PERIOD_MS);
             sensorReadStep++;

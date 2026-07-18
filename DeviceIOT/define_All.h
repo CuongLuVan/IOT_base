@@ -63,8 +63,21 @@
 #define OUTPUT_PUMP_PIN                22
 #define OUTPUT_DEVICE_1_PIN            23
 
+#define MPU6050_SDA_PIN                 18
+#define MPU6050_SCL_PIN                 19
+#define MOTOR_ESC_PIN_1                 25
+#define MOTOR_ESC_PIN_2                 26
+#define MOTOR_ESC_PIN_3                 27
+#define MOTOR_ESC_PIN_4                 32
+#define ESC_MIN_PULSE_US                1000
+#define ESC_MAX_PULSE_US                1800
+#define ESC_ARM_PULSE_US                1000
+#define ESC_PWM_FREQUENCY_HZ            50
+#define ESC_PWM_RESOLUTION_BITS         16
+#define QUAD_CONTROL_LOOP_MS            20
+
 #define DEVICE_QUEUE_SEND_DELAY_MS     50
-#define DEVICE_TASK_PERIOD_MS          1000
+#define DEVICE_TASK_PERIOD_MS          20
 
 #define HTTP_STATUS_OK                 200
 #define OTA_STATE_TIMEOUT_MS           120000
