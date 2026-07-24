@@ -17,14 +17,12 @@
 #include "soc/uart_struct.h"
 #include "esp_task_wdt.h"
 #include "define_All.h"
-#include <DHT.h>
-#include "PMS.h"
+#include <Wire.h>
+#include <Adafruit_VL53L0X.h>
 #include "Common.h"
 #include "DebugInfo.h"
 
-DHT dht (DHT_PIN, DHT_TYPE); //Initialize DHT sensor.
-PMS pms(Serial);
-PMS::DATA data;
+Adafruit_VL53L0X lox = Adafruit_VL53L0X();
 
 InfoSensor dataSensor;
 
@@ -32,19 +30,21 @@ InfoSensor dataSensor;
 static SemaphoreHandle_t sensorDataMutex = NULL;
 #endif
 
-static uint8_t sensorReadStep = 0; // 0..3 read schedule
+static uint8_t sensorReadStep = 0; // 0..1 read schedule
 
 void TaskSensor::setup(void){
     DEVICE_LOG_INFO("start TaskSensor::setup");
-    dataSensor.valueHumi =0;
-    dataSensor.valueTemp =0;
+    dataSensor.distance_mm =0;
     dataSensor.valueDust =0;
     dataSensor.valueDust_PM2_5 =0;
     dataSensor.valueDust_PM10 =0;
     dataSensor.valueDust_PM1 =0;
 
     dataSensor.valueControl =0;
-    dht.begin();
+    Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+    if (!lox.begin()) {
+        Serial.println("TaskSensor: Failed to find VL53L0X sensor!");
+    }
     Serial1.begin(SENSOR_SERIAL_BAUD_RATE);   // GPIO1, GPIO3 (TX/RX pin on ESP-12E Development Board)
         //Configuro la porta Serial2 (tutti i parametri hanno anche un get per effettuare controlli)
 
@@ -62,43 +62,17 @@ void TaskSensor::setup(void){
 void TaskSensor::readSensor(void){
     dataSensor.valueControl =0;
 }
-int checkDataNumber = 0;
-void TaskSensor::readSensorDust(void){
-
-    if (pms.read(data))
-    {
-      dataSensor.valueDust_PM2_5 = data.PM_AE_UG_2_5;
-      dataSensor.valueDust_PM1 = data.PM_AE_UG_1_0;
-      dataSensor.valueDust_PM10 = data.PM_AE_UG_10_0;
-      checkDataNumber = checkDataNumber/50;
-      switch(dataSensor.valueDust_PM2_5){
-        case 0:{ dataSensor.valueDust = dataSensor.valueDust_PM2_5*12/50;  break;}
-        case 1:{ dataSensor.valueDust = dataSensor.valueDust_PM2_5*35/100;  break;}
-        case 2:{ dataSensor.valueDust = dataSensor.valueDust_PM2_5*56/150;  break;}
-        case 3:{ dataSensor.valueDust = dataSensor.valueDust_PM2_5*150/200; break;}
-        default :{
-            dataSensor.valueDust = dataSensor.valueDust_PM2_5*200/250;
-            break;
-        }        
-      }
-      
-     /*
-      Serial1.print("PM 1.0 (ug/m3): ");
-      Serial1.println(data.PM_AE_UG_1_0);
-      
-      Serial1.print("PM 2.5 (ug/m3): ");
-      Serial1.println(data.PM_AE_UG_2_5);
-      Serial1.print("PM 10.0 (ug/m3): ");
-      Serial1.println(data.PM_AE_UG_10_0);
-      Serial1.println();*/
+void TaskSensor::readSensorDistance(void){
+    uint16_t range = lox.readRangeSingleMillimeters();
+    if (lox.timeoutOccurred()) {
+        range = 0;
     }
 
-}
-void TaskSensor::readSensorTemp(void){
-    dataSensor.valueTemp =(int) dht.readTemperature()*100;
-}
-void TaskSensor::readSensorHumi(void){
-    dataSensor.valueHumi =(int) dht.readHumidity()*100;
+    dataSensor.distance_mm = range;
+    dataSensor.valueDust = 0;
+    dataSensor.valueDust_PM2_5 = 0;
+    dataSensor.valueDust_PM10 = 0;
+    dataSensor.valueDust_PM1 = 0;
 }
 
 #if SUPPORT_RTOS
@@ -106,17 +80,14 @@ extern QueueHandle_t sensorDataQueue;
 #endif
 
 using SensorReadFn = void (*)();
-static SensorReadFn readOps[4] = {
+static SensorReadFn readOps[2] = {
     TaskSensor::readSensor,
-    TaskSensor::readSensorDust,
-    TaskSensor::readSensorTemp,
-    TaskSensor::readSensorHumi
+    TaskSensor::readSensorDistance
 };
 
 
 void updateMemoryStatus(void){
-    MemoryData::GetInstance().sensorData_->valueHumi = dataSensor.valueHumi;
-    MemoryData::GetInstance().sensorData_->valueTemp = dataSensor.valueTemp;
+    MemoryData::GetInstance().sensorData_->distance_mm = dataSensor.distance_mm;
     MemoryData::GetInstance().sensorData_->valueDust = dataSensor.valueDust;
     MemoryData::GetInstance().sensorData_->valueDust_PM2_5 = dataSensor.valueDust_PM2_5;
     MemoryData::GetInstance().sensorData_->valueDust_PM10 = dataSensor.valueDust_PM10;
@@ -162,7 +133,7 @@ void TaskSensor::taskRun(void * parameter) {
     #else
         updateMemoryStatus();
          // Chu kỳ 1 giây / step: 0..3
-        if (sensorReadStep >= 4) {
+        if (sensorReadStep >= SENSOR_READ_STEP_COUNT) {
             sensorReadStep = 0;
         }
         readOps[sensorReadStep]();

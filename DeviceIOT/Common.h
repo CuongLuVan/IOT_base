@@ -3,8 +3,7 @@
 #include <Arduino.h>
 
 struct InfoSensor {
-    int valueHumi;
-    int valueTemp;
+    int distance_mm;
     int valueDust;
     int valueDust_PM2_5;
     int valueDust_PM10;

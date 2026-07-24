@@ -497,9 +497,8 @@ void TaskNetWork::loopNetWork(void) {
             if (netWork_Mqtt.checkStatusMqtt()) {
               // sendMessageInfo(getInfoDevice(sensorValue,statusDevice));
             }
-            Serial.printf("[TaskNetWork] x1111 Sensor data sent queued: H=%d T=%d PM2.5=%d PM10=%d\n",
-                          sensorValue.valueHumi,
-                          sensorValue.valueTemp,
+            Serial.printf("[TaskNetWork] x1111 Sensor data sent queued: distance_mm=%d PM2.5=%d PM10=%d\n",
+                          sensorValue.distance_mm,
                           sensorValue.valueDust_PM2_5,
                           sensorValue.valueDust_PM10);
         }

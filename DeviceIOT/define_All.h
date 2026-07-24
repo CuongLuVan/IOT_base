@@ -48,10 +48,10 @@
 #define WIFI_PROV_POP                  "abcd1234"
 #define WIFI_PROV_SERVICE_NAME         "PROV_123"
 
-#define DHT_PIN                        12
-#define DHT_TYPE                       DHT11
+#define I2C_SDA_PIN                    21
+#define I2C_SCL_PIN                    19
 #define SENSOR_TASK_INTERVAL_MS        1000
-#define SENSOR_READ_STEP_COUNT         4
+#define SENSOR_READ_STEP_COUNT         2
 #define SENSOR_SERIAL_BAUD_RATE        9600
 #define SENSOR_QUEUE_SEND_DELAY_MS     100
 #define SENSOR_MUTEX_WAIT_MS           10
