@@ -17,12 +17,14 @@
 #include "soc/uart_struct.h"
 #include "esp_task_wdt.h"
 #include "define_All.h"
-#include <DHT.h>
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_AHTX0.h>
 #include "PMS.h"
 #include "Common.h"
 #include "DebugInfo.h"
 
-DHT dht (DHT_PIN, DHT_TYPE); //Initialize DHT sensor.
+Adafruit_AHTX0 aht;
 PMS pms(Serial);
 PMS::DATA data;
 
@@ -44,9 +46,12 @@ void TaskSensor::setup(void){
     dataSensor.valueDust_PM1 =0;
 
     dataSensor.valueControl =0;
-    dht.begin();
+    Wire.begin(AHT10_SDA_PIN, AHT10_SCL_PIN);
+    if (!aht.begin()) {
+        Serial.println("TaskSensor: Failed to find AHT10 sensor!");
+    }
     Serial1.begin(SENSOR_SERIAL_BAUD_RATE);   // GPIO1, GPIO3 (TX/RX pin on ESP-12E Development Board)
-        //Configuro la porta Serial2 (tutti i parametri hanno anche un get per effettuare controlli)
+        //Configuro la porta Serial2 (tutti i parametri hanno cả un get per effettuare controlli)
 
 #if SUPPORT_RTOS
     if (sensorDataMutex == NULL) {
@@ -95,10 +100,20 @@ void TaskSensor::readSensorDust(void){
 
 }
 void TaskSensor::readSensorTemp(void){
-    dataSensor.valueTemp =(int) dht.readTemperature()*100;
+    sensors_event_t humidity, temp;
+    if (aht.getEvent(&humidity, &temp)) {
+        dataSensor.valueTemp = (int)(temp.temperature * 100.0);
+    } else {
+        dataSensor.valueTemp = 0;
+    }
 }
 void TaskSensor::readSensorHumi(void){
-    dataSensor.valueHumi =(int) dht.readHumidity()*100;
+    sensors_event_t humidity, temp;
+    if (aht.getEvent(&humidity, &temp)) {
+        dataSensor.valueHumi = (int)(humidity.relative_humidity * 100.0);
+    } else {
+        dataSensor.valueHumi = 0;
+    }
 }
 
 #if SUPPORT_RTOS

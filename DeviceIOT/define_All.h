@@ -48,8 +48,8 @@
 #define WIFI_PROV_POP                  "abcd1234"
 #define WIFI_PROV_SERVICE_NAME         "PROV_123"
 
-#define DHT_PIN                        12
-#define DHT_TYPE                       DHT11
+#define AHT10_SDA_PIN                  21
+#define AHT10_SCL_PIN                  19
 #define SENSOR_TASK_INTERVAL_MS        1000
 #define SENSOR_READ_STEP_COUNT         4
 #define SENSOR_SERIAL_BAUD_RATE        9600
