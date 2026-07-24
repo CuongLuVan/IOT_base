@@ -56,15 +56,18 @@
 #define SENSOR_QUEUE_SEND_DELAY_MS     100
 #define SENSOR_MUTEX_WAIT_MS           10
 
-#define BUTTON_DEBOUNCE_MS             50
-#define BUTTON_LONG_PRESS_MS           3000
-#define DEVICE_BUTTON_PIN              14
+#define TOUCH_DEBOUNCE_MS              50
+// TTP223 OUT is normally HIGH while the sensor is touched.
+// Set to LOW only when the module has been configured with inverted output.
+#define TTP223_ACTIVE_LEVEL            HIGH
+#define TTP223_PIN                     14
 #define INPUT_PULLUP_PIN               13
 #define OUTPUT_PUMP_PIN                22
 #define OUTPUT_DEVICE_1_PIN            23
 
 #define DEVICE_QUEUE_SEND_DELAY_MS     50
-#define DEVICE_TASK_PERIOD_MS          1000
+// The TTP223 can generate a short touch pulse, so it must be sampled often.
+#define DEVICE_TASK_PERIOD_MS          10
 
 #define HTTP_STATUS_OK                 200
 #define OTA_STATE_TIMEOUT_MS           120000
