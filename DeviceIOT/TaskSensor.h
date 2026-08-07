@@ -11,5 +11,5 @@ class TaskSensor {
 
     private:
         static bool initMPU6050(void);
-        static void readMPU6050(void);
+       // static void readMPU6050(void);
 };

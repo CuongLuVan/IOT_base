@@ -123,6 +123,8 @@ static void readMPU6050(void) {
     dataSensor.rollAngle = mpuRoll;
     dataSensor.pitchAngle = mpuPitch;
     dataSensor.yawRate = mpuYawRate;
+
+     DEVICE_LOG_INFO("start readMPU6050 =>"+ String(mpuRoll)+" - "+ String(mpuPitch)+" - "+ String(mpuYawRate));
 }
 
 bool TaskSensor::initMPU6050(void) {
