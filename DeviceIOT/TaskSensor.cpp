@@ -23,6 +23,7 @@
 #include "DebugInfo.h"
 
 Adafruit_VL53L0X lox = Adafruit_VL53L0X();
+VL53L0X_RangingMeasurementData_t measure;
 
 InfoSensor dataSensor;
 
@@ -63,12 +64,13 @@ void TaskSensor::readSensor(void){
     dataSensor.valueControl =0;
 }
 void TaskSensor::readSensorDistance(void){
-    uint16_t range = lox.readRangeSingleMillimeters();
-    if (lox.timeoutOccurred()) {
-        range = 0;
+    lox.rangingTest(&measure, false);
+    if (measure.RangeStatus != 4) {
+        dataSensor.distance_mm = measure.RangeMilliMeter;
+    } else {
+        dataSensor.distance_mm = -1;
     }
 
-    dataSensor.distance_mm = range;
     dataSensor.valueDust = 0;
     dataSensor.valueDust_PM2_5 = 0;
     dataSensor.valueDust_PM10 = 0;
