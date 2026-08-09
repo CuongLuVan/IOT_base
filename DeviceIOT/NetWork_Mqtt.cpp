@@ -5,7 +5,7 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
-#if MQTT_NO_TLS || ENABLE_TLS_SSL
+#if MQTT_NO_TLS || ENABLE_TLS_SSL || ENABLE_mTLS
 #include <WiFiClientSecure.h>
 using MqttWiFiClient = WiFiClientSecure;
 #else
@@ -26,8 +26,14 @@ extern InfoSensor sensorValue;
 extern InfoDeviceControl statusDevice;
 StaticJsonDocument<512> jsonBufferMqtt;
 
-#if ENABLE_TLS_SSL
+#if ENABLE_TLS_SSL || ENABLE_mTLS
 String tlsCaCertificate;
+#endif
+
+#if ENABLE_mTLS
+String mtlsClientCertificate;
+String mtlsPrivateKey;
+bool mtlsCredentialsLoaded = false;
 #endif
 
 struct SYSCFG {
@@ -131,10 +137,31 @@ void NetWork_Mqtt::setupInfoMQTT()
     DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT mqtt_pwd ==>"+String(Settings.mqtt_pwd));
     DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT subcribe_topic ==>"+String(Settings.subcribe_topic));
 
-#if ENABLE_TLS_SSL
+#if ENABLE_mTLS
+    // All three PEM strings are stored as null-terminated data in ROM/EEPROM.
+    // Keep them in global Strings because WiFiClientSecure retains their pointers.
+    tlsCaCertificate = Memory::GetInstance()->readLargeString(
+        MTLS_CA_CERT_ADDRESS, MTLS_CA_CERT_MAX_LENGTH);
+    mtlsClientCertificate = Memory::GetInstance()->readLargeString(
+        MTLS_CLIENT_CERT_ADDRESS, MTLS_CLIENT_CERT_MAX_LENGTH);
+    mtlsPrivateKey = Memory::GetInstance()->readLargeString(
+        MTLS_PRIVATE_KEY_ADDRESS, MTLS_PRIVATE_KEY_MAX_LENGTH);
+
+    mtlsCredentialsLoaded = false;
+    if (tlsCaCertificate.length() == 0 || mtlsClientCertificate.length() == 0 ||
+        mtlsPrivateKey.length() == 0) {
+        DEVICE_LOG_INFO("[MQTT mTLS] Missing CA certificate, client certificate, or private key");
+    } else {
+        EspClient.setCACert(tlsCaCertificate.c_str());
+        EspClient.setCertificate(mtlsClientCertificate.c_str());
+        EspClient.setPrivateKey(mtlsPrivateKey.c_str());
+        mtlsCredentialsLoaded = true;
+        DEVICE_LOG_INFO("[MQTT mTLS] Credentials loaded from ROM/EEPROM");
+    }
+#elif ENABLE_TLS_SSL
     // Dữ liệu tại TLS_SSL_DATA_ADDRESS phải là CA certificate PEM, kết thúc bằng '\0'.
     // Không dùng setInsecure() khi ENABLE_TLS_SSL để bắt buộc xác thực chứng chỉ server.
-    tlsCaCertificate = Memory::GetInstance()->readString(
+    tlsCaCertificate = Memory::GetInstance()->readLargeString(
         TLS_SSL_DATA_ADDRESS, TLS_SSL_DATA_MAX_LENGTH);
     if (tlsCaCertificate.length() == 0) {
         DEVICE_LOG_INFO("[MQTT TLS] Missing CA certificate in ROM/EEPROM");
@@ -170,6 +197,12 @@ void NetWork_Mqtt::disconnetMqtt(){
 
 void NetWork_Mqtt::connectMqtt(){
   DEVICE_LOG_INFO("start NetWork_Mqtt::connectMqtt");
+#if ENABLE_mTLS
+  if (!mtlsCredentialsLoaded) {
+    DEVICE_LOG_INFO("[MQTT mTLS] Connection blocked: credentials are not loaded");
+    return;
+  }
+#endif
   MqttClient.setCallback(MqttDataCallback);
   MqttClient.setServer(Settings.mqtt_host, Settings.mqtt_port);
   if (!MqttClient.connected())

@@ -9,6 +9,10 @@
 // true  = xác thực chứng chỉ TLS/SSL bằng CA certificate lưu trong ROM/EEPROM.
 #define ENABLE_TLS_SSL false
 
+// false = giữ nguyên luồng MQTT/TLS hiện tại.
+// true  = bật mutual TLS: broker xác thực thiết bị bằng client certificate và private key.
+#define ENABLE_mTLS false
+
 // 0 = use standard WiFiClient
 // 1 = use WiFiClientSecure for TLS-capable MQTT connections
 #define MQTT_NO_TLS 1
@@ -30,6 +34,14 @@
 #define EEPROM_SIZE                    (20 * 1024)
 #define TLS_SSL_DATA_ADDRESS            1300
 #define TLS_SSL_DATA_MAX_LENGTH         (EEPROM_SIZE - TLS_SSL_DATA_ADDRESS - 1)
+
+// Mỗi dữ liệu PEM phải kết thúc bằng '\0'. Các vùng không chồng lấp nhau trong EEPROM.
+#define MTLS_CA_CERT_ADDRESS             1300
+#define MTLS_CA_CERT_MAX_LENGTH          4095
+#define MTLS_CLIENT_CERT_ADDRESS         5500
+#define MTLS_CLIENT_CERT_MAX_LENGTH      4095
+#define MTLS_PRIVATE_KEY_ADDRESS         9700
+#define MTLS_PRIVATE_KEY_MAX_LENGTH      (EEPROM_SIZE - MTLS_PRIVATE_KEY_ADDRESS - 1)
 
 #define JSON_BUFFER_SIZE               512
 #define JSON_SMALL_BUFFER_SIZE         128

@@ -95,6 +95,22 @@ String  Memory::readString(int address, int maxLen ) {
   return String(data);
 }
 
+// Intended for certificates and keys that are too large for a stack buffer.
+String Memory::readLargeString(int address, int maxLen) {
+  String data;
+  data.reserve(maxLen);
+  int len = 0;
+  while (len < maxLen) {
+    unsigned char k = EEPROM.read(address + len);
+    if (k == '\0') {
+      break;
+    }
+    data += (char)k;
+    len++;
+  }
+  return data;
+}
+
 // Ghi một ký tự
 void  Memory::writeChar(int address, char value) {
   EEPROM.write(address, value);
