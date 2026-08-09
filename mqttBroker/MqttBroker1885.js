@@ -83,6 +83,54 @@ if (enableTLSCertificate) {
   }
 }
 
+// Optional ACL (Access Control List) support
+var enableACL = false; // set to true to enable ACL enforcement
+var aclOptions = {
+  aclPath: __dirname + '/mqtt_acl.json'
+};
+var aclMap = {}; // clientId or username -> { publish: [...], subscribe: [...] }
+
+if (enableACL) {
+  try {
+    var rawAcl = fs.readFileSync(aclOptions.aclPath, 'utf8');
+    var aclObj = JSON.parse(rawAcl);
+    if (Array.isArray(aclObj.rules)) {
+      aclObj.rules.forEach(function(r) {
+        if (r.clientId) {
+          aclMap[r.clientId] = {
+            publish: Array.isArray(r.publish) ? r.publish : [],
+            subscribe: Array.isArray(r.subscribe) ? r.subscribe : []
+          };
+        }
+        if (r.username) {
+          aclMap[r.username] = {
+            publish: Array.isArray(r.publish) ? r.publish : [],
+            subscribe: Array.isArray(r.subscribe) ? r.subscribe : []
+          };
+        }
+      });
+    }
+    console.log('ACL loaded, entries:', Object.keys(aclMap).length);
+  } catch (ex) {
+    console.warn('ACL file not loaded:', ex.message);
+  }
+}
+
+// Helper: match MQTT topic patterns with '+' and '#' wildcards
+function topicMatches(pattern, topic) {
+  if (!pattern) return false;
+  // Escape regex, then replace MQTT wildcards
+  var re = pattern.replace(/[[\]{}()+?.\\^$|]/g, function(m) { return '\\' + m; });
+  re = re.replace(/\+/g, '[^/]+');
+  re = re.replace(/#/g, '.*');
+  re = '^' + re + '$';
+  try {
+    return new RegExp(re).test(topic);
+  } catch (e) {
+    return false;
+  }
+}
+
 // Load user credentials from JSON file
 var userList = [];
 try {
@@ -154,20 +202,52 @@ function publishMessage(topicData,payloadData) {
 
 
 var authorizePublish = function(client, topic, payload, callback) {
-  try
-  {
+  try {
+    if (enableACL) {
+      var id = client && (client.id || client.user);
+      var aclEntry = id && aclMap[id];
+      var allowed = false;
+      if (aclEntry && Array.isArray(aclEntry.publish)) {
+        for (var i = 0; i < aclEntry.publish.length; i++) {
+          if (topicMatches(aclEntry.publish[i], topic)) {
+            allowed = true;
+            break;
+          }
+        }
+      }
+      callback(null, allowed);
+    } else {
       callback(null, client.user);
+    }
+  } catch (ex) {
+    // console.log(ex);
+    callback(null, false);
   }
-  catch (ex){
-   // console.log(ex);
-  }
-
 }
 
 // In this case the client authorized as alice can subscribe to /users/alice taking
 // the username from the topic and verifing it is the same of the authorized user
 var authorizeSubscribe = function(client, topic, callback) {
-  callback(null, client.user == topic.split('/')[1]);
+  try {
+    if (enableACL) {
+      var id = client && (client.id || client.user);
+      var aclEntry = id && aclMap[id];
+      var allowed = false;
+      if (aclEntry && Array.isArray(aclEntry.subscribe)) {
+        for (var i = 0; i < aclEntry.subscribe.length; i++) {
+          if (topicMatches(aclEntry.subscribe[i], topic)) {
+            allowed = true;
+            break;
+          }
+        }
+      }
+      callback(null, allowed);
+    } else {
+      callback(null, client.user == topic.split('/')[1]);
+    }
+  } catch (ex) {
+    callback(null, false);
+  }
 }
 
 
