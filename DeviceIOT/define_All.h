@@ -5,6 +5,10 @@
 #define SUPPORT_LORA 0
 #define SUPPORT_MQTT 1
 
+// false = giữ nguyên luồng MQTT hiện tại.
+// true  = xác thực chứng chỉ TLS/SSL bằng CA certificate lưu trong ROM/EEPROM.
+#define ENABLE_TLS_SSL false
+
 // 0 = use standard WiFiClient
 // 1 = use WiFiClientSecure for TLS-capable MQTT connections
 #define MQTT_NO_TLS 1
@@ -23,7 +27,9 @@
 
 #define UART_BUFFER_SIZE               1024
 #define UART_READ_TIMEOUT_MS           100
-#define EEPROM_SIZE                    2048
+#define EEPROM_SIZE                    (20 * 1024)
+#define TLS_SSL_DATA_ADDRESS            1300
+#define TLS_SSL_DATA_MAX_LENGTH         (EEPROM_SIZE - TLS_SSL_DATA_ADDRESS - 1)
 
 #define JSON_BUFFER_SIZE               512
 #define JSON_SMALL_BUFFER_SIZE         128

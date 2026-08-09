@@ -5,7 +5,7 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
-#if MQTT_NO_TLS
+#if MQTT_NO_TLS || ENABLE_TLS_SSL
 #include <WiFiClientSecure.h>
 using MqttWiFiClient = WiFiClientSecure;
 #else
@@ -25,6 +25,10 @@ PubSubClient MqttClient(EspClient);         // MQTT Client
 extern InfoSensor sensorValue;
 extern InfoDeviceControl statusDevice;
 StaticJsonDocument<512> jsonBufferMqtt;
+
+#if ENABLE_TLS_SSL
+String tlsCaCertificate;
+#endif
 
 struct SYSCFG {
   char          mqtt_fingerprint[60];      // 1AD To be freed by binary fingerprint
@@ -127,7 +131,18 @@ void NetWork_Mqtt::setupInfoMQTT()
     DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT mqtt_pwd ==>"+String(Settings.mqtt_pwd));
     DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT subcribe_topic ==>"+String(Settings.subcribe_topic));
 
-#if MQTT_NO_TLS
+#if ENABLE_TLS_SSL
+    // Dữ liệu tại TLS_SSL_DATA_ADDRESS phải là CA certificate PEM, kết thúc bằng '\0'.
+    // Không dùng setInsecure() khi ENABLE_TLS_SSL để bắt buộc xác thực chứng chỉ server.
+    tlsCaCertificate = Memory::GetInstance()->readString(
+        TLS_SSL_DATA_ADDRESS, TLS_SSL_DATA_MAX_LENGTH);
+    if (tlsCaCertificate.length() == 0) {
+        DEVICE_LOG_INFO("[MQTT TLS] Missing CA certificate in ROM/EEPROM");
+    } else {
+        EspClient.setCACert(tlsCaCertificate.c_str());
+        DEVICE_LOG_INFO("[MQTT TLS] CA certificate loaded from ROM/EEPROM");
+    }
+#elif MQTT_NO_TLS
     EspClient.setInsecure();
     if (strlen(Settings.mqtt_fingerprint) > 0) {
         EspClient.setCACert(Settings.mqtt_fingerprint);
