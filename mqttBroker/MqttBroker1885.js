@@ -1,6 +1,7 @@
 var mosca = require('mosca')
 var events=require('events');
 var fs = require('fs');
+var crypto = require('crypto');
 const parseJson = require('parse-json');
 emitter=new events.EventEmitter();
 
@@ -14,6 +15,7 @@ var settings = {
 var enable_TLS_SSL = false; // change to true to enable TLS/SSL
 var enableTLSCertificate = false; // set to true to enable mTLS + per-device certs
 var enableACL = false; // set to true to enable ACL enforcement
+var enableAttack = false; // set to true to enable replay attack protection
 
 var tlsOptions = {
   keyPath: __dirname + '/certs/server.key',
@@ -97,6 +99,43 @@ var clientIdOptions = {
   clientIdsPath: __dirname + '/mqtt_client_ids.json'
 };
 var clientIdMap = {}; // clientId -> { username: ..., label: ... }
+
+var replayOptions = {
+  replayPath: __dirname + '/mqtt_replay.json'
+};
+var replayConfig = {
+  windowSeconds: 60,
+  ignoreTopics: [],
+  timestampField: 'timestamp',
+  nonceField: 'nonce',
+  maxSkewSeconds: 300
+};
+var replayCache = {}; // fingerprint -> timestamp
+
+if (enableAttack) {
+  try {
+    var rawReplay = fs.readFileSync(replayOptions.replayPath, 'utf8');
+    var replayObj = JSON.parse(rawReplay);
+    if (typeof replayObj.windowSeconds === 'number') {
+      replayConfig.windowSeconds = replayObj.windowSeconds;
+    }
+    if (Array.isArray(replayObj.ignoreTopics)) {
+      replayConfig.ignoreTopics = replayObj.ignoreTopics;
+    }
+    if (typeof replayObj.timestampField === 'string') {
+      replayConfig.timestampField = replayObj.timestampField;
+    }
+    if (typeof replayObj.nonceField === 'string') {
+      replayConfig.nonceField = replayObj.nonceField;
+    }
+    if (typeof replayObj.maxSkewSeconds === 'number') {
+      replayConfig.maxSkewSeconds = replayObj.maxSkewSeconds;
+    }
+    console.log('Replay attack protection enabled, windowSeconds=', replayConfig.windowSeconds, 'timestampField=', replayConfig.timestampField, 'nonceField=', replayConfig.nonceField);
+  } catch (ex) {
+    console.warn('Replay config not loaded:', ex.message);
+  }
+}
 
 if (enableACL) {
   try {
@@ -249,22 +288,80 @@ var authenticate = function(client, username, password, callback) {
 
 
 function publishMessage(topicData,payloadData) {
-  
   var packet = {
     topic: topicData,
     payload: payloadData,
     qos: 1,
-    retain: false,  
+    retain: false,
   };
-  
   server.publish(packet, function() {
     //console.log('MQTT broker message sent');
   });
 }
 
+function parsePayloadMetadata(payload) {
+  var payloadText = typeof payload === 'string' ? payload : (payload ? payload.toString('utf8') : '');
+  try {
+    return { data: JSON.parse(payloadText), raw: payloadText };
+  } catch (e) {
+    return { data: null, raw: payloadText };
+  }
+}
 
 var authorizePublish = function(client, topic, payload, callback) {
   try {
+    if (enableAttack && client && topic) {
+      var id = client.id || client.user || 'unknown';
+      var metadata = parsePayloadMetadata(payload);
+      var now = Date.now();
+      var fingerprint;
+
+      if (metadata.data && typeof metadata.data === 'object') {
+        var timestamp = metadata.data[replayConfig.timestampField];
+        var nonce = metadata.data[replayConfig.nonceField];
+
+        if (timestamp == null || nonce == null) {
+          console.warn('Replay attack payload missing timestamp or nonce for', id, 'topic', topic);
+          callback(null, false);
+          return;
+        }
+
+        var messageTime = Number(timestamp);
+        if (Number.isNaN(messageTime)) {
+          var parsed = Date.parse(timestamp);
+          if (!Number.isNaN(parsed)) {
+            messageTime = parsed;
+          }
+        }
+
+        if (Number.isNaN(messageTime)) {
+          console.warn('Replay attack invalid timestamp for', id, 'topic', topic, 'value:', timestamp);
+          callback(null, false);
+          return;
+        }
+
+        if (Math.abs(now - messageTime) > replayConfig.maxSkewSeconds * 1000) {
+          console.warn('Replay attack timestamp out of skew for', id, 'topic', topic, 'timestamp:', timestamp);
+          callback(null, false);
+          return;
+        }
+
+        fingerprint = id + '|' + topic + '|' + nonce;
+      } else {
+        var payloadText = metadata.raw;
+        fingerprint = id + '|' + topic + '|' + crypto.createHash('sha256').update(payloadText).digest('hex');
+      }
+
+      if (replayCache[fingerprint] && now - replayCache[fingerprint] < replayConfig.windowSeconds * 1000) {
+        console.warn('Replay attack blocked for', id, 'topic', topic);
+        callback(null, false);
+        return;
+      }
+      if (replayConfig.ignoreTopics.indexOf(topic) === -1) {
+        replayCache[fingerprint] = now;
+      }
+    }
+
     if (enableACL) {
       var id = client && (client.id || client.user);
       var aclEntry = id && aclMap[id];
@@ -285,10 +382,7 @@ var authorizePublish = function(client, topic, payload, callback) {
     // console.log(ex);
     callback(null, false);
   }
-}
-
-// In this case the client authorized as alice can subscribe to /users/alice taking
-// the username from the topic and verifing it is the same of the authorized user
+};
 var authorizeSubscribe = function(client, topic, callback) {
   try {
     if (enableACL) {
