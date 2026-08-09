@@ -112,6 +112,18 @@ var messageAuthConfig = {
   keys: {}
 };
 
+var enableBruteForce = false; // set to true to enable brute-force protection
+var bruteForceOptions = {
+  bruteForcePath: __dirname + '/mqtt_bruteforce.json'
+};
+var bruteForceConfig = {
+  windowSeconds: 300,
+  maxFailedAttempts: 5,
+  blockDurationSeconds: 900,
+  ignoreUsers: []
+};
+var bruteForceState = {}; // clientId/username -> { failures, firstFailureAt, blockedUntil }
+
 var replayOptions = {
   replayPath: __dirname + '/mqtt_replay.json'
 };
@@ -171,6 +183,28 @@ if (enableMessageAuthentication) {
     console.log('Message authentication enabled, scheme=', messageAuthConfig.scheme, 'field=', messageAuthConfig.field, 'keyField=', messageAuthConfig.keyField);
   } catch (ex) {
     console.warn('Message auth config not loaded:', ex.message);
+  }
+}
+
+if (enableBruteForce) {
+  try {
+    var rawBrute = fs.readFileSync(bruteForceOptions.bruteForcePath, 'utf8');
+    var bruteObj = JSON.parse(rawBrute);
+    if (typeof bruteObj.windowSeconds === 'number') {
+      bruteForceConfig.windowSeconds = bruteObj.windowSeconds;
+    }
+    if (typeof bruteObj.maxFailedAttempts === 'number') {
+      bruteForceConfig.maxFailedAttempts = bruteObj.maxFailedAttempts;
+    }
+    if (typeof bruteObj.blockDurationSeconds === 'number') {
+      bruteForceConfig.blockDurationSeconds = bruteObj.blockDurationSeconds;
+    }
+    if (Array.isArray(bruteObj.ignoreUsers)) {
+      bruteForceConfig.ignoreUsers = bruteObj.ignoreUsers;
+    }
+    console.log('Brute-force protection enabled, windowSeconds=', bruteForceConfig.windowSeconds, 'maxFailedAttempts=', bruteForceConfig.maxFailedAttempts, 'blockDurationSeconds=', bruteForceConfig.blockDurationSeconds);
+  } catch (ex) {
+    console.warn('Brute-force config not loaded:', ex.message);
   }
 }
 
@@ -251,10 +285,56 @@ server.on('ready', setup);
 // thêm funtion check user
 
 
+function getClientIdentity(client, username) {
+  return client && client.id ? client.id : (username || 'unknown');
+}
+
+function isBruteForceBlocked(client, username) {
+  var id = getClientIdentity(client, username);
+  var state = bruteForceState[id];
+  return state && state.blockedUntil && Date.now() < state.blockedUntil;
+}
+
+function resetBruteForceState(client, username) {
+  var id = getClientIdentity(client, username);
+  delete bruteForceState[id];
+}
+
+function recordBruteForceFailure(client, username) {
+  var id = getClientIdentity(client, username);
+  if (bruteForceConfig.ignoreUsers.indexOf(id) !== -1 || bruteForceConfig.ignoreUsers.indexOf(username) !== -1) {
+    return;
+  }
+  var now = Date.now();
+  var state = bruteForceState[id] || { failures: 0, firstFailureAt: now, blockedUntil: 0 };
+  if (state.blockedUntil && now < state.blockedUntil) {
+    bruteForceState[id] = state;
+    return;
+  }
+  if (now - state.firstFailureAt > bruteForceConfig.windowSeconds * 1000) {
+    state.failures = 1;
+    state.firstFailureAt = now;
+  } else {
+    state.failures += 1;
+  }
+  if (state.failures >= bruteForceConfig.maxFailedAttempts) {
+    state.blockedUntil = now + bruteForceConfig.blockDurationSeconds * 1000;
+    console.warn('Brute-force protection blocking', id, 'until', new Date(state.blockedUntil).toISOString());
+  }
+  bruteForceState[id] = state;
+}
+
 var authenticate = function(client, username, password, callback) {
   try {
     var pwd = password ? password.toString() : '';
     var authorized = false;
+    var clientIdentity = getClientIdentity(client, username);
+
+    if (enableBruteForce && isBruteForceBlocked(client, username)) {
+      console.warn('Authentication denied by brute-force protection for', clientIdentity);
+      callback(null, false);
+      return;
+    }
 
     if (enableClientID) {
       var clientId = client && client.id;
@@ -316,9 +396,20 @@ var authenticate = function(client, username, password, callback) {
       });
     }
 
+    if (enableBruteForce) {
+      if (authorized) {
+        resetBruteForceState(client, username);
+      } else {
+        recordBruteForceFailure(client, username);
+      }
+    }
+
     callback(null, authorized);
   } catch (ex) {
     console.error('authenticate error:', ex);
+    if (enableBruteForce) {
+      recordBruteForceFailure(client, username);
+    }
     callback(null, false);
   }
 }

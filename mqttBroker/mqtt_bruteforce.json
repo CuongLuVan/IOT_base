@@ -1,0 +1,6 @@
+{
+  "windowSeconds": 300,
+  "maxFailedAttempts": 5,
+  "blockDurationSeconds": 900,
+  "ignoreUsers": ["admin"]
+}
