@@ -8,6 +8,33 @@ var settings = {
   port: 1885
 };
 
+// Toggle TLS/SSL support. Set to true to enable TLS/SSL using the
+// certificate files pointed by `tlsOptions` below. When false the
+// original (non-TLS) behaviour is preserved.
+var enable_TLS_SSL = false; // change to true to enable TLS/SSL
+var tlsOptions = {
+  keyPath: __dirname + '/certs/server.key',
+  certPath: __dirname + '/certs/server.crt'
+};
+
+// If TLS/SSL is enabled, try to attach key/cert to the mosca settings.
+// If reading the files fails we log the error and continue with plain TCP.
+if (enable_TLS_SSL) {
+  try {
+    var key = fs.readFileSync(tlsOptions.keyPath);
+    var cert = fs.readFileSync(tlsOptions.certPath);
+    settings.secure = {
+      port: settings.port,
+      key: key,
+      cert: cert
+    };
+    console.log('TLS/SSL enabled for MQTT broker on port ' + settings.port);
+  }
+  catch (err) {
+    console.error('Failed to enable TLS/SSL - falling back to non-TLS:', err);
+  }
+}
+
 // Load user credentials from JSON file
 var userList = [];
 try {
