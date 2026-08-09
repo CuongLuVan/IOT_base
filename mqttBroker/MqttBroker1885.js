@@ -12,6 +12,9 @@ var settings = {
 // certificate files pointed by `tlsOptions` below. When false the
 // original (non-TLS) behaviour is preserved.
 var enable_TLS_SSL = false; // change to true to enable TLS/SSL
+var enableTLSCertificate = false; // set to true to enable mTLS + per-device certs
+var enableACL = false; // set to true to enable ACL enforcement
+
 var tlsOptions = {
   keyPath: __dirname + '/certs/server.key',
   certPath: __dirname + '/certs/server.crt'
@@ -38,7 +41,6 @@ if (enable_TLS_SSL) {
 // Optional: enable mutual TLS and per-device certificate authentication.
 // When `enableTLSCertificate` is true the broker will require and verify
 // client certificates against the mapping file `mqtt_device_certs.json`.
-var enableTLSCertificate = false; // set to true to enable mTLS + per-device certs
 var tlsOptionsExtended = {
   caPath: __dirname + '/certs/ca.crt',
   deviceCertsPath: __dirname + '/mqtt_device_certs.json'
@@ -84,7 +86,7 @@ if (enableTLSCertificate) {
 }
 
 // Optional ACL (Access Control List) support
-var enableACL = false; // set to true to enable ACL enforcement
+
 var aclOptions = {
   aclPath: __dirname + '/mqtt_acl.json'
 };
