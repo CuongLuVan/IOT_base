@@ -1,0 +1,281 @@
+
+
+Kiến trúc tổng thể
+
+┌──────────────────────────── DEVICE ────────────────────────────┐
+│                                                                │
+│  MCU                                                           │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │                                                          │  │
+│  │  Device Certificate + Private Key                        │  │
+│  │              │                                           │  │
+│  │              ▼                                           │  │
+│  │         TLS / mTLS                                       │  │
+│  │              │                                           │  │
+│  │              ▼                                           │  │
+│  │         MQTT Client                                      │  │
+│  │              │                                           │  │
+│  │              ▼                                           │  │
+│  │      Ascon-AEAD128                                       │  │
+│  │              │                                           │  │
+│  │       K_session + Nonce                                  │  │
+│  │              │                                           │  │
+│  └──────────────┼───────────────────────────────────────────┘  │
+│                 │                                              │
+│                 ▼                                              │
+│          MQTT encrypted payload                                │
+└─────────────────┼──────────────────────────────────────────────┘
+                  │
+                  │ MQTT over TLS
+                  ▼
+          ┌───────────────────┐
+          │    MQTT BROKER     │
+          │                   │
+          │ Authentication    │
+          │ MQTT ACL           │
+          │ Routing            │
+          └─────────┬─────────┘
+                    │
+                    │
+                    ▼
+          ┌───────────────────────────────┐
+          │            SERVER             │
+          │                               │
+          │  ┌─────────────────────────┐  │
+          │  │ Device Registry         │  │
+          │  │                         │  │
+          │  │ device_id               │  │
+          │  │ certificate             │  │
+          │  │ status                  │  │
+          │  └────────────┬────────────┘  │
+          │               │               │
+          │               ▼               │
+          │  ┌─────────────────────────┐  │
+          │  │     KEY MANAGER         │  │
+          │  │                         │  │
+          │  │ K_device                │  │
+          │  │ session_id              │  │
+          │  │ epoch                   │  │
+          │  │ counter                 │  │
+          │  └────────────┬────────────┘  │
+          │               │               │
+          │               ▼               │
+          │       KDF → K_session         │
+          │               │               │
+          │               ▼               │
+          │       Ascon-AEAD128           │
+          │               │               │
+          │               ▼               │
+          │          Plaintext            │
+          └───────────────────────────────┘
+		  
+2. Luồng khởi tạo session
+
+ DEVICE                         BROKER                     SERVER
+   │                               │                          │
+   │──── TLS ClientHello ─────────►│                          │
+   │                               │                          │
+   │──── Device Certificate ──────►│                          │
+   │                               │                          │
+   │◄──── mTLS authenticated ──────│                          │
+   │                               │                          │
+   │──────── MQTT CONNECT ────────►│                          │
+   │                               │                          │
+   │                               │──── device_id ──────────►│
+   │                               │                          │
+   │                               │                    verify device
+   │                               │                          │
+   │                               │                    lấy K_device
+   │                               │                          │
+   │                               │                    session_id
+   │                               │                    epoch = 18
+   │                               │                          │
+   │                               │                          ▼
+   │                               │                    KDF(...)
+   │                               │                          │
+   │                               │                          ▼
+   │                               │                    K_session
+   │                               │                          │
+   │◄──────── MQTT ACK ────────────│◄─────────────────────────│
+   │                               │                          │
+   ▼                               ▼                          ▼
+READY                          READY                       READY
+
+3. Cách hai bên tạo cùng một key
+
+Điểm quan trọng là không gửi K_session qua MQTT.
+
+Hai bên đều biết K_device:		  
+             DEVICE                         SERVER
+                │                              │
+         K_device                              K_device
+                │                              │
+         session_id                            session_id
+                │                              │
+           epoch = 18                       epoch = 18
+                │                              │
+                ▼                              ▼
+              ┌────────────── KDF ─────────────┐
+              │                                │
+              ▼                                ▼
+         K_session_18                     K_session_18
+
+4. Luồng mã hóa dữ liệu
+
+             DEVICE
+                │
+                ▼
+        ┌────────────────┐
+        │ Plaintext      │
+        │ temp = 31.5    │
+        └───────┬────────┘
+                │
+                │ K_session_18
+                │ nonce
+                │ associated data
+                ▼
+        ┌────────────────┐
+        │ Ascon-AEAD128  │
+        └───────┬────────┘
+                │
+                ▼
+        ┌─────────────────────────┐
+        │ MQTT Payload            │
+        │                         │
+        │ version                │
+        │ device_id              │
+        │ epoch                  │
+        │ counter                │
+        │ nonce                   │
+        │ ciphertext              │
+        │ authentication_tag      │
+        └───────────┬─────────────┘
+                    │
+                    ▼
+                MQTT Broker
+                    │
+                    ▼
+                  SERVER
+                    │
+                    ▼
+              Ascon decrypt
+                    │
+              ┌─────┴─────┐
+              │           │
+            valid       invalid
+              │           │
+              ▼           ▼
+          plaintext      DROP
+		  
+5. Luồng server gửi lệnh xuống thiết bị
+
+Chiều ngược lại cũng tương tự:
+
+		  
+SERVER
+  │
+  │ command = TURN_ON
+  ▼
+Ascon-AEAD128
+  │
+  │ K_session_18
+  ▼
+ciphertext + tag
+  │
+  ▼
+MQTT Broker
+  │
+  ▼
+Device
+  │
+  │ derive K_session_18
+  ▼
+Ascon-AEAD128 decrypt
+  │
+  ├──────── tag OK ────────► TURN_ON
+  │
+  └──────── tag FAIL ──────► DROP
+
+6. Key rotation
+  
+                 K_device
+                    │
+          ┌─────────┼─────────┐
+          │         │         │
+          ▼         ▼         ▼
+       Epoch 17  Epoch 18  Epoch 19
+          │         │         │
+          ▼         ▼         ▼
+       K_key17   K_key18   K_key19
+          │         │         │
+       messages  messages  messages
+
+7. Xử lý mất kết nối
+
+Đây là phần giúp hệ thống không bị "kẹt key":
+
+Device                    Server
+   │                         │
+   │ epoch = 18              │
+   │                         │
+   X──── mất mạng ───────────X
+   │                         │
+   │                         │
+   │      reconnect          │
+   ├────────────────────────►│
+   │                         │
+   │◄──── current epoch=19 ──│
+   │                         │
+   │ KDF(..., epoch=19)      │
+   │                         │
+   ▼                         ▼
+K_session_19            K_session_19	 
+
+
+                    ┌─────────────────┐
+                    │   Device CA     │
+                    └────────┬────────┘
+                             │
+                    Device Certificate
+                             │
+                             ▼
+┌─────────────┐       TLS / mTLS       ┌──────────────┐
+│   DEVICE    │◄──────────────────────►│ MQTT BROKER  │
+│             │                         └──────┬───────┘
+│ Private Key │                                │
+│ K_device   │                                │ MQTT
+│             │                                ▼
+│ Ascon       │                         ┌──────────────┐
+│             │                         │    SERVER    │
+└──────┬──────┘                         │              │
+       │                                │ Device DB   │
+       │                                │ Key Manager │
+       │                                └──────┬───────┘
+       │                                       │
+       │              KDF                      │
+       │       ┌───────────────────────────────┘
+       │       │
+       ▼       ▼
+   K_session = KDF(K_device,
+                   device_id,
+                   session_id,
+                   epoch)
+
+       │
+       ▼
+┌─────────────────────┐
+│    Ascon-AEAD128    │
+│                     │
+│ Key                 │
+│ Nonce               │
+│ Counter             │
+│ Associated Data     │
+└──────────┬──────────┘
+           │
+           ▼
+     MQTT ciphertext
+
+
+Đây là phương án mình khuyên dùng cho hệ thống của bạn: mTLS + per-device certificate + MQTT ACL + KDF/session key + Ascon-AEAD128 + epoch/counter
+
+	 
