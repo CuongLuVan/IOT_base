@@ -5,6 +5,10 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
+#if ENABLE_MESSAGE_AUTHENTICATION
+#include <mbedtls/md.h>
+#endif
+
 #if MQTT_NO_TLS || ENABLE_TLS_SSL || ENABLE_mTLS
 #include <WiFiClientSecure.h>
 using MqttWiFiClient = WiFiClientSecure;
@@ -36,6 +40,99 @@ String mtlsPrivateKey;
 bool mtlsCredentialsLoaded = false;
 #endif
 
+#if ENABLE_MESSAGE_AUTHENTICATION
+String messageAuthenticationKeyId;
+String messageAuthenticationSecret;
+bool messageAuthenticationLoaded = false;
+
+bool calculateHmacSha256(const String &data, String &signature)
+{
+    const mbedtls_md_info_t *mdInfo = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+    if (mdInfo == NULL) {
+        return false;
+    }
+
+    unsigned char digest[32];
+    mbedtls_md_context_t context;
+    mbedtls_md_init(&context);
+    int result = mbedtls_md_setup(&context, mdInfo, 1);
+    if (result == 0) result = mbedtls_md_hmac_starts(&context,
+        (const unsigned char *)messageAuthenticationSecret.c_str(), messageAuthenticationSecret.length());
+    if (result == 0) result = mbedtls_md_hmac_update(&context,
+        (const unsigned char *)data.c_str(), data.length());
+    if (result == 0) result = mbedtls_md_hmac_finish(&context, digest);
+    mbedtls_md_free(&context);
+    if (result != 0) {
+        return false;
+    }
+
+    char hexDigest[65];
+    for (size_t i = 0; i < sizeof(digest); ++i) {
+        sprintf(&hexDigest[i * 2], "%02x", digest[i]);
+    }
+    hexDigest[64] = '\0';
+    signature = hexDigest;
+    return true;
+}
+
+bool signaturesMatch(const char *first, const String &second)
+{
+    if (first == NULL || strlen(first) != second.length()) {
+        return false;
+    }
+    unsigned char difference = 0;
+    for (size_t i = 0; i < second.length(); ++i) {
+        difference |= ((unsigned char)first[i] ^ (unsigned char)second[i]);
+    }
+    return difference == 0;
+}
+
+bool signMqttPayload(const char *payload, String &signedPayload)
+{
+    DynamicJsonDocument document(strlen(payload) + 256);
+    if (deserializeJson(document, payload)) {
+        DEVICE_LOG_INFO("[MQTT Auth] Cannot sign a non-JSON payload");
+        return false;
+    }
+
+    document.remove("signature");
+    document["keyId"] = messageAuthenticationKeyId;
+    String dataToSign;
+    serializeJson(document, dataToSign);
+
+    String signature;
+    if (!calculateHmacSha256(dataToSign, signature)) {
+        DEVICE_LOG_INFO("[MQTT Auth] HMAC calculation failed");
+        return false;
+    }
+    document["signature"] = signature;
+    serializeJson(document, signedPayload);
+    return true;
+}
+
+bool verifyMqttPayload(const char *payload)
+{
+    DynamicJsonDocument document(strlen(payload) + 256);
+    if (deserializeJson(document, payload)) {
+        DEVICE_LOG_INFO("[MQTT Auth] Rejected non-JSON payload");
+        return false;
+    }
+    const char *keyId = document["keyId"];
+    const char *receivedSignature = document["signature"];
+    if (keyId == NULL || messageAuthenticationKeyId != keyId || receivedSignature == NULL) {
+        DEVICE_LOG_INFO("[MQTT Auth] Rejected message with missing or unknown keyId/signature");
+        return false;
+    }
+
+    document.remove("signature");
+    String dataToSign;
+    serializeJson(document, dataToSign);
+    String expectedSignature;
+    return calculateHmacSha256(dataToSign, expectedSignature) &&
+        signaturesMatch(receivedSignature, expectedSignature);
+}
+#endif
+
 struct SYSCFG {
   char          mqtt_fingerprint[60];      // 1AD To be freed by binary fingerprint
   char          mqtt_host[128];             // 1E9
@@ -51,19 +148,39 @@ struct SYSCFG {
 extern QueueHandle_t deviceCommandQueue;
 
 void sendMessageInfoPublish(String data){
+#if ENABLE_MESSAGE_AUTHENTICATION
+  if (!messageAuthenticationLoaded) {
+    DEVICE_LOG_INFO("[MQTT Auth] Publish blocked: credentials are not loaded");
+    return;
+  }
+  String signedData;
+  if (!signMqttPayload(data.c_str(), signedData)) {
+    return;
+  }
+  if (MqttClient.publish(Settings.public_topic, signedData.c_str(), 1)) {
+#else
   char *p = new char[data.length() + 1];
   strcpy(p, data.c_str());
   if (MqttClient.publish(Settings.public_topic, p, 1)) {
-      
   }
-   
+#endif
 }
 DeviceCommand cmd;
 void MqttDataCallback(char* topic, byte* data, unsigned int data_len)
 {
     String payload = String((char*)data).substring(0, data_len);
+#if ENABLE_MESSAGE_AUTHENTICATION
+    if (!messageAuthenticationLoaded || !verifyMqttPayload(payload.c_str())) {
+        DEVICE_LOG_INFO("[MQTT Auth] Rejected message with invalid signature");
+        return;
+    }
+#endif
     DEVICE_LOG_INFO("MqttDataCallback................................:" + payload);
+#if ENABLE_MESSAGE_AUTHENTICATION
+    StaticJsonDocument<256> doc;
+#else
     StaticJsonDocument<128> doc; // smaller docs for commands
+#endif
     DeserializationError err = deserializeJson(doc, payload);
     if (err) {
          DEVICE_LOG_INFO("[MQTT] JSON parse error:" + String(err.f_str()));
@@ -175,6 +292,20 @@ void NetWork_Mqtt::setupInfoMQTT()
         EspClient.setCACert(Settings.mqtt_fingerprint);
     }
 #endif
+
+#if ENABLE_MESSAGE_AUTHENTICATION
+    messageAuthenticationKeyId = Memory::GetInstance()->readLargeString(
+        MESSAGE_AUTH_KEY_ID_ADDRESS, MESSAGE_AUTH_KEY_ID_MAX_LENGTH);
+    messageAuthenticationSecret = Memory::GetInstance()->readLargeString(
+        MESSAGE_AUTH_SECRET_ADDRESS, MESSAGE_AUTH_SECRET_MAX_LENGTH);
+    messageAuthenticationLoaded = messageAuthenticationKeyId.length() > 0 &&
+        messageAuthenticationSecret.length() > 0;
+    if (messageAuthenticationLoaded) {
+        DEVICE_LOG_INFO("[MQTT Auth] HMAC credentials loaded from ROM/EEPROM");
+    } else {
+        DEVICE_LOG_INFO("[MQTT Auth] Missing HMAC keyId or secret in ROM/EEPROM");
+    }
+#endif
     MqttClient.setServer(Settings.mqtt_host, Settings.mqtt_port);
     MqttClient.setCallback(MqttDataCallback);
     //if (MqttClient.connect(Settings.mqtt_client, Settings.mqtt_user, Settings.mqtt_pwd, Settings.subcribe_topic, 1, true, "")) {
@@ -228,9 +359,20 @@ unsigned char  NetWork_Mqtt::checkStatusMqtt(){
 }
 void NetWork_Mqtt::sendMessageInfo(char * data){
   DEVICE_LOG_INFO("start NetWork_Mqtt::sendMessageInfo"+ String(data));
-  if (MqttClient.publish(Settings.public_topic, data, 1)) {
-      
+#if ENABLE_MESSAGE_AUTHENTICATION
+  if (!messageAuthenticationLoaded) {
+    DEVICE_LOG_INFO("[MQTT Auth] Publish blocked: credentials are not loaded");
+    return;
   }
+  String signedData;
+  if (!signMqttPayload(data, signedData)) {
+    return;
+  }
+  if (MqttClient.publish(Settings.public_topic, signedData.c_str(), 1)) {
+#else
+  if (MqttClient.publish(Settings.public_topic, data, 1)) {
+  }
+#endif
   DEVICE_LOG_INFO("end NetWork_Mqtt::sendMessageInfo");
 }
 

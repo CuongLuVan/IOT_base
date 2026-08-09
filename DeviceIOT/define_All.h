@@ -13,6 +13,10 @@
 // true  = bật mutual TLS: broker xác thực thiết bị bằng client certificate và private key.
 #define ENABLE_mTLS false
 
+// false = giữ nguyên payload MQTT hiện tại.
+// true  = ký và kiểm tra JSON MQTT bằng HMAC-SHA256.
+#define ENABLE_MESSAGE_AUTHENTICATION false
+
 // 0 = use standard WiFiClient
 // 1 = use WiFiClientSecure for TLS-capable MQTT connections
 #define MQTT_NO_TLS 1
@@ -31,9 +35,17 @@
 
 #define UART_BUFFER_SIZE               1024
 #define UART_READ_TIMEOUT_MS           100
+#if ENABLE_MESSAGE_AUTHENTICATION
+#define EEPROM_SIZE                    (32 * 1024)
+#else
 #define EEPROM_SIZE                    (20 * 1024)
+#endif
 #define TLS_SSL_DATA_ADDRESS            1300
+#if ENABLE_MESSAGE_AUTHENTICATION
+#define TLS_SSL_DATA_MAX_LENGTH         (MESSAGE_AUTH_KEY_ID_ADDRESS - TLS_SSL_DATA_ADDRESS - 1)
+#else
 #define TLS_SSL_DATA_MAX_LENGTH         (EEPROM_SIZE - TLS_SSL_DATA_ADDRESS - 1)
+#endif
 
 // Mỗi dữ liệu PEM phải kết thúc bằng '\0'. Các vùng không chồng lấp nhau trong EEPROM.
 #define MTLS_CA_CERT_ADDRESS             1300
@@ -41,7 +53,17 @@
 #define MTLS_CLIENT_CERT_ADDRESS         5500
 #define MTLS_CLIENT_CERT_MAX_LENGTH      4095
 #define MTLS_PRIVATE_KEY_ADDRESS         9700
+#if ENABLE_MESSAGE_AUTHENTICATION
+#define MTLS_PRIVATE_KEY_MAX_LENGTH      (MESSAGE_AUTH_KEY_ID_ADDRESS - MTLS_PRIVATE_KEY_ADDRESS - 1)
+#else
 #define MTLS_PRIVATE_KEY_MAX_LENGTH      (EEPROM_SIZE - MTLS_PRIVATE_KEY_ADDRESS - 1)
+#endif
+
+// Message-authentication data: null-terminated key id and HMAC secret.
+#define MESSAGE_AUTH_KEY_ID_ADDRESS      20000
+#define MESSAGE_AUTH_KEY_ID_MAX_LENGTH   127
+#define MESSAGE_AUTH_SECRET_ADDRESS      20200
+#define MESSAGE_AUTH_SECRET_MAX_LENGTH   255
 
 #define JSON_BUFFER_SIZE               512
 #define JSON_SMALL_BUFFER_SIZE         128
