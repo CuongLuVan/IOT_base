@@ -92,6 +92,12 @@ var aclOptions = {
 };
 var aclMap = {}; // clientId or username -> { publish: [...], subscribe: [...] }
 
+var enableClientID = false; // set to true to enable client ID anti-spoofing
+var clientIdOptions = {
+  clientIdsPath: __dirname + '/mqtt_client_ids.json'
+};
+var clientIdMap = {}; // clientId -> { username: ..., label: ... }
+
 if (enableACL) {
   try {
     var rawAcl = fs.readFileSync(aclOptions.aclPath, 'utf8');
@@ -115,6 +121,26 @@ if (enableACL) {
     console.log('ACL loaded, entries:', Object.keys(aclMap).length);
   } catch (ex) {
     console.warn('ACL file not loaded:', ex.message);
+  }
+}
+
+if (enableClientID) {
+  try {
+    var rawClientIds = fs.readFileSync(clientIdOptions.clientIdsPath, 'utf8');
+    var clientIdObj = JSON.parse(rawClientIds);
+    if (Array.isArray(clientIdObj.clients)) {
+      clientIdObj.clients.forEach(function(item) {
+        if (item.clientId) {
+          clientIdMap[item.clientId] = {
+            username: item.username || null,
+            label: item.label || null
+          };
+        }
+      });
+    }
+    console.log('Client ID anti-spoofing enabled, client entries:', Object.keys(clientIdMap).length);
+  } catch (ex) {
+    console.warn('Client ID mapping not loaded:', ex.message);
   }
 }
 
@@ -154,7 +180,41 @@ var authenticate = function(client, username, password, callback) {
     var pwd = password ? password.toString() : '';
     var authorized = false;
 
-    if (enableTLSCertificate) {
+    if (enableClientID) {
+      var clientId = client && client.id;
+      if (!clientId || !clientIdMap[clientId]) {
+        console.warn('Client ID validation failed: unknown clientId', client && client.id);
+      } else {
+        var expectedUsername = clientIdMap[clientId].username;
+        if (expectedUsername && username && expectedUsername !== username) {
+          console.warn('Client ID validation failed: username mismatch for', clientId, 'expected', expectedUsername, 'got', username);
+        } else {
+          // When client ID validation passes we can still verify certificate or username/password.
+          if (enableTLSCertificate) {
+            var stream = client && client.connection && client.connection.stream;
+            var peer = stream && typeof stream.getPeerCertificate === 'function' ? stream.getPeerCertificate(true) : null;
+            var peerFP = peer && (peer.fingerprint256 || peer.fingerprint);
+            var expected = clientId ? deviceCertMap[clientId] : null;
+
+            if (peer && expected) {
+              if (peerFP && expected && peerFP.toLowerCase() === expected.toLowerCase()) {
+                authorized = true;
+              } else if (peer.subject && peer.subject.CN && expected === peer.subject.CN) {
+                authorized = true;
+              }
+            }
+
+            if (!authorized) {
+              console.warn('mTLS authentication failed for', clientId, 'peer fingerprint:', peer && peer.fingerprint256);
+            }
+          } else {
+            authorized = userList.some(function(item) {
+              return item.username === username && item.password === pwd;
+            });
+          }
+        }
+      }
+    } else if (enableTLSCertificate) {
       // Perform mTLS per-device certificate verification only.
       var id = client && (client.id || username);
       var stream = client && client.connection && client.connection.stream;
