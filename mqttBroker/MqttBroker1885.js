@@ -35,6 +35,54 @@ if (enable_TLS_SSL) {
   }
 }
 
+// Optional: enable mutual TLS and per-device certificate authentication.
+// When `enableTLSCertificate` is true the broker will require and verify
+// client certificates against the mapping file `mqtt_device_certs.json`.
+var enableTLSCertificate = false; // set to true to enable mTLS + per-device certs
+var tlsOptionsExtended = {
+  caPath: __dirname + '/certs/ca.crt',
+  deviceCertsPath: __dirname + '/mqtt_device_certs.json'
+};
+
+var deviceCertMap = {}; // clientId or username -> expected fingerprint (fingerprint256 preferred)
+if (enableTLSCertificate) {
+  try {
+    // Ensure secure settings exist (created above when enable_TLS_SSL true)
+    settings.secure = settings.secure || {};
+    settings.secure.requestCert = true;
+    // We will perform custom verification in the authenticate() callback,
+    // so avoid automatic rejection by the TLS layer.
+    settings.secure.rejectUnauthorized = false;
+
+    // Load CA if present
+    try {
+      var ca = fs.readFileSync(tlsOptionsExtended.caPath);
+      settings.secure.ca = ca;
+    } catch (ex) {
+      console.warn('CA file not found at', tlsOptionsExtended.caPath, '- continuing without CA');
+    }
+
+    // Load device cert mapping
+    try {
+      var rawDevices = fs.readFileSync(tlsOptionsExtended.deviceCertsPath, 'utf8');
+      var devObj = JSON.parse(rawDevices);
+      if (Array.isArray(devObj.devices)) {
+        devObj.devices.forEach(function(d) {
+          if (d.clientId && (d.fingerprint256 || d.fingerprint || d.subjectCN)) {
+            deviceCertMap[d.clientId] = d.fingerprint256 || d.fingerprint || d.subjectCN;
+          }
+        });
+      }
+    } catch (ex) {
+      console.warn('Device cert mapping not loaded:', ex.message);
+    }
+
+    console.log('mTLS per-device certificate authentication enabled');
+  } catch (err) {
+    console.error('Failed to configure mTLS:', err);
+  }
+}
+
 // Load user credentials from JSON file
 var userList = [];
 try {
@@ -54,9 +102,34 @@ server.on('ready', setup);
 var authenticate = function(client, username, password, callback) {
   try {
     var pwd = password ? password.toString() : '';
-    var authorized = userList.some(function(item) {
-      return item.username === username && item.password === pwd;
-    });
+    var authorized = false;
+
+    if (enableTLSCertificate) {
+      // Perform mTLS per-device certificate verification only.
+      var id = client && (client.id || username);
+      var stream = client && client.connection && client.connection.stream;
+      var peer = stream && typeof stream.getPeerCertificate === 'function' ? stream.getPeerCertificate(true) : null;
+      var peerFP = peer && (peer.fingerprint256 || peer.fingerprint);
+      var expected = id ? deviceCertMap[id] : null;
+
+      if (peer && expected) {
+        if (peerFP && expected && peerFP.toLowerCase() === expected.toLowerCase()) {
+          authorized = true;
+        } else if (peer.subject && peer.subject.CN && expected === peer.subject.CN) {
+          authorized = true;
+        }
+      }
+
+      if (!authorized) {
+        console.warn('mTLS authentication failed for', id, 'peer fingerprint:', peer && peer.fingerprint256);
+      }
+    } else {
+      // Default username/password authentication
+      authorized = userList.some(function(item) {
+        return item.username === username && item.password === pwd;
+      });
+    }
+
     callback(null, authorized);
   } catch (ex) {
     console.error('authenticate error:', ex);

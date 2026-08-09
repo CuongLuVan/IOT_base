@@ -1,0 +1,12 @@
+{
+  "devices": [
+    {
+      "clientId": "device1",
+      "fingerprint256": "SHA256:REPLACE_WITH_DEVICE1_FINGERPRINT"
+    },
+    {
+      "clientId": "device2",
+      "subjectCN": "device2.example.com"
+    }
+  ]
+}
