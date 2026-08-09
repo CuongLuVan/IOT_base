@@ -100,6 +100,18 @@ var clientIdOptions = {
 };
 var clientIdMap = {}; // clientId -> { username: ..., label: ... }
 
+var enableMessageAuthentication = false; // set to true to enable message authentication
+var messageAuthOptions = {
+  authPath: __dirname + '/mqtt_message_auth.json'
+};
+var messageAuthConfig = {
+  scheme: 'hmac-sha256',
+  field: 'signature',
+  keyField: 'keyId',
+  ignoreTopics: [],
+  keys: {}
+};
+
 var replayOptions = {
   replayPath: __dirname + '/mqtt_replay.json'
 };
@@ -134,6 +146,31 @@ if (enableAttack) {
     console.log('Replay attack protection enabled, windowSeconds=', replayConfig.windowSeconds, 'timestampField=', replayConfig.timestampField, 'nonceField=', replayConfig.nonceField);
   } catch (ex) {
     console.warn('Replay config not loaded:', ex.message);
+  }
+}
+
+if (enableMessageAuthentication) {
+  try {
+    var rawAuth = fs.readFileSync(messageAuthOptions.authPath, 'utf8');
+    var authObj = JSON.parse(rawAuth);
+    if (typeof authObj.scheme === 'string') {
+      messageAuthConfig.scheme = authObj.scheme;
+    }
+    if (typeof authObj.field === 'string') {
+      messageAuthConfig.field = authObj.field;
+    }
+    if (typeof authObj.keyField === 'string') {
+      messageAuthConfig.keyField = authObj.keyField;
+    }
+    if (Array.isArray(authObj.ignoreTopics)) {
+      messageAuthConfig.ignoreTopics = authObj.ignoreTopics;
+    }
+    if (authObj.keys && typeof authObj.keys === 'object') {
+      messageAuthConfig.keys = authObj.keys;
+    }
+    console.log('Message authentication enabled, scheme=', messageAuthConfig.scheme, 'field=', messageAuthConfig.field, 'keyField=', messageAuthConfig.keyField);
+  } catch (ex) {
+    console.warn('Message auth config not loaded:', ex.message);
   }
 }
 
@@ -308,8 +345,89 @@ function parsePayloadMetadata(payload) {
   }
 }
 
+function canonicalizePayloadValue(value) {
+  if (Array.isArray(value)) {
+    return '[' + value.map(canonicalizePayloadValue).join(',') + ']';
+  }
+  if (value && typeof value === 'object') {
+    var keys = Object.keys(value).sort();
+    return '{' + keys.map(function(key) {
+      return JSON.stringify(key) + ':' + canonicalizePayloadValue(value[key]);
+    }).join(',') + '}';
+  }
+  return JSON.stringify(value);
+}
+
+function normalizeSignature(value) {
+  if (typeof value !== 'string') return '';
+  return value.replace(/^0x/i, '').replace(/^sha256:/i, '').toLowerCase();
+}
+
+function verifyMessageAuthentication(client, topic, payload) {
+  if (!enableMessageAuthentication) {
+    return true;
+  }
+
+  if (messageAuthConfig.ignoreTopics.indexOf(topic) !== -1) {
+    return true;
+  }
+
+  var metadata = parsePayloadMetadata(payload);
+  if (!metadata.data || typeof metadata.data !== 'object') {
+    return false;
+  }
+
+  var body = Object.assign({}, metadata.data);
+  var signature = body[messageAuthConfig.field];
+  if (!signature) {
+    return false;
+  }
+
+  delete body[messageAuthConfig.field];
+  if (messageAuthConfig.keyField) {
+    delete body[messageAuthConfig.keyField];
+  }
+
+  var secret = null;
+  var keyId = messageAuthConfig.keyField && metadata.data[messageAuthConfig.keyField];
+  if (keyId && messageAuthConfig.keys[keyId]) {
+    secret = messageAuthConfig.keys[keyId];
+  }
+  if (!secret && client && client.id && messageAuthConfig.keys[client.id]) {
+    secret = messageAuthConfig.keys[client.id];
+  }
+  if (!secret && client && client.user && messageAuthConfig.keys[client.user]) {
+    secret = messageAuthConfig.keys[client.user];
+  }
+
+  if (!secret) {
+    return false;
+  }
+
+  var canonical = canonicalizePayloadValue(body);
+  var expected;
+  switch (messageAuthConfig.scheme.toLowerCase()) {
+    case 'hmac-sha256':
+      expected = crypto.createHmac('sha256', secret).update(canonical).digest('hex');
+      break;
+    default:
+      console.warn('Unsupported message authentication scheme', messageAuthConfig.scheme);
+      return false;
+  }
+
+  return normalizeSignature(signature) === expected;
+}
+
 var authorizePublish = function(client, topic, payload, callback) {
   try {
+    if (enableMessageAuthentication && client && topic) {
+      if (!verifyMessageAuthentication(client, topic, payload)) {
+        console.warn('Message authentication failed for', client && client.id || client && client.user, 'topic', topic);
+        callback(null, false);
+        return;
+      }
+    }
+
     if (enableAttack && client && topic) {
       var id = client.id || client.user || 'unknown';
       var metadata = parsePayloadMetadata(payload);
@@ -432,6 +550,7 @@ emitter.on('error', function(error) {
 function setup() {
  // console.log('Mosca server is up and running');
    server.authenticate = authenticate;
- // server.authorizePublish = authorizePublish;
+   server.authorizePublish = authorizePublish;
+   server.authorizeSubscribe = authorizeSubscribe;
 }
 
