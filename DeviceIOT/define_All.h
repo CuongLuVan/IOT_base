@@ -17,6 +17,19 @@
 // true  = ký và kiểm tra JSON MQTT bằng HMAC-SHA256.
 #define ENABLE_MESSAGE_AUTHENTICATION false
 
+// false = giữ nguyên luồng MQTT hiện tại.
+// true  = bật mã hóa Ascon-AEAD128 cho các payload MQTT ngoài lệnh handshake.
+#define ENABLE_ASCON_AEAD128 false
+#define ASCON_RANDOM_DIGITS 5
+#define ASCON_KEY_ROTATION_MS 86400000UL
+#define ASCON_PUBLIC_KEY_COUNT 10
+#define ASCON_PUBLIC_KEY_HEX_LENGTH 32
+#define ASCON_PUBLIC_KEY_ENTRY_LENGTH 33
+#define ASCON_PUBLIC_KEYS_ADDRESS 18000
+#define ASCON_HANDSHAKE_DIGITS_ADDRESS 18330
+#define ASCON_HANDSHAKE_DIGITS_MAX_LENGTH 8
+#define ASCON_KEY_ROTATION_TIME_ADDRESS 18350
+
 // 0 = use standard WiFiClient
 // 1 = use WiFiClientSecure for TLS-capable MQTT connections
 #define MQTT_NO_TLS 1
