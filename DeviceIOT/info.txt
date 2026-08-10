@@ -1,0 +1,10 @@
+ Thêm define biến ENABLE_ASCON_AEAD128  , nếu = false thì không thay đổi logic hiện tại,
+ nếu = true thì mã hóa Ascon-AEAD128 như sau: Ở ROM lưu trữ 10key (public key), sau khi khởi động ESP chip sẽ lấy 10key đó rồi sử dụng 
+ con số ngẫu nhiên 5 số   từ 0 đến 9 ,
+ Key mới = vị trí theo con số ngẫu nhiên đó lấy số thứ tự public key  rồi sẽ lấy key, các key dần dần sẽ XOR với nhau tạo key mới.
+ sau đó thiết bị gửi bản tin mqtt dạng {co:6 , va:xxxxx} với xxxxx là số số ngẫu nhiên 5 số  lên broker
+ khi thiết có yêu cầu {com:7 , value:""} từ mobile hoặc thiết bị khác thì esp sẽ gửi lại  {co:6 , va:xxxxx} 
+ sau khi có key mới thì bản tin gửi đến từ mobile và esp sẽ thay đổi rule mới như sau sẽ gửi bản tin dạng như sau:
+ tất cả json gửi đến và nhận đi trử lệnh  {com:7 , value:""} và {co:6 , va:xxxxx} thì data sẽ được mã hóa  Ascon-AEAD128 sẽ ra data yyyy
+ và đóng gói theo rule sau : {com:1, value:yyyy, ....} . ở bên mobile và bên nhúng phải giải mã Ascon-AEAD128 qua key mới
+ , hàm getInfoDevice sẽ  sử dụng mã hóa  Ascon-AEAD128  theo rule trên. Sau 1 ngày thiết bị đổi key mới giống như chu kỳ khởi động ESP
