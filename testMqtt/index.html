@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>MQTT Control Panel</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>MQTT Control Panel</h1>
+
+    <div class="controls">
+        <fieldset class="import-row">
+          <legend>MQTT Connection</legend>
+          <label>Broker URL: <input id="mqtt_url" placeholder="wss://broker.example:8084/mqtt" style="width:60%" /></label>
+          <label>Client ID: <input id="mqtt_clientid" placeholder="web_client_001" /></label>
+          <label>Username: <input id="mqtt_user" /></label>
+          <label>Password: <input id="mqtt_pass" type="password" /></label>
+          <label>Topic Publish: <input id="mqtt_topic_pub" placeholder="demo/pub" /></label>
+          <label>Topic Subscribe: <input id="mqtt_topic_sub" placeholder="demo/sub" /></label>
+          <div style="margin-top:8px">
+            <button id="btn_connect">Connect</button>
+            <button id="btn_disconnect">Disconnect</button>
+            <button id="btn_subscribe">Subscribe</button>
+            <button id="btn_unsubscribe">Unsubscribe</button>
+          </div>
+        </fieldset>
+      <label><input type="checkbox" id="cb_tls" /> TLS/SSL (secure transport)</label>
+      <div class="import-row hidden" id="tls_inputs">
+        <label>CA Certificate: <input type="file" id="ca_file" accept=".pem,.crt"/></label>
+      </div>
+
+      <label><input type="checkbox" id="cb_mtls" /> mTLS (mutual TLS)</label>
+      <div class="import-row hidden" id="mtls_inputs">
+        <label>Client Cert: <input type="file" id="client_cert" accept=".pem,.crt"/></label>
+        <label>Client Key: <input type="file" id="client_key" accept=".pem,.key"/></label>
+      </div>
+
+      <label><input type="checkbox" id="cb_sig" /> Message Authentication / Signature</label>
+      <div class="import-row hidden" id="sig_inputs">
+        <label>Signature Key: <input type="file" id="sig_key" accept=".pem,.key"/></label>
+      </div>
+
+      <label><input type="checkbox" id="cb_ascon" /> Ascon-AEAD128 (encrypt)</label>
+      <div class="import-row hidden" id="ascon_inputs">
+        <label>Public keys (10 lines, one per key):</label>
+        <textarea id="pubkeys" placeholder="Enter 10 public keys, one per line"></textarea>
+
+        <label>Random 5-digit selector (each digit 0-9):
+          <input id="selector" maxlength="5" pattern="[0-9]{5}" placeholder="e.g. 37029" />
+          <button id="gen_random">Generate</button>
+        </label>
+      </div>
+
+      <div class="actions">
+        <label>Plaintext to encrypt:</label>
+        <textarea id="plaintext" placeholder='{"hello": "world"}'></textarea>
+
+        <button id="encrypt">Encrypt & Package</button>
+        <button id="clear">Clear</button>
+      </div>
+
+      <label>Output:</label>
+      <textarea id="output" readonly></textarea>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
