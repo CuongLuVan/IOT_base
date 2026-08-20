@@ -28,6 +28,8 @@
 #define JSON_BUFFER_SIZE               512
 #define JSON_SMALL_BUFFER_SIZE         128
 #define DEVICE_INFO_DEFAULT_VALUE      2
+// Identifier of the service type supported by this firmware/application.
+#define DEVICE_SERVICE_ID              2
 
 #define MQTT_JSON_DOC_SIZE             512
 #define MQTT_COMMAND_DOC_SIZE          128
