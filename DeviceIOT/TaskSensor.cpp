@@ -44,6 +44,7 @@ void TaskSensor::setup(void){
     dataSensor.valueDust_PM1 =0;
 
     dataSensor.valueControl =0;
+    dataSensor.valueClientState = 1;
     dht.begin();
     Serial1.begin(SENSOR_SERIAL_BAUD_RATE);   // GPIO1, GPIO3 (TX/RX pin on ESP-12E Development Board)
         //Configuro la porta Serial2 (tutti i parametri hanno anche un get per effettuare controlli)
@@ -122,6 +123,7 @@ void updateMemoryStatus(void){
     MemoryData::GetInstance().sensorData_->valueDust_PM10 = dataSensor.valueDust_PM10;
     MemoryData::GetInstance().sensorData_->valueDust_PM1 = dataSensor.valueDust_PM1;
     MemoryData::GetInstance().sensorData_->valueControl = dataSensor.valueControl;
+    MemoryData::GetInstance().sensorData_->valueClientState = dataSensor.valueClientState;
 }
 
 void TaskSensor::taskRun(void * parameter) {

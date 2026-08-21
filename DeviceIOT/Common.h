@@ -10,6 +10,7 @@ struct InfoSensor {
     int valueDust_PM10;
     int valueDust_PM1;
     int valueControl;
+    int valueClientState;
 };
 
 struct InfoDeviceControl {
@@ -40,3 +41,5 @@ struct ProcessTimeData
 };
 
 String getInfoDevice(InfoSensor sensorValue, InfoDeviceControl statusDevice);
+String getInfoDevice(InfoSensor sensorValue, InfoDeviceControl statusDevice,
+                     uint16_t clientDeviceId, uint8_t clientState);

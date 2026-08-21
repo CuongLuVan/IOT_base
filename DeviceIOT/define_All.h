@@ -4,6 +4,7 @@
 #define SUPPORT_RTOS true
 #define SUPPORT_LORA 0
 #define SUPPORT_MQTT 1
+#define SUPPORT_NRF24 1
 
 // 0 = use standard WiFiClient
 // 1 = use WiFiClientSecure for TLS-capable MQTT connections
@@ -30,6 +31,15 @@
 #define DEVICE_INFO_DEFAULT_VALUE      2
 // Identifier of the service type supported by this firmware/application.
 #define DEVICE_SERVICE_ID              2
+
+// nRF24L01 master configuration. These values must match every client.
+#define NRF24_CE_PIN                   4
+#define NRF24_CSN_PIN                  5
+#define NRF24_SCK_PIN                  18
+#define NRF24_MISO_PIN                 19
+#define NRF24_MOSI_PIN                 27
+#define NRF24_CHANNEL                  76
+#define NRF24_EVENT_QUEUE_SIZE          32
 
 #define MQTT_JSON_DOC_SIZE             512
 #define MQTT_COMMAND_DOC_SIZE          128

@@ -6,7 +6,7 @@ class NetWork_Mqtt {
         void disconnetMqtt();
         void  connectMqtt();
         unsigned char checkStatusMqtt();
-        void sendMessageInfo(char * data);
+        bool sendMessageInfo(const char * data);
         void MqttSubscribe(char *topic);
         void lisenMqtt();
         void MqttReconnect();

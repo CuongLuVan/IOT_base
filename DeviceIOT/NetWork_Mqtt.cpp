@@ -178,12 +178,11 @@ void NetWork_Mqtt::connectMqtt(){
 unsigned char  NetWork_Mqtt::checkStatusMqtt(){
   return (MqttClient.connected() ? 1 : 0);
 }
-void NetWork_Mqtt::sendMessageInfo(char * data){
+bool NetWork_Mqtt::sendMessageInfo(const char * data){
   DEVICE_LOG_INFO("start NetWork_Mqtt::sendMessageInfo"+ String(data));
-  if (MqttClient.publish(Settings.public_topic, data, 1)) {
-      
-  }
+  const bool published = MqttClient.publish(Settings.public_topic, data, 1);
   DEVICE_LOG_INFO("end NetWork_Mqtt::sendMessageInfo");
+  return published;
 }
 
 

@@ -2,6 +2,7 @@
 #include "NetWork_Wifi.h"
 #include "NetWork_Mqtt.h"
 #include "NetWork_RF.h"
+#include "NetWork_NRF24.h"
 #include "NetWork_config.h"
 #include "define_All.h"
 #include "Memory.h"
@@ -9,6 +10,7 @@
 #if SUPPORT_RTOS
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <freertos/queue.h>
 #endif
 
 #include "driver/uart.h"
@@ -22,13 +24,23 @@
 NetWork_Wifi netWork_Wifi;
 NetWork_Mqtt netWork_Mqtt;
 NetWork_RF netWork_RF;
+NetWork_NRF24 netWork_NRF24;
 InfoSensor sensorValue;
 InfoDeviceControl statusDevice;
 String lastLoraPayload;
+#if SUPPORT_NRF24
+struct Nrf24ClientEvent {
+    uint16_t id;
+    uint8_t state;
+};
+#endif
 #if SUPPORT_RTOS
 QueueHandle_t sensorDataQueue = NULL;
 QueueHandle_t deviceStatusQueue = NULL;
 QueueHandle_t deviceCommandQueue = NULL;
+#if SUPPORT_NRF24
+QueueHandle_t nrf24ClientEventQueue = NULL;
+#endif
 #else
 
 #endif
@@ -73,6 +85,10 @@ ProcessTimeData processTimeData;
 // External network ping tracking (check once per hour)
 static unsigned long lastExternalPingTime = 0;
 static const unsigned long EXTERNAL_PING_INTERVAL = 3600000UL; // 1 hour
+#if SUPPORT_NRF24
+// Keep the client state when the local sensor task refreshes sensorValue.
+static uint8_t lastNrf24ClientState = 1;
+#endif
 
 void setupUART(void){
   uart_config_t uart_config = {
@@ -171,6 +187,14 @@ void TaskNetWork::setup(void){
                 Serial.println("[TaskNetWork] Failed to create deviceCommandQueue");
             }
         }
+#if SUPPORT_NRF24
+        if (nrf24ClientEventQueue == NULL) {
+            nrf24ClientEventQueue = xQueueCreate(NRF24_EVENT_QUEUE_SIZE, sizeof(Nrf24ClientEvent));
+            if (nrf24ClientEventQueue == NULL) {
+                Serial.println("[TaskNetWork] Failed to create nRF24 event queue");
+            }
+        }
+#endif
 #else
 
 #endif
@@ -189,6 +213,14 @@ void TaskNetWork::setup(void){
             Serial.println("[TaskNetWork] LoRa init OK");
         }
         lastLoraPayload = String();
+#endif
+#if SUPPORT_NRF24
+        sensorValue.valueClientState = lastNrf24ClientState;
+        if (!netWork_NRF24.begin()) {
+            Serial.println("[TaskNetWork] nRF24L01 init failed");
+        } else {
+            Serial.println("[TaskNetWork] nRF24L01 master ready (Auto-ACK enabled)");
+        }
 #endif
     }else if(WIFI_BLE_PROVISION==modeStatus){
         netWork_Wifi.startProvisioning();
@@ -489,11 +521,42 @@ void TaskNetWork::loopNetWork(void) {
         }
     }
 #endif
+#if SUPPORT_NRF24
+    uint16_t clientId = 0;
+    uint8_t clientState = 0;
+    while (netWork_NRF24.receiveClientState(clientId, clientState)) {
+        // RF24 already sent the hardware Auto-ACK before this payload is read.
+        const Nrf24ClientEvent event = {clientId, clientState};
+        if (nrf24ClientEventQueue == NULL ||
+            xQueueSend(nrf24ClientEventQueue, &event, 0) != pdTRUE) {
+            Serial.printf("[TaskNetWork] nRF24 event queue full; id=%u state=%u not queued\n", clientId, clientState);
+            continue;
+        }
+        lastNrf24ClientState = clientState;
+        sensorValue.valueClientState = clientState;
+        Serial.printf("[TaskNetWork] nRF24 client %u state=%u queued\n", clientId, clientState);
+    }
+
+    // Peek first, then remove only after MQTT accepts the exact event payload.
+    while (nrf24ClientEventQueue != NULL && netWork_Mqtt.checkStatusMqtt()) {
+        Nrf24ClientEvent event;
+        if (xQueuePeek(nrf24ClientEventQueue, &event, 0) != pdTRUE) {
+            break;
+        }
+        const String mqttPayload = getInfoDevice(sensorValue, statusDevice, event.id, event.state);
+        if (!netWork_Mqtt.sendMessageInfo(mqttPayload.c_str())) {
+            break;
+        }
+        xQueueReceive(nrf24ClientEventQueue, &event, 0);
+        Serial.printf("[TaskNetWork] nRF24 client %u state=%u forwarded\n", event.id, event.state);
+    }
+#endif
      updateStatusUART();
 #if SUPPORT_RTOS
     // Process sensor queue data if any
     if (sensorDataQueue != NULL) {
         if(xQueueReceive(sensorDataQueue, &sensorValue, 0) == pdTRUE) {
+            sensorValue.valueClientState = lastNrf24ClientState;
             if (netWork_Mqtt.checkStatusMqtt()) {
               // sendMessageInfo(getInfoDevice(sensorValue,statusDevice));
             }
