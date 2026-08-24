@@ -33,6 +33,28 @@ static SemaphoreHandle_t sensorDataMutex = NULL;
 #endif
 
 static uint8_t sensorReadStep = 0; // 0..3 read schedule
+static volatile uint32_t proximityCount = 0;
+static volatile unsigned long lastProximityEdgeMs = 0;
+
+// Count one "cut" only when the signal changes from inactive to active.
+// NPN: inactive HIGH -> active LOW.  PNP: inactive LOW -> active HIGH.
+void IRAM_ATTR onProximitySensorEdge() {
+    const unsigned long now = millis();
+    if ((unsigned long)(now - lastProximityEdgeMs) < PROXIMITY_DEBOUNCE_MS) {
+        return;
+    }
+
+    const int level = digitalRead(PROXIMITY_SENSOR_PIN);
+#if PROXIMITY_SENSOR_TYPE == PROXIMITY_SENSOR_NPN
+    const bool active = (level == LOW);
+#else
+    const bool active = (level == HIGH);
+#endif
+    if (active) {
+        proximityCount++;
+        lastProximityEdgeMs = now;
+    }
+}
 
 void TaskSensor::setup(void){
     DEVICE_LOG_INFO("start TaskSensor::setup");
@@ -44,7 +66,17 @@ void TaskSensor::setup(void){
     dataSensor.valueDust_PM1 =0;
 
     dataSensor.valueControl =0;
+    dataSensor.proximityCount = 0;
     dht.begin();
+
+#if PROXIMITY_SENSOR_TYPE == PROXIMITY_SENSOR_NPN
+    // NPN open-collector output: ESP32 pull-up keeps the idle state HIGH.
+    pinMode(PROXIMITY_SENSOR_PIN, INPUT_PULLUP);
+#else
+    // PNP must provide a safe, level-shifted 3.3 V digital signal.
+    pinMode(PROXIMITY_SENSOR_PIN, INPUT);
+#endif
+    attachInterrupt(digitalPinToInterrupt(PROXIMITY_SENSOR_PIN), onProximitySensorEdge, CHANGE);
     Serial1.begin(SENSOR_SERIAL_BAUD_RATE);   // GPIO1, GPIO3 (TX/RX pin on ESP-12E Development Board)
         //Configuro la porta Serial2 (tutti i parametri hanno anche un get per effettuare controlli)
 
@@ -61,6 +93,14 @@ void TaskSensor::setup(void){
 
 void TaskSensor::readSensor(void){
     dataSensor.valueControl =0;
+    dataSensor.proximityCount = getProximityCount();
+}
+
+uint32_t TaskSensor::getProximityCount(void) {
+    noInterrupts();
+    const uint32_t count = proximityCount;
+    interrupts();
+    return count;
 }
 int checkDataNumber = 0;
 void TaskSensor::readSensorDust(void){
@@ -122,6 +162,7 @@ void updateMemoryStatus(void){
     MemoryData::GetInstance().sensorData_->valueDust_PM10 = dataSensor.valueDust_PM10;
     MemoryData::GetInstance().sensorData_->valueDust_PM1 = dataSensor.valueDust_PM1;
     MemoryData::GetInstance().sensorData_->valueControl = dataSensor.valueControl;
+    MemoryData::GetInstance().sensorData_->proximityCount = dataSensor.proximityCount;
 }
 
 void TaskSensor::taskRun(void * parameter) {
@@ -142,6 +183,8 @@ void TaskSensor::taskRun(void * parameter) {
             } else {
                 readOps[sensorReadStep]();
             }
+            // Keep the queued snapshot current even on the DHT/PMS read steps.
+            dataSensor.proximityCount = getProximityCount();
 
             if (sensorDataQueue != NULL) {
                 // Luôn gửi bản ghi hiện tại mỗi lúc sau khi cập nhật ô cùng
@@ -166,6 +209,7 @@ void TaskSensor::taskRun(void * parameter) {
             sensorReadStep = 0;
         }
         readOps[sensorReadStep]();
+        dataSensor.proximityCount = getProximityCount();
         
         delay(SENSOR_TASK_INTERVAL_MS);
         sensorReadStep++;

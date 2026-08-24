@@ -52,6 +52,18 @@
 
 #define DHT_PIN                        12
 #define DHT_TYPE                       DHT11
+#
+// Proximity sensor input (ESP32).
+// NPN sensors sink the input to GND when an object is detected; PNP sensors
+// drive the input HIGH.  A PNP output must be converted to 3.3 V (for example
+// using an optocoupler or a resistor divider) before connecting it to ESP32.
+#define PROXIMITY_SENSOR_PIN            27
+#define PROXIMITY_SENSOR_NPN            0
+#define PROXIMITY_SENSOR_PNP            1
+#define PROXIMITY_SENSOR_TYPE           PROXIMITY_SENSOR_NPN
+#define PROXIMITY_DEBOUNCE_MS           20
+#define PROXIMITY_REPORT_CHANGED_MS     60000UL
+#define PROXIMITY_REPORT_IDLE_MS        600000UL
 #define SENSOR_TASK_INTERVAL_MS        1000
 #define SENSOR_READ_STEP_COUNT         4
 #define SENSOR_SERIAL_BAUD_RATE        9600

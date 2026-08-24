@@ -10,6 +10,7 @@ struct InfoSensor {
     int valueDust_PM10;
     int valueDust_PM1;
     int valueControl;
+    uint32_t proximityCount;
 };
 
 struct InfoDeviceControl {

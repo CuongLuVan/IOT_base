@@ -25,6 +25,8 @@ NetWork_RF netWork_RF;
 InfoSensor sensorValue;
 InfoDeviceControl statusDevice;
 String lastLoraPayload;
+static uint32_t lastReportedProximityCount = 0;
+static unsigned long lastProximityReportMs = 0;
 #if SUPPORT_RTOS
 QueueHandle_t sensorDataQueue = NULL;
 QueueHandle_t deviceStatusQueue = NULL;
@@ -435,9 +437,28 @@ bool (* arrayNetworkFunction[])(void) ={
                                   &checkNetWorkERRORConnect
                               };
 void sendMessageInfo(String data){
-  char *p = new char[data.length() + 1];
-  strcpy(p, data.c_str());
-   netWork_Mqtt.sendMessageInfo(p);
+  char payload[MQTT_PAYLOAD_SIZE];
+  data.toCharArray(payload, sizeof(payload));
+  netWork_Mqtt.sendMessageInfo(payload);
+}
+
+static void reportProximityCountIfDue() {
+  const unsigned long now = millis();
+  if (lastProximityReportMs == 0) {
+    lastProximityReportMs = now;
+    lastReportedProximityCount = sensorValue.proximityCount;
+    return;
+  }
+
+  const bool countChanged = sensorValue.proximityCount != lastReportedProximityCount;
+  const unsigned long interval = countChanged ? PROXIMITY_REPORT_CHANGED_MS : PROXIMITY_REPORT_IDLE_MS;
+  if ((unsigned long)(now - lastProximityReportMs) < interval || !netWork_Mqtt.checkStatusMqtt()) {
+    return;
+  }
+
+  sendMessageInfo(getInfoDevice(sensorValue, statusDevice));
+  lastReportedProximityCount = sensorValue.proximityCount;
+  lastProximityReportMs = now;
 }
 
 
@@ -504,7 +525,6 @@ void TaskNetWork::loopNetWork(void) {
                           sensorValue.valueDust_PM10);
         }
     }
-
     // Process device status updates from TaskDevice
     if (deviceStatusQueue != NULL) {
         
@@ -523,6 +543,7 @@ void TaskNetWork::loopNetWork(void) {
     // Non-RTOS mode: use simple flags for latest data
    // MemoryData::GetInstance().sensorData_=(&dataSensor);
 #endif
+    reportProximityCountIfDue();
     DEVICE_LOG_INFO("end TaskNetWork::loopNetWork");
 }
 
