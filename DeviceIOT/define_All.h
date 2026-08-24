@@ -60,13 +60,14 @@
 
 #define BUTTON_DEBOUNCE_MS             50
 #define BUTTON_LONG_PRESS_MS           3000
+#define MAGNETIC_SWITCH_DEBOUNCE_MS    50
 #define DEVICE_BUTTON_PIN              14
 #define INPUT_PULLUP_PIN               13
 #define OUTPUT_PUMP_PIN                22
 #define OUTPUT_DEVICE_1_PIN            23
 
 #define DEVICE_QUEUE_SEND_DELAY_MS     50
-#define DEVICE_TASK_PERIOD_MS          1000
+#define DEVICE_TASK_PERIOD_MS          50
 
 #define HTTP_STATUS_OK                 200
 #define OTA_STATE_TIMEOUT_MS           120000

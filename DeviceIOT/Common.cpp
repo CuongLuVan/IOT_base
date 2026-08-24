@@ -14,6 +14,7 @@ String getInfoDevice(InfoSensor sensorValue, InfoDeviceControl statusDevice)
     String coString =  String(statusDevice.device_port) + "," + String(statusDevice.button_click) + "," + String(statusDevice.button_status) + "," + String(statusDevice.count_info);
     jsonBufferData["va"] = vaString;
     jsonBufferData["co"] = coString;
+    jsonBufferData["var"] = statusDevice.magnetic_switch_status;
     String response;
     serializeJson(jsonBufferData, response);
     return response;

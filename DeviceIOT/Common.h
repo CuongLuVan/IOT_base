@@ -16,6 +16,8 @@ struct InfoDeviceControl {
     uint8_t device_port;
     uint8_t button_click;
     uint8_t button_status;
+    // 1: reed switch open (magnet far), 0: reed switch closed (magnet near).
+    uint8_t magnetic_switch_status;
     uint16_t count_info;
     uint8_t device_port_last;
 };

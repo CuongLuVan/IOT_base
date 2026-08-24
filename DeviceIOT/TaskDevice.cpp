@@ -25,7 +25,10 @@ void TaskDevice::setup(void)
     control.button_status = 0x00;
     control.count_info = 0x00;
     pinMode(DEVICE_BUTTON_PIN, INPUT);
-    pinMode(INPUT_PULLUP_PIN, INPUT);
+    // Reed switch connected between GPIO13 and GND:
+    // closed/near magnet = LOW, open/far magnet = HIGH.
+    pinMode(INPUT_PULLUP_PIN, INPUT_PULLUP);
+    control.magnetic_switch_status = (digitalRead(INPUT_PULLUP_PIN) == HIGH) ? 1 : 0;
     pinMode(OUTPUT_PUMP_PIN, OUTPUT);
     pinMode(OUTPUT_DEVICE_1_PIN, OUTPUT);
     DEVICE_LOG_INFO("end TaskDevice::setup");
@@ -75,6 +78,46 @@ void TaskDevice::readButton(void)
     lastButtonReading = reading;
 }
 
+bool TaskDevice::readMagneticSwitch(void)
+{
+    static bool initialized = false;
+    static int lastReading = HIGH;
+    static int stableReading = HIGH;
+    static unsigned long lastChangeTime = 0;
+
+    const int reading = digitalRead(INPUT_PULLUP_PIN);
+    const unsigned long now = millis();
+
+    if (!initialized) {
+        initialized = true;
+        lastReading = reading;
+        stableReading = reading;
+        lastChangeTime = now;
+        return false;
+    }
+
+    if (reading != lastReading) {
+        lastReading = reading;
+        lastChangeTime = now;
+    }
+
+    if (reading != stableReading &&
+        (now - lastChangeTime) >= MAGNETIC_SWITCH_DEBOUNCE_MS) {
+        const int previousReading = stableReading;
+        stableReading = reading;
+        control.magnetic_switch_status = (stableReading == HIGH) ? 1 : 0;
+        control.count_info++;
+
+        Serial.printf("[TaskDevice] Magnetic switch %s -> %s, var=%d\n",
+                      (previousReading == LOW) ? "LOW" : "HIGH",
+                      (stableReading == LOW) ? "LOW" : "HIGH",
+                      control.magnetic_switch_status);
+        return true;
+    }
+
+    return false;
+}
+
 void TaskDevice::controlPump(void){
     if((control.device_port|0x01) == 1) {
         digitalWrite(OUTPUT_PUMP_PIN, HIGH); // Bật bơm
@@ -94,6 +137,7 @@ void TaskDevice::updateMemoryStatus(void){
     MemoryData::GetInstance().deviceStatus_->device_port = control.device_port;
     MemoryData::GetInstance().deviceStatus_->button_click = control.button_click;  
     MemoryData::GetInstance().deviceStatus_->button_status = control.button_status; 
+    MemoryData::GetInstance().deviceStatus_->magnetic_switch_status = control.magnetic_switch_status;
     MemoryData::GetInstance().deviceStatus_->device_port_last = control.device_port_last; 
     MemoryData::GetInstance().deviceStatus_->count_info = control.count_info; 
 }
@@ -101,14 +145,17 @@ void TaskDevice::updateMemoryStatus(void){
 void TaskDevice::taskRun(void * parameter) {
     //DEVICE_LOG_INFO("start TaskDevice::taskRun");
     #if SUPPORT_RTOS
+        bool initialStatusPending = true;
         for(;;)
         { 
             TaskDevice::readButton();
+            const bool magneticSwitchChanged = TaskDevice::readMagneticSwitch();
             TaskDevice::controlPump();
             TaskDevice::controlDevice();
             vTaskDelay(DEVICE_TASK_PERIOD_MS / portTICK_PERIOD_MS);
-            if(control.device_port!=control.device_port_last){
+            if(control.device_port!=control.device_port_last || magneticSwitchChanged || initialStatusPending){
                 control.device_port_last = control.device_port;
+                initialStatusPending = false;
                 // Report current device status to network
                 if (deviceStatusQueue != NULL) {
                     xQueueSend(deviceStatusQueue, &control, pdMS_TO_TICKS(DEVICE_QUEUE_SEND_DELAY_MS));
@@ -133,10 +180,11 @@ void TaskDevice::taskRun(void * parameter) {
         }
         
     #else
-        TaskDevice::updateMemoryStatus();
         TaskDevice::readButton();
+        TaskDevice::readMagneticSwitch();
         TaskDevice::controlPump();
         TaskDevice::controlDevice();
+        TaskDevice::updateMemoryStatus();
         if(MemoryData::GetInstance().deviceCommand_ != NULL) {
             
             DeviceCommand* cmd_to_device = MemoryData::GetInstance().deviceCommand_;
