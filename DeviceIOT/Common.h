@@ -10,6 +10,8 @@ struct InfoSensor {
     int valueDust_PM10;
     int valueDust_PM1;
     int valueControl;
+    int valueFSR;           // Giá trị lực thô từ cảm biến FSR402 (0-4095)
+    int glassBreakAlert;    // Trạng thái cảnh báo đập kính (0=bình thường, 1=đập kính)
 };
 
 struct InfoDeviceControl {

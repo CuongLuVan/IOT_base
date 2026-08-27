@@ -53,10 +53,32 @@
 #define DHT_PIN                        12
 #define DHT_TYPE                       DHT11
 #define SENSOR_TASK_INTERVAL_MS        1000
-#define SENSOR_READ_STEP_COUNT         4
+#define SENSOR_READ_STEP_COUNT         5
 #define SENSOR_SERIAL_BAUD_RATE        9600
 #define SENSOR_QUEUE_SEND_DELAY_MS     100
 #define SENSOR_MUTEX_WAIT_MS           10
+
+// ======== CẢM BIẾN LỰC FSR402 - PHÁT HIỆN ĐẬP KÍNH ========
+// Chân ADC kết nối FSR402 (GPIO34 = ADC1_CH6, chân chỉ input, phù hợp analog)
+// Sơ đồ đấu nối: 3.3V --- [FSR402] ---+--- GPIO34
+//                                      |
+//                                   [10kΩ]
+//                                      |
+//                                     GND
+#define FSR_PIN                        34
+
+// Ngưỡng phát hiện đập kính (0-4095, ADC 12-bit ESP32)
+// Giá trị càng cao = cần lực càng mạnh mới báo động
+// ~500  = nhạy (chạm nhẹ cũng phát hiện)
+// ~2000 = trung bình (đập mạnh mới phát hiện)
+// ~3500 = kém nhạy (chỉ đập rất mạnh)
+#define FSR_GLASS_BREAK_THRESHOLD      2000
+
+// Thời gian chờ giữa 2 lần cảnh báo (ms) - tránh gửi MQTT liên tục
+#define FSR_ALERT_COOLDOWN_MS          5000
+
+// Số lần đọc liên tiếp vượt ngưỡng để xác nhận đập kính (chống nhiễu)
+#define FSR_CONFIRM_COUNT              2
 
 #define BUTTON_DEBOUNCE_MS             50
 #define BUTTON_LONG_PRESS_MS           3000

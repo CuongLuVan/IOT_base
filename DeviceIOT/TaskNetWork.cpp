@@ -494,14 +494,20 @@ void TaskNetWork::loopNetWork(void) {
     // Process sensor queue data if any
     if (sensorDataQueue != NULL) {
         if(xQueueReceive(sensorDataQueue, &sensorValue, 0) == pdTRUE) {
-            if (netWork_Mqtt.checkStatusMqtt()) {
-              // sendMessageInfo(getInfoDevice(sensorValue,statusDevice));
+            // Kiểm tra cảnh báo đập kính từ FSR402
+            if (sensorValue.glassBreakAlert == 1 && netWork_Mqtt.checkStatusMqtt()) {
+                // Gửi MQTT ngay lập tức khi phát hiện đập kính
+                sendMessageInfo(getInfoDevice(sensorValue, statusDevice));
+                Serial.println("[TaskNetWork] >>> MQTT ALERT: DAP KINH detected! Sent via getInfoDevice()");
+                sensorValue.glassBreakAlert = 0;  // Reset sau khi đã gửi
             }
-            Serial.printf("[TaskNetWork] x1111 Sensor data sent queued: H=%d T=%d PM2.5=%d PM10=%d\n",
+            Serial.printf("[TaskNetWork] x1111 Sensor data sent queued: H=%d T=%d PM2.5=%d PM10=%d FSR=%d GlassBreak=%d\n",
                           sensorValue.valueHumi,
                           sensorValue.valueTemp,
                           sensorValue.valueDust_PM2_5,
-                          sensorValue.valueDust_PM10);
+                          sensorValue.valueDust_PM10,
+                          sensorValue.valueFSR,
+                          sensorValue.glassBreakAlert);
         }
     }
 

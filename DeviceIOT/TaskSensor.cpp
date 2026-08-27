@@ -44,7 +44,11 @@ void TaskSensor::setup(void){
     dataSensor.valueDust_PM1 =0;
 
     dataSensor.valueControl =0;
+    dataSensor.valueFSR = 0;
+    dataSensor.glassBreakAlert = 0;
+
     dht.begin();
+    pinMode(FSR_PIN, INPUT);  // Cấu hình chân FSR402 là input analog
     Serial1.begin(SENSOR_SERIAL_BAUD_RATE);   // GPIO1, GPIO3 (TX/RX pin on ESP-12E Development Board)
         //Configuro la porta Serial2 (tutti i parametri hanno anche un get per effettuare controlli)
 
@@ -101,16 +105,49 @@ void TaskSensor::readSensorHumi(void){
     dataSensor.valueHumi =(int) dht.readHumidity()*100;
 }
 
+// ======== ĐỌC CẢM BIẾN LỰC FSR402 - PHÁT HIỆN ĐẬP KÍNH ========
+static int fsrConfirmCounter = 0;                  // Đếm số lần liên tiếp vượt ngưỡng
+static unsigned long lastGlassBreakAlertTime = 0;  // Thời điểm cảnh báo gần nhất
+
+void TaskSensor::readSensorFSR(void){
+    int fsrValue = analogRead(FSR_PIN);
+    dataSensor.valueFSR = fsrValue;
+
+    unsigned long currentTime = millis();
+
+    // Kiểm tra đã hết thời gian cooldown chưa
+    bool cooldownExpired = (currentTime - lastGlassBreakAlertTime) >= FSR_ALERT_COOLDOWN_MS;
+
+    if (fsrValue >= FSR_GLASS_BREAK_THRESHOLD) {
+        fsrConfirmCounter++;
+        // Xác nhận đập kính: vượt ngưỡng liên tiếp FSR_CONFIRM_COUNT lần + hết cooldown
+        if (fsrConfirmCounter >= FSR_CONFIRM_COUNT && cooldownExpired) {
+            dataSensor.glassBreakAlert = 1;
+            lastGlassBreakAlertTime = currentTime;
+            fsrConfirmCounter = 0;
+            Serial.printf("[FSR402] CANH BAO DAP KINH! Luc = %d (nguong = %d)\n", fsrValue, FSR_GLASS_BREAK_THRESHOLD);
+        }
+    } else {
+        // Lực dưới ngưỡng → reset bộ đếm xác nhận
+        fsrConfirmCounter = 0;
+        // Chỉ reset alert khi lực về thấp (kính không còn bị đập)
+        if (dataSensor.glassBreakAlert == 1 && cooldownExpired) {
+            dataSensor.glassBreakAlert = 0;
+        }
+    }
+}
+
 #if SUPPORT_RTOS
 extern QueueHandle_t sensorDataQueue;
 #endif
 
 using SensorReadFn = void (*)();
-static SensorReadFn readOps[4] = {
+static SensorReadFn readOps[5] = {
     TaskSensor::readSensor,
     TaskSensor::readSensorDust,
     TaskSensor::readSensorTemp,
-    TaskSensor::readSensorHumi
+    TaskSensor::readSensorHumi,
+    TaskSensor::readSensorFSR
 };
 
 
@@ -122,6 +159,8 @@ void updateMemoryStatus(void){
     MemoryData::GetInstance().sensorData_->valueDust_PM10 = dataSensor.valueDust_PM10;
     MemoryData::GetInstance().sensorData_->valueDust_PM1 = dataSensor.valueDust_PM1;
     MemoryData::GetInstance().sensorData_->valueControl = dataSensor.valueControl;
+    MemoryData::GetInstance().sensorData_->valueFSR = dataSensor.valueFSR;
+    MemoryData::GetInstance().sensorData_->glassBreakAlert = dataSensor.glassBreakAlert;
 }
 
 void TaskSensor::taskRun(void * parameter) {
@@ -161,8 +200,8 @@ void TaskSensor::taskRun(void * parameter) {
         }
     #else
         updateMemoryStatus();
-         // Chu kỳ 1 giây / step: 0..3
-        if (sensorReadStep >= 4) {
+         // Chu kỳ 1 giây / step: 0..4
+        if (sensorReadStep >= SENSOR_READ_STEP_COUNT) {
             sensorReadStep = 0;
         }
         readOps[sensorReadStep]();
