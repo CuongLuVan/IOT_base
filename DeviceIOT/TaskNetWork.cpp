@@ -73,6 +73,7 @@ ProcessTimeData processTimeData;
 // External network ping tracking (check once per hour)
 static unsigned long lastExternalPingTime = 0;
 static const unsigned long EXTERNAL_PING_INTERVAL = 3600000UL; // 1 hour
+static unsigned long lastTelemetryPublishMs = 0;
 
 void setupUART(void){
   uart_config_t uart_config = {
@@ -370,6 +371,24 @@ bool checkNetWorkERRORConnect(void){
 unsigned long pressStartTime = 0;
 bool isPressed = false;
 char valueButton = BUTTON_VALUE_DEFAULT;
+bool finalTelemetryPublished = false;
+
+// Publish the latest current/energy record.  This is also used immediately
+// before the long-press action changes the device network mode.
+static bool publishTelemetryNow() {
+  if (!netWork_Mqtt.checkStatusMqtt()) {
+    netWork_Mqtt.MqttReconnect();
+  }
+  if (!netWork_Mqtt.checkStatusMqtt()) return false;
+
+  const String payload = getInfoDevice(sensorValue, statusDevice);
+  char mqttPayload[MQTT_PAYLOAD_SIZE];
+  payload.toCharArray(mqttPayload, sizeof(mqttPayload));
+  netWork_Mqtt.sendMessageInfo(mqttPayload);
+  netWork_Mqtt.lisenMqtt();
+  lastTelemetryPublishMs = millis();
+  return true;
+}
 
 void checkButton(){
   int buttonState = digitalRead(BUTTON_PIN);
@@ -378,6 +397,7 @@ void checkButton(){
     // B?t d?u nh?n
     isPressed = true;
     pressStartTime = millis();
+    finalTelemetryPublished = false;
   }
 
   if (buttonState == LOW && isPressed) {
@@ -394,6 +414,13 @@ void checkButton(){
       valueButton = BUTTON_VALUE_2;
     } else {
       valueButton = BUTTON_VALUE_DEFAULT;
+    }
+
+    // 10 seconds is the requested final-report point.  Publish once while
+    // Wi-Fi/MQTT is still running, rather than after the mode is changed.
+    if (heldTime >= BUTTON_HOLD_TIME_3 && !finalTelemetryPublished) {
+      finalTelemetryPublished = publishTelemetryNow();
+      if (finalTelemetryPublished) delay(MQTT_FINAL_PUBLISH_WAIT_MS);
     }
   }
 
@@ -519,10 +546,15 @@ void TaskNetWork::loopNetWork(void) {
                           statusDevice.count_info);
         }
     }
+
 #else
     // Non-RTOS mode: use simple flags for latest data
    // MemoryData::GetInstance().sensorData_=(&dataSensor);
 #endif
+    // The timer runs independently of device-status changes.
+    if (millis() - lastTelemetryPublishMs >= MQTT_TELEMETRY_INTERVAL_MS) {
+        publishTelemetryNow();
+    }
     DEVICE_LOG_INFO("end TaskNetWork::loopNetWork");
 }
 

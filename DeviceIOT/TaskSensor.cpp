@@ -33,6 +33,7 @@ static SemaphoreHandle_t sensorDataMutex = NULL;
 #endif
 
 static uint8_t sensorReadStep = 0; // 0..3 read schedule
+static unsigned long lastEnergyUpdateMs = 0;
 
 void TaskSensor::setup(void){
     DEVICE_LOG_INFO("start TaskSensor::setup");
@@ -44,6 +45,10 @@ void TaskSensor::setup(void){
     dataSensor.valueDust_PM1 =0;
 
     dataSensor.valueControl =0;
+    dataSensor.valueCurrentAmpere = 0.0f;
+    dataSensor.valueEnergyWh = 0.0f;
+    analogReadResolution(12);
+    analogSetPinAttenuation(WCS1800_CURRENT_PIN, ADC_11db);
     dht.begin();
     Serial1.begin(SENSOR_SERIAL_BAUD_RATE);   // GPIO1, GPIO3 (TX/RX pin on ESP-12E Development Board)
         //Configuro la porta Serial2 (tutti i parametri hanno anche un get per effettuare controlli)
@@ -101,6 +106,34 @@ void TaskSensor::readSensorHumi(void){
     dataSensor.valueHumi =(int) dht.readHumidity()*100;
 }
 
+void TaskSensor::readSensorCurrent(void){
+    // RMS is calculated around the measured midpoint, so sensor offset drift
+    // (nominally VCC/2) does not become a false AC current reading.
+    double sum = 0.0;
+    double sumSquares = 0.0;
+    for (uint16_t i = 0; i < WCS1800_SAMPLE_COUNT; ++i) {
+        const uint16_t sample = analogRead(WCS1800_CURRENT_PIN);
+        sum += sample;
+        sumSquares += (double)sample * sample;
+        delayMicroseconds(WCS1800_SAMPLE_DELAY_US);
+    }
+
+    const double mean = sum / WCS1800_SAMPLE_COUNT;
+    double variance = (sumSquares / WCS1800_SAMPLE_COUNT) - (mean * mean);
+    if (variance < 0.0) variance = 0.0; // protect against floating-point rounding
+    const float sensorRmsVolt = sqrt(variance) * WCS1800_ADC_REFERENCE_VOLT / WCS1800_ADC_MAX;
+    float currentAmpere = sensorRmsVolt / WCS1800_SENSITIVITY_V_PER_A;
+    if (currentAmpere < WCS1800_NOISE_FLOOR_A) currentAmpere = 0.0f;
+    dataSensor.valueCurrentAmpere = currentAmpere;
+
+    const unsigned long now = millis();
+    if (lastEnergyUpdateMs != 0) {
+        const float powerW = currentAmpere * WCS1800_MAINS_VOLTAGE * WCS1800_POWER_FACTOR;
+        dataSensor.valueEnergyWh += powerW * (now - lastEnergyUpdateMs) / 3600000.0f;
+    }
+    lastEnergyUpdateMs = now;
+}
+
 #if SUPPORT_RTOS
 extern QueueHandle_t sensorDataQueue;
 #endif
@@ -122,6 +155,8 @@ void updateMemoryStatus(void){
     MemoryData::GetInstance().sensorData_->valueDust_PM10 = dataSensor.valueDust_PM10;
     MemoryData::GetInstance().sensorData_->valueDust_PM1 = dataSensor.valueDust_PM1;
     MemoryData::GetInstance().sensorData_->valueControl = dataSensor.valueControl;
+    MemoryData::GetInstance().sensorData_->valueCurrentAmpere = dataSensor.valueCurrentAmpere;
+    MemoryData::GetInstance().sensorData_->valueEnergyWh = dataSensor.valueEnergyWh;
 }
 
 void TaskSensor::taskRun(void * parameter) {
@@ -130,6 +165,8 @@ void TaskSensor::taskRun(void * parameter) {
     #if SUPPORT_RTOS
         for(;;)
         {
+            // Current is measured every second so accumulated energy is continuous.
+            readSensorCurrent();
             // Chu kỳ 1 giây / step: 0..3
             if (sensorReadStep >= SENSOR_READ_STEP_COUNT) {
                 sensorReadStep = 0;
@@ -160,6 +197,7 @@ void TaskSensor::taskRun(void * parameter) {
             sensorReadStep++;
         }
     #else
+        readSensorCurrent();
         updateMemoryStatus();
          // Chu kỳ 1 giây / step: 0..3
         if (sensorReadStep >= 4) {

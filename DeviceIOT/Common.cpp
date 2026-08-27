@@ -10,9 +10,10 @@ String getInfoDevice(InfoSensor sensorValue, InfoDeviceControl statusDevice)
 {
     jsonBufferData.clear();
     jsonBufferData["se"] = DEVICE_SERVICE_ID;
-    String vaString =  String(sensorValue.valueHumi) + "," + String(sensorValue.valueTemp) + "," + String(sensorValue.valueDust) + "," + String(sensorValue.valueDust_PM2_5) + "," + String(sensorValue.valueDust_PM10) + "," + String(sensorValue.valueDust_PM1) + "," + String(sensorValue.valueControl);
     String coString =  String(statusDevice.device_port) + "," + String(statusDevice.button_click) + "," + String(statusDevice.button_status) + "," + String(statusDevice.count_info);
-    jsonBufferData["va"] = vaString;
+    JsonObject va = jsonBufferData.createNestedObject("va");
+    va["cu"] = sensorValue.valueCurrentAmpere;
+    va["wo"] = sensorValue.valueEnergyWh;
     jsonBufferData["co"] = coString;
     String response;
     serializeJson(jsonBufferData, response);

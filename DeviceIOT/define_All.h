@@ -35,6 +35,8 @@
 #define MQTT_COMMAND_DOC_SIZE          128
 #define MQTT_PUBLISH_QOS               1
 #define MQTT_RECONNECT_DELAY_MS        5000
+#define MQTT_TELEMETRY_INTERVAL_MS     600000UL // publish sensor data every 10 minutes
+#define MQTT_FINAL_PUBLISH_WAIT_MS     150UL    // allow Wi-Fi stack to flush before mode change
 
 #define WIFI_HTTP_PORT                 80
 #define WIFI_WEB_RESPONSE_DELAY_MS     2000
@@ -57,6 +59,18 @@
 #define SENSOR_SERIAL_BAUD_RATE        9600
 #define SENSOR_QUEUE_SEND_DELAY_MS     100
 #define SENSOR_MUTEX_WAIT_MS           10
+
+// WCS1800 35 A current sensor (AC RMS measurement).
+// Connect OUT to an ADC1 pin; GPIO35 is input-only and works while Wi-Fi is active.
+#define WCS1800_CURRENT_PIN            35
+#define WCS1800_ADC_MAX                4095.0f
+#define WCS1800_ADC_REFERENCE_VOLT     3.30f
+#define WCS1800_SENSITIVITY_V_PER_A    0.066f  // calibrate against a known load
+#define WCS1800_SAMPLE_COUNT           600
+#define WCS1800_SAMPLE_DELAY_US        100
+#define WCS1800_NOISE_FLOOR_A          0.08f
+#define WCS1800_MAINS_VOLTAGE          220.0f  // set to the installation voltage
+#define WCS1800_POWER_FACTOR           1.00f   // set actual load PF for better energy accuracy
 
 #define BUTTON_DEBOUNCE_MS             50
 #define BUTTON_LONG_PRESS_MS           3000
