@@ -10,6 +10,8 @@ struct InfoSensor {
     int valueDust_PM10;
     int valueDust_PM1;
     int valueControl;
+    int valueTempK;              // K-type thermocouple temperature, 0.01 degree C
+    uint8_t isTempKValid;        // 1 when MAX6675 has a connected thermocouple
 };
 
 struct InfoDeviceControl {

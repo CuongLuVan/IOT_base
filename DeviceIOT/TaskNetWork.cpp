@@ -25,6 +25,9 @@ NetWork_RF netWork_RF;
 InfoSensor sensorValue;
 InfoDeviceControl statusDevice;
 String lastLoraPayload;
+static bool hasPublishedKTypeTemperature = false;
+static int lastPublishedKTypeTemperature = 0;
+static unsigned long lastKTypePublishTime = 0;
 #if SUPPORT_RTOS
 QueueHandle_t sensorDataQueue = NULL;
 QueueHandle_t deviceStatusQueue = NULL;
@@ -440,6 +443,40 @@ void sendMessageInfo(String data){
    netWork_Mqtt.sendMessageInfo(p);
 }
 
+static unsigned long kTypePublishIntervalMs(int currentTemperature) {
+  long delta = labs(static_cast<long>(currentTemperature) -
+                    static_cast<long>(lastPublishedKTypeTemperature));
+  if (delta > KTYPE_DELTA_HIGH_CENTI_C) {
+    return KTYPE_PUBLISH_RAPID_MS;
+  }
+  if (delta > KTYPE_DELTA_LOW_CENTI_C) {
+    return KTYPE_PUBLISH_NORMAL_MS;
+  }
+  return KTYPE_PUBLISH_STABLE_MS;
+}
+
+static void publishKTypeTemperatureIfDue() {
+  if (!sensorValue.isTempKValid || !netWork_Mqtt.checkStatusMqtt()) {
+    return;
+  }
+
+  const unsigned long now = millis();
+  const unsigned long interval = hasPublishedKTypeTemperature
+      ? kTypePublishIntervalMs(sensorValue.valueTempK) : 0UL;
+  if (hasPublishedKTypeTemperature && (unsigned long)(now - lastKTypePublishTime) < interval) {
+    return;
+  }
+
+  char payload[160];
+  snprintf(payload, sizeof(payload),
+           "{\"se\":%d,\"sensor\":\"max6675\",\"temperature_c\":%.2f,\"temperature_centi_c\":%d}",
+           DEVICE_SERVICE_ID, sensorValue.valueTempK / 100.0f, sensorValue.valueTempK);
+  netWork_Mqtt.sendMessageInfo(payload);
+  lastPublishedKTypeTemperature = sensorValue.valueTempK;
+  lastKTypePublishTime = now;
+  hasPublishedKTypeTemperature = true;
+}
+
 
 void TaskNetWork::loopNetWork(void) {
   DEVICE_LOG_INFO("start TaskNetWork::loopNetWork"+ String(modeStatus));
@@ -523,6 +560,7 @@ void TaskNetWork::loopNetWork(void) {
     // Non-RTOS mode: use simple flags for latest data
    // MemoryData::GetInstance().sensorData_=(&dataSensor);
 #endif
+    publishKTypeTemperatureIfDue();
     DEVICE_LOG_INFO("end TaskNetWork::loopNetWork");
 }
 

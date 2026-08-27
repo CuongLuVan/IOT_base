@@ -52,6 +52,23 @@
 
 #define DHT_PIN                        12
 #define DHT_TYPE                       DHT11
+#
+// MAX6675 + thermocouple K (WRNK-184) wiring.
+// SO/DO -> MAX6675_SO_PIN, CS -> MAX6675_CS_PIN, SCK -> MAX6675_SCK_PIN.
+// Change these three pins to match the PCB wiring. MAX6675 accepts 3.3 V logic.
+#define MAX6675_SCK_PIN                18
+#define MAX6675_CS_PIN                 5
+#define MAX6675_SO_PIN                 19
+#define MAX6675_READ_INTERVAL_MS       1000UL
+
+// Publish policy for K-type temperature. All temperature deltas are in 0.01 C.
+// delta <= 1 C: 10 min; 1 C < delta <= 20 C: 1 min; delta > 20 C: 5 s.
+#define KTYPE_DELTA_LOW_CENTI_C        100L
+#define KTYPE_DELTA_HIGH_CENTI_C       2000L
+#define KTYPE_PUBLISH_STABLE_MS        600000UL
+#define KTYPE_PUBLISH_NORMAL_MS        60000UL
+#define KTYPE_PUBLISH_RAPID_MS         5000UL
+
 #define SENSOR_TASK_INTERVAL_MS        1000
 #define SENSOR_READ_STEP_COUNT         4
 #define SENSOR_SERIAL_BAUD_RATE        9600

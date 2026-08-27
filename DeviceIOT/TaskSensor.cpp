@@ -42,8 +42,16 @@ void TaskSensor::setup(void){
     dataSensor.valueDust_PM2_5 =0;
     dataSensor.valueDust_PM10 =0;
     dataSensor.valueDust_PM1 =0;
-
     dataSensor.valueControl =0;
+    dataSensor.valueTempK = 0;
+    dataSensor.isTempKValid = 0;
+
+    pinMode(MAX6675_CS_PIN, OUTPUT);
+    pinMode(MAX6675_SCK_PIN, OUTPUT);
+    pinMode(MAX6675_SO_PIN, INPUT);
+    digitalWrite(MAX6675_CS_PIN, HIGH);
+    digitalWrite(MAX6675_SCK_PIN, LOW);
+
     dht.begin();
     Serial1.begin(SENSOR_SERIAL_BAUD_RATE);   // GPIO1, GPIO3 (TX/RX pin on ESP-12E Development Board)
         //Configuro la porta Serial2 (tutti i parametri hanno anche un get per effettuare controlli)
@@ -101,6 +109,32 @@ void TaskSensor::readSensorHumi(void){
     dataSensor.valueHumi =(int) dht.readHumidity()*100;
 }
 
+void TaskSensor::readSensorKType(void){
+    // MAX6675 returns a 16-bit frame. Bits 14..3 contain temperature in 0.25 C;
+    // bit 2 is set when the thermocouple is open/not connected.
+    uint16_t raw = 0;
+    digitalWrite(MAX6675_CS_PIN, LOW);
+    delayMicroseconds(1);
+    for (uint8_t bit = 0; bit < 16; ++bit) {
+        digitalWrite(MAX6675_SCK_PIN, HIGH);
+        delayMicroseconds(1);
+        raw = (raw << 1) | (digitalRead(MAX6675_SO_PIN) ? 1 : 0);
+        digitalWrite(MAX6675_SCK_PIN, LOW);
+        delayMicroseconds(1);
+    }
+    digitalWrite(MAX6675_CS_PIN, HIGH);
+
+    if ((raw & 0x0004U) != 0U) {
+        dataSensor.isTempKValid = 0;
+        DEVICE_LOG_INFO("MAX6675: thermocouple disconnected");
+        return;
+    }
+
+    // 0.25 C = 25 centi-degrees C, so retain two decimal places without float.
+    dataSensor.valueTempK = static_cast<int>((raw >> 3) * 25L);
+    dataSensor.isTempKValid = 1;
+}
+
 #if SUPPORT_RTOS
 extern QueueHandle_t sensorDataQueue;
 #endif
@@ -122,6 +156,8 @@ void updateMemoryStatus(void){
     MemoryData::GetInstance().sensorData_->valueDust_PM10 = dataSensor.valueDust_PM10;
     MemoryData::GetInstance().sensorData_->valueDust_PM1 = dataSensor.valueDust_PM1;
     MemoryData::GetInstance().sensorData_->valueControl = dataSensor.valueControl;
+    MemoryData::GetInstance().sensorData_->valueTempK = dataSensor.valueTempK;
+    MemoryData::GetInstance().sensorData_->isTempKValid = dataSensor.isTempKValid;
 }
 
 void TaskSensor::taskRun(void * parameter) {
@@ -136,6 +172,7 @@ void TaskSensor::taskRun(void * parameter) {
             }
             if (sensorDataMutex != NULL) {
                 if (xSemaphoreTake(sensorDataMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+                    readSensorKType();
                     readOps[sensorReadStep]();
                     xSemaphoreGive(sensorDataMutex);
                 }
@@ -162,11 +199,12 @@ void TaskSensor::taskRun(void * parameter) {
     #else
         updateMemoryStatus();
          // Chu kỳ 1 giây / step: 0..3
-        if (sensorReadStep >= 4) {
-            sensorReadStep = 0;
-        }
+            if (sensorReadStep >= 4) {
+                sensorReadStep = 0;
+            }
+        readSensorKType();
         readOps[sensorReadStep]();
-        
+        updateMemoryStatus();
         delay(SENSOR_TASK_INTERVAL_MS);
         sensorReadStep++;
     #endif
