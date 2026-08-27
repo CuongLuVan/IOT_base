@@ -44,6 +44,9 @@ void TaskSensor::setup(void){
     dataSensor.valueDust_PM1 =0;
 
     dataSensor.valueControl =0;
+    dataSensor.valuePressureKPa = 0.0f;
+    analogReadResolution(12);
+    analogSetPinAttenuation(PRESSURE_SENSOR_PIN, ADC_11db);
     dht.begin();
     Serial1.begin(SENSOR_SERIAL_BAUD_RATE);   // GPIO1, GPIO3 (TX/RX pin on ESP-12E Development Board)
         //Configuro la porta Serial2 (tutti i parametri hanno anche un get per effettuare controlli)
@@ -101,6 +104,23 @@ void TaskSensor::readSensorHumi(void){
     dataSensor.valueHumi =(int) dht.readHumidity()*100;
 }
 
+void TaskSensor::readSensorPressure(void){
+    uint32_t total = 0;
+    for (uint8_t i = 0; i < PRESSURE_SENSOR_SAMPLES; ++i) {
+        total += analogRead(PRESSURE_SENSOR_PIN);
+    }
+    const float raw = (float)total / PRESSURE_SENSOR_SAMPLES;
+    const float voltage = raw * PRESSURE_ADC_REFERENCE_VOLT / PRESSURE_ADC_MAX;
+    const float span = PRESSURE_SENSOR_FULL_VOLT - PRESSURE_SENSOR_ZERO_VOLT;
+    float pressure = span > 0.0f
+        ? (voltage - PRESSURE_SENSOR_ZERO_VOLT) * PRESSURE_SENSOR_FULL_SCALE_KPA / span
+        : 0.0f;
+    // Clamp invalid readings so a disconnected/over-range input cannot publish nonsense.
+    if (pressure < 0.0f) pressure = 0.0f;
+    if (pressure > PRESSURE_SENSOR_FULL_SCALE_KPA) pressure = PRESSURE_SENSOR_FULL_SCALE_KPA;
+    dataSensor.valuePressureKPa = pressure;
+}
+
 #if SUPPORT_RTOS
 extern QueueHandle_t sensorDataQueue;
 #endif
@@ -122,6 +142,7 @@ void updateMemoryStatus(void){
     MemoryData::GetInstance().sensorData_->valueDust_PM10 = dataSensor.valueDust_PM10;
     MemoryData::GetInstance().sensorData_->valueDust_PM1 = dataSensor.valueDust_PM1;
     MemoryData::GetInstance().sensorData_->valueControl = dataSensor.valueControl;
+    MemoryData::GetInstance().sensorData_->valuePressureKPa = dataSensor.valuePressureKPa;
 }
 
 void TaskSensor::taskRun(void * parameter) {
@@ -130,6 +151,8 @@ void TaskSensor::taskRun(void * parameter) {
     #if SUPPORT_RTOS
         for(;;)
         {
+            // Pressure must be sampled every second; it drives the adaptive report rate.
+            readSensorPressure();
             // Chu kỳ 1 giây / step: 0..3
             if (sensorReadStep >= SENSOR_READ_STEP_COUNT) {
                 sensorReadStep = 0;
@@ -160,6 +183,7 @@ void TaskSensor::taskRun(void * parameter) {
             sensorReadStep++;
         }
     #else
+        readSensorPressure();
         updateMemoryStatus();
          // Chu kỳ 1 giây / step: 0..3
         if (sensorReadStep >= 4) {

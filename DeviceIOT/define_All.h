@@ -5,6 +5,41 @@
 #define SUPPORT_LORA 0
 #define SUPPORT_MQTT 1
 
+// Pressure sensor G1/4, 0..1.2 MPa.  Set SUPPORT_LORA to 1 to use LoRa.
+// LORA_ROLE_GATEWAY=1: this unit publishes its own and remote-node values to MQTT.
+// LORA_ROLE_GATEWAY=0: this unit is a LoRa pressure node (its id must be > 1).
+#define PRESSURE_SENSOR_PIN             34
+#define PRESSURE_ADC_MAX                4095.0f
+#define PRESSURE_ADC_REFERENCE_VOLT     3.30f
+// Voltage at the ESP32 ADC after any external divider. Typical 0.5..4.5 V
+// transmitters need a divider before connecting to an ESP32 ADC pin.
+#define PRESSURE_SENSOR_ZERO_VOLT       0.50f
+#define PRESSURE_SENSOR_FULL_VOLT       3.00f
+#define PRESSURE_SENSOR_FULL_SCALE_KPA  1200.0f
+#define PRESSURE_SENSOR_SAMPLES         8
+
+// A pressure difference is compared with the last published sample.
+#define PRESSURE_STABLE_DELTA_KPA       1.0f
+#define PRESSURE_SMALL_DELTA_KPA        5.0f
+#define PRESSURE_REPORT_STABLE_MS       600000UL // 10 minutes
+#define PRESSURE_REPORT_SMALL_MS        60000UL  // 1 minute
+#define PRESSURE_REPORT_LARGE_MS        10000UL  // 10 seconds
+
+// LoRa network settings. All nodes must share radio settings and network id.
+#define LORA_ROLE_GATEWAY               1
+#define LORA_NODE_ID                    1       // gateway/master is always 1
+#define LORA_NETWORK_ID                 0x31
+#define LORA_FREQUENCY                  915E6L  // change to legal local band, e.g. 433E6/868E6
+#define LORA_CS_PIN                     5
+#define LORA_RESET_PIN                  27
+#define LORA_IRQ_PIN                    26
+#define LORA_SLOT_LENGTH_MS             750UL
+#define LORA_SLOT_COUNT                 32
+#define LORA_RANDOM_BACKOFF_MS          300UL
+#define LORA_ACK_TIMEOUT_MS             250UL
+#define LORA_MAX_RETRIES                4
+#define LORA_REMOTE_NODE_CAPACITY       24
+
 // 0 = use standard WiFiClient
 // 1 = use WiFiClientSecure for TLS-capable MQTT connections
 #define MQTT_NO_TLS 1
@@ -31,7 +66,7 @@
 // Identifier of the service type supported by this firmware/application.
 #define DEVICE_SERVICE_ID              2
 
-#define MQTT_JSON_DOC_SIZE             512
+#define MQTT_JSON_DOC_SIZE             1024
 #define MQTT_COMMAND_DOC_SIZE          128
 #define MQTT_PUBLISH_QOS               1
 #define MQTT_RECONNECT_DELAY_MS        5000
@@ -81,7 +116,7 @@
 #define NETWORK_POLL_INTERVAL_MS       500
 
 #define LORA_BUFFER_SIZE               255
-#define MQTT_PAYLOAD_SIZE              512
+#define MQTT_PAYLOAD_SIZE              1024
 #define SENSOR_PAYLOAD_SIZE            256
 #define DEVICE_PAYLOAD_SIZE            256
 

@@ -41,9 +41,7 @@ struct SYSCFG {
 extern QueueHandle_t deviceCommandQueue;
 
 void sendMessageInfoPublish(String data){
-  char *p = new char[data.length() + 1];
-  strcpy(p, data.c_str());
-  if (MqttClient.publish(Settings.public_topic, p, 1)) {
+  if (MqttClient.publish(Settings.public_topic, data.c_str(), 1)) {
       
   }
    
@@ -134,6 +132,7 @@ void NetWork_Mqtt::setupInfoMQTT()
     }
 #endif
     MqttClient.setServer(Settings.mqtt_host, Settings.mqtt_port);
+    MqttClient.setBufferSize(MQTT_PAYLOAD_SIZE);
     MqttClient.setCallback(MqttDataCallback);
     //if (MqttClient.connect(Settings.mqtt_client, Settings.mqtt_user, Settings.mqtt_pwd, Settings.subcribe_topic, 1, true, "")) {
 
@@ -178,7 +177,7 @@ void NetWork_Mqtt::connectMqtt(){
 unsigned char  NetWork_Mqtt::checkStatusMqtt(){
   return (MqttClient.connected() ? 1 : 0);
 }
-void NetWork_Mqtt::sendMessageInfo(char * data){
+void NetWork_Mqtt::sendMessageInfo(const char * data){
   DEVICE_LOG_INFO("start NetWork_Mqtt::sendMessageInfo"+ String(data));
   if (MqttClient.publish(Settings.public_topic, data, 1)) {
       
