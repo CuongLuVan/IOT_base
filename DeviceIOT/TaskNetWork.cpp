@@ -18,7 +18,6 @@
 #include "DebugInfo.h"
 #include "MemoryData.h"
 #include <ArduinoJson.h>
-#include <esp_system.h>
 
 
 NetWork_Wifi netWork_Wifi;
@@ -41,13 +40,6 @@ struct RemotePressureNode {
 static RemotePressureNode remotePressureNodes[LORA_REMOTE_NODE_CAPACITY] = {};
 static float lastPublishedPressureKPa = -1.0f;
 static unsigned long lastPressurePublishMs = 0;
-static uint16_t loraSequence = 0;
-static uint16_t pendingSequence = 0;
-static uint8_t pendingRetries = 0;
-static bool waitingForLoraAck = false;
-static unsigned long loraAckDeadlineMs = 0;
-static unsigned long nextLoraAttemptMs = 0;
-static unsigned long lastLoraTransmitSlot = 0xFFFFFFFFUL;
 #if SUPPORT_RTOS
 QueueHandle_t sensorDataQueue = NULL;
 QueueHandle_t deviceStatusQueue = NULL;
@@ -205,8 +197,7 @@ void TaskNetWork::setup(void){
         processTimeData.state=0;
         processTimeData.numberCheck=0;
         setupUART();
-#if SUPPORT_LORA
-        randomSeed((uint32_t)esp_random());
+#if LORA_ROLE_GATEWAY
         if (!netWork_RF.begin(LORA_FREQUENCY, LORA_CS_PIN, LORA_RESET_PIN, LORA_IRQ_PIN)) {
             Serial.println("[TaskNetWork] LoRa init failed");
         } else {
@@ -494,17 +485,15 @@ static void publishPressureReport() {
 }
 
 static void reportMasterPressureIfDue() {
-#if LORA_ROLE_GATEWAY
   const unsigned long now = millis();
   if (lastPressurePublishMs == 0 || now - lastPressurePublishMs >= pressureReportInterval(sensorValue.valuePressureKPa)) {
     publishPressureReport();
     lastPublishedPressureKPa = sensorValue.valuePressureKPa;
     lastPressurePublishMs = now;
   }
-#endif
 }
 
-#if SUPPORT_LORA
+#if LORA_ROLE_GATEWAY
 static RemotePressureNode *findRemoteNode(uint16_t id) {
   for (uint8_t i = 0; i < LORA_REMOTE_NODE_CAPACITY; ++i) {
     if (remotePressureNodes[i].used && remotePressureNodes[i].id == id) return &remotePressureNodes[i];
@@ -519,12 +508,6 @@ static RemotePressureNode *findRemoteNode(uint16_t id) {
   return NULL; // bounded table: never overwrite another live device silently
 }
 
-static void sendLoraAck(uint16_t nodeId, uint16_t sequence) {
-  char ack[32];
-  snprintf(ack, sizeof(ack), "A,%u,%u,%u", LORA_NETWORK_ID, nodeId, sequence);
-  netWork_RF.sendData(String(ack));
-}
-
 static void processLoraPacket() {
   uint8_t raw[LORA_BUFFER_SIZE];
   size_t len = 0;
@@ -532,92 +515,48 @@ static void processLoraPacket() {
   raw[len] = '\0';
   lastLoraPayload = String((char *)raw);
 
-  char type = 0;
-  unsigned network = 0, node = 0, sequence = 0;
-  long pressureDeciKPa = 0;
-  if (sscanf((char *)raw, "%c,%u,%u,%u,%ld", &type, &network, &node, &sequence, &pressureDeciKPa) >= 4 && network == LORA_NETWORK_ID) {
-    if (type == 'A' && node == LORA_NODE_ID && sequence == pendingSequence) {
-      waitingForLoraAck = false;
-      pendingRetries = 0;
-      return;
-    }
-#if LORA_ROLE_GATEWAY
-    if (type == 'P' && node > 1 && pressureDeciKPa >= 0 && pressureDeciKPa <= (long)(PRESSURE_SENSOR_FULL_SCALE_KPA * 10.0f)) {
-      RemotePressureNode *remote = findRemoteNode((uint16_t)node);
-      // ACK every valid packet, including a retry. The duplicate is not published again.
-      sendLoraAck((uint16_t)node, (uint16_t)sequence);
-      if (remote != NULL && (remote->lastSequence != (uint16_t)sequence || remote->lastSeenMs == 0)) {
-        remote->lastSequence = (uint16_t)sequence;
-        remote->pressureKPa = pressureDeciKPa / 10.0f;
-        remote->lastSeenMs = millis();
-        publishPressureReport();
-      }
-    }
-#endif
-  }
-}
+  // Slave payload contract: {"id":2,"val":532.4}
+  // `seq` is optional. If slaves implement ACK/retry, add a monotonically
+  // increasing `seq` field; old JSON without it remains fully supported.
+  StaticJsonDocument<128> slaveJson;
+  if (deserializeJson(slaveJson, reinterpret_cast<const char *>(raw), len)) return;
+  const uint16_t nodeId = slaveJson["id"] | 0;
+  if (nodeId <= 1 || !slaveJson.containsKey("val")) return;
+  const float pressureKPa = slaveJson["val"].as<float>();
+  if (pressureKPa < 0.0f || pressureKPa > PRESSURE_SENSOR_FULL_SCALE_KPA) return;
 
-static bool isOwnLoraSlot() {
-  const unsigned long slot = (millis() / LORA_SLOT_LENGTH_MS) % LORA_SLOT_COUNT;
-  return slot == (LORA_NODE_ID % LORA_SLOT_COUNT);
-}
-
-static unsigned long currentLoraSlot() {
-  return millis() / LORA_SLOT_LENGTH_MS;
-}
-
-static void sendNodePressure(bool newSequence) {
-  char packet[48];
-  if (newSequence) {
-    ++loraSequence;
-    pendingSequence = loraSequence;
+  RemotePressureNode *remote = findRemoteNode(nodeId);
+  if (remote == NULL) return;
+  const bool hasSequence = slaveJson.containsKey("seq");
+  const uint16_t sequence = slaveJson["seq"] | 0;
+  const bool isNewPacket = !hasSequence || remote->lastSeenMs == 0 || remote->lastSequence != sequence;
+  if (isNewPacket) {
+    remote->lastSequence = sequence;
+    remote->pressureKPa = pressureKPa;
+    publishPressureReport();
   }
-  const long deciKPa = lroundf(sensorValue.valuePressureKPa * 10.0f);
-  snprintf(packet, sizeof(packet), "P,%u,%u,%u,%ld", LORA_NETWORK_ID, LORA_NODE_ID, pendingSequence, deciKPa);
-  netWork_RF.sendData(String(packet));
-  lastLoraTransmitSlot = currentLoraSlot();
-  waitingForLoraAck = true;
-  loraAckDeadlineMs = millis() + LORA_ACK_TIMEOUT_MS;
-}
+  remote->lastSeenMs = millis();
 
-static void reportNodePressureIfDue() {
-#if !LORA_ROLE_GATEWAY
-  const unsigned long now = millis();
-  const bool due = lastPressurePublishMs == 0 ||
-      now - lastPressurePublishMs >= pressureReportInterval(sensorValue.valuePressureKPa);
-  if (waitingForLoraAck && now - loraAckDeadlineMs < 0x80000000UL) {
-    if (++pendingRetries > LORA_MAX_RETRIES) {
-      waitingForLoraAck = false; // next reporting cycle will use a new sequence
-      pendingRetries = 0;
-    } else if (isOwnLoraSlot() && currentLoraSlot() != lastLoraTransmitSlot) {
-      sendNodePressure(false);
-    }
+  // Optional ACK lets a slave using seq retry safely without duplicate MQTT data.
+  if (hasSequence) {
+    StaticJsonDocument<64> ackJson;
+    ackJson["ack"] = nodeId;
+    ackJson["seq"] = sequence;
+    char ack[64];
+    serializeJson(ackJson, ack, sizeof(ack));
+    netWork_RF.sendData(String(ack));
   }
-  if (!waitingForLoraAck && due && isOwnLoraSlot()) {
-    if (nextLoraAttemptMs == 0) {
-      // The small randomized delay makes node-id slot collisions recoverable.
-      nextLoraAttemptMs = now + random(1, LORA_RANDOM_BACKOFF_MS + 1);
-    } else if (now >= nextLoraAttemptMs && currentLoraSlot() != lastLoraTransmitSlot) {
-      sendNodePressure(true);
-      lastPublishedPressureKPa = sensorValue.valuePressureKPa;
-      lastPressurePublishMs = now;
-      nextLoraAttemptMs = 0;
-    }
-  } else if (!isOwnLoraSlot()) {
-    // Never transmit after the allocated slot has passed.
-    nextLoraAttemptMs = 0;
-  }
-#endif
 }
 #endif
 
 
 void TaskNetWork::loopNetWork(void) {
-  DEVICE_LOG_INFO("start TaskNetWork::loopNetWork"+ String(modeStatus));
+#if LORA_ROLE_GATEWAY
+  // Handle radio first: MQTT/Wi-Fi work must never delay packet reception.
+  processLoraPacket();
+#endif
   if(WIFI_START_CONNECT==modeStatus){
       // check wifi netWor
-        DEVICE_LOG_INFO("check wifi netWork compaireTimeInfo(processTimeData.timeStart)"+ String(compaireTimeInfo(processTimeData.timeStart)));
-        DEVICE_LOG_INFO("check wifi netWork processTimeData.state"+ String(processTimeData.state));
         
         if(compaireTimeInfo(processTimeData.timeStart)>NETWORK_POLL_INTERVAL_MS){
           arrayNetworkFunction[processTimeData.state]();
@@ -644,11 +583,9 @@ void TaskNetWork::loopNetWork(void) {
       netWork_Wifi.loopHostPost();
     }
     checkButton();  
-#if SUPPORT_LORA
-    processLoraPacket();
-    reportNodePressureIfDue();
-#endif
+#if !LORA_ROLE_GATEWAY
      updateStatusUART();
+#endif
 #if SUPPORT_RTOS
     // Process sensor queue data if any
     if (sensorDataQueue != NULL) {
@@ -680,7 +617,6 @@ void TaskNetWork::loopNetWork(void) {
     // Non-RTOS mode: use simple flags for latest data
    // MemoryData::GetInstance().sensorData_=(&dataSensor);
 #endif
-    DEVICE_LOG_INFO("end TaskNetWork::loopNetWork");
 }
 
 void TaskNetWork::taskRun(void * parameter) {
@@ -692,9 +628,12 @@ void TaskNetWork::taskRun(void * parameter) {
       for(;;) {
           loopNetWork();
           getRTCInfo();
-          // Fast LoRa polling is needed for the short ACK window; sensor sampling
-          // itself remains at SENSOR_TASK_INTERVAL_MS in TaskSensor.
+          // Radio gateway polls every RTOS tick; sensor sampling stays at 1 second.
+#if LORA_ROLE_GATEWAY
+          vTaskDelay(LORA_GATEWAY_TASK_DELAY_MS / portTICK_PERIOD_MS);
+#else
           vTaskDelay(50 / portTICK_PERIOD_MS);
+#endif
       }
     #else
       // In non-RTOS mode, this function is called from loop() and should not block.

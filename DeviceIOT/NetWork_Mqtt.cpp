@@ -194,9 +194,7 @@ void NetWork_Mqtt::MqttSubscribe(char *topic)
 }
 
 void NetWork_Mqtt::lisenMqtt(){
-  DEVICE_LOG_INFO("start NetWork_Mqtt::lisenMqtt");
   MqttClient.loop(); 
-  DEVICE_LOG_INFO("end NetWork_Mqtt::lisenMqtt");
 }
 
 void NetWork_Mqtt::MqttReconnect()

@@ -2,12 +2,11 @@
 
 #define MODE_WIFI_ADRESS          1
 #define SUPPORT_RTOS true
-#define SUPPORT_LORA 0
 #define SUPPORT_MQTT 1
 
-// Pressure sensor G1/4, 0..1.2 MPa.  Set SUPPORT_LORA to 1 to use LoRa.
-// LORA_ROLE_GATEWAY=1: this unit publishes its own and remote-node values to MQTT.
-// LORA_ROLE_GATEWAY=0: this unit is a LoRa pressure node (its id must be > 1).
+// Pressure sensor G1/4, 0..1.2 MPa.
+// This firmware is the LoRa master/gateway. It publishes its own value (id=1)
+// and the JSON values received from slave nodes (id > 1) to MQTT.
 #define PRESSURE_SENSOR_PIN             34
 #define PRESSURE_ADC_MAX                4095.0f
 #define PRESSURE_ADC_REFERENCE_VOLT     3.30f
@@ -26,8 +25,8 @@
 #define PRESSURE_REPORT_LARGE_MS        10000UL  // 10 seconds
 
 // LoRa network settings. All nodes must share radio settings and network id.
-#define LORA_ROLE_GATEWAY               1
 #define LORA_NODE_ID                    1       // gateway/master is always 1
+#define LORA_ROLE_GATEWAY                0       // 0: compile LoRa gateway out, 1: enable gateway
 #define LORA_NETWORK_ID                 0x31
 #define LORA_FREQUENCY                  915E6L  // change to legal local band, e.g. 433E6/868E6
 #define LORA_CS_PIN                     5
@@ -39,6 +38,12 @@
 #define LORA_ACK_TIMEOUT_MS             250UL
 #define LORA_MAX_RETRIES                4
 #define LORA_REMOTE_NODE_CAPACITY       24
+// Faster LoRa settings reduce radio range and must comply with local rules.
+#define LORA_SPREADING_FACTOR           7
+#define LORA_SIGNAL_BANDWIDTH           500E3
+#define LORA_CODING_RATE                5
+#define LORA_PREAMBLE_LENGTH            8
+#define LORA_GATEWAY_TASK_DELAY_MS      1
 
 // 0 = use standard WiFiClient
 // 1 = use WiFiClientSecure for TLS-capable MQTT connections

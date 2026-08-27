@@ -1,4 +1,5 @@
 #include "NetWork_RF.h"
+#if LORA_ROLE_GATEWAY
 #include <SPI.h>
 #include <LoRa.h>
 
@@ -23,6 +24,11 @@ bool NetWork_RF::begin(long frequency, int csPin, int resetPin, int irqPin) {
     if (!LoRa.begin(frequency)) {
         return false;
     }
+    LoRa.setSpreadingFactor(LORA_SPREADING_FACTOR);
+    LoRa.setSignalBandwidth(LORA_SIGNAL_BANDWIDTH);
+    LoRa.setCodingRate4(LORA_CODING_RATE);
+    LoRa.setPreambleLength(LORA_PREAMBLE_LENGTH);
+    LoRa.enableCrc();
 
     initialized = true;
     return true;
@@ -88,4 +94,18 @@ int NetWork_RF::packetRssi() const {
 float NetWork_RF::packetSnr() const {
     return initialized ? LoRa.packetSnr() : 0.0f;
 }
+
+#else
+
+// LORA_ROLE_GATEWAY=0: keep the class linkable without including the LoRa library.
+NetWork_RF::NetWork_RF() : initialized(false), frequency(0), csPin(-1), resetPin(-1), irqPin(-1) {}
+bool NetWork_RF::begin(long, int, int, int) { return false; }
+bool NetWork_RF::sendData(const uint8_t*, size_t) { return false; }
+bool NetWork_RF::sendData(const String&) { return false; }
+bool NetWork_RF::receiveData(uint8_t*, size_t, size_t& receivedLen) { receivedLen = 0; return false; }
+bool NetWork_RF::available() { return false; }
+int NetWork_RF::packetRssi() const { return 0; }
+float NetWork_RF::packetSnr() const { return 0.0f; }
+
+#endif
 
