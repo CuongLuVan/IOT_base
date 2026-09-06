@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MQTT Browser Client</title>
+  <style>
+    :root{--bg:#0f1923;--card:#16222e;--card2:#101b26;--border:#263746;--text:#dbe7f1;--muted:#8aa2b8;--accent:#00d4aa;--danger:#f54c7a;--warn:#ffb84d;--ok:#2fbf71;}
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{background:var(--bg);color:var(--text);font-family:'Segoe UI',Tahoma,Arial,sans-serif;min-height:100vh;font-size:14px;}
+    .topbar{background:#0b131c;border-bottom:1px solid var(--border);padding:12px 20px;position:sticky;top:0;z-index:100;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;}
+    .topbar h1{font-size:19px;font-weight:600;}
+    .topbar h1 i{color:var(--accent);margin-right:8px;}
+    .badge{display:inline-block;border-radius:20px;padding:6px 14px;font-size:12.5px;font-weight:700;background:#57606a;color:#fff;}
+    .badge.ok{background:var(--ok);}
+    .badge.warn{background:var(--warn);color:#231a00;}
+    .badge.err{background:var(--danger);}
+    .layout{max-width:1440px;margin:0 auto;padding:18px;}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:10px;margin-bottom:18px;overflow:hidden;}
+    .card>.title{background:var(--card2);padding:10px 16px;border-bottom:1px solid var(--border);font-weight:600;font-size:15px;}
+    .card>.title i{color:var(--accent);margin-right:8px;}
+    .card>.body{padding:16px;}
+    .fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;}
+    .fields .full{grid-column:1 / -1;}
+    label{font-size:12.5px;color:var(--muted);display:block;margin-bottom:4px;}
+    .input,.select,.textarea{width:100%;background:#0f1923;border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13.5px;padding:7px 10px;font-family:inherit;}
+    .input:focus,.select:focus,.textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px rgba(0,212,170,.18);}
+    .textarea{resize:vertical;min-height:84px;font-family:Consolas,monospace;}
+    .input::placeholder,.textarea::placeholder{color:#5c7488;}
+    .btn{display:inline-flex;align-items:center;gap:7px;border:none;border-radius:6px;padding:8px 16px;font-size:13.5px;font-weight:600;cursor:pointer;transition:filter .15s;}
+    .btn:disabled{opacity:.6;cursor:not-allowed;}
+    .btn:hover{filter:brightness(1.1);}
+    .btn-accent{background:var(--accent);color:#06231c;}
+    .btn-danger{background:rgba(245,76,122,.14);color:var(--danger);border:1px solid rgba(245,76,122,.45);}
+    .btn-ghost{background:transparent;color:var(--text);border:1px solid var(--border);}
+    .btn-block{width:100%;justify-content:center;}
+    .btn-sm{padding:5px 11px;font-size:12.5px;}
+    .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+    .sub-item{display:flex;justify-content:space-between;align-items:center;background:#0f1923;border:1px solid var(--border);border-radius:6px;padding:6px 10px;margin-top:7px;}
+    .sub-item code{font-family:Consolas,monospace;font-size:13px;color:var(--text);}
+    .sub-item .btn{padding:3px 10px;font-size:12px;}
+    .status-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-top:12px;}
+    .status-item{background:#0f1923;border:1px solid var(--border);border-radius:8px;padding:9px 11px;}
+    .status-item .lbl{font-size:11.5px;color:var(--muted);text-transform:uppercase;}
+    .status-item .val{font-size:13px;font-weight:600;margin-top:2px;word-break:break-all;}
+    .log-box{background:#0a1118;border:1px solid var(--border);border-radius:8px;height:360px;overflow-y:auto;padding:10px;font-family:Consolas,monospace;font-size:12.5px;}
+    .log-item{display:grid;grid-template-columns:76px 1fr 92px;gap:10px;padding:6px 8px;border-bottom:1px solid #16222e;align-items:baseline;}
+    .log-item:last-child{border-bottom:none;}
+    .log-item .t{color:#5c7488;font-size:11.5px;}
+    .log-item .top{color:var(--accent);font-weight:600;word-break:break-all;}
+    .log-item .extra{color:var(--muted);font-size:11.5px;text-align:right;white-space:nowrap;}
+    .log-item .msg{grid-column:2 / -1;word-break:break-all;white-space:pre-wrap;}
+    .log-item.received .msg{color:#7fd8ff;}
+    .log-item.publish .msg{color:var(--warn);}
+    .log-item.error .msg{color:var(--danger);}
+    .help{font-size:12px;color:var(--muted);line-height:1.5;}
+    .help.ok{color:var(--ok);}
+    .help.err{color:var(--danger);}
+    .switch{display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:13.5px;}
+    .switch input{width:17px;height:17px;accent-color:var(--accent);cursor:pointer;}
+    ::-webkit-scrollbar{width:8px;height:8px;}
+    ::-webkit-scrollbar-track{background:#0b131c;}
+    ::-webkit-scrollbar-thumb{background:#2a3d50;border-radius:4px;}
+    ::-webkit-scrollbar-thumb:hover{background:#3a5269;}
+    @media (max-width:900px){.grid-2{grid-template-columns:1fr;}}
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <h1><i class="fa">&#128208;</i>MQTT Browser Client <span style="font-size:12px;color:var(--muted);">(pure client-side · WebSocket)</span></h1>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span id="statusBadge" class="badge">CHƯA KẾT NỐI</span>
+      <a class="btn btn-ghost btn-sm" href="/mqtt" title="Trang điều khiển server-side">&#9881; Server page</a>
+    </div>
+  </header>
+  <main class="layout">
+
+    <section class="card">
+      <div class="title">1. Kết nối broker (trực qua WebSocket · trong browser)</div>
+      <div class="body">
+        <div class="fields">
+          <div>
+            <label>Protocol</label>
+            <select id="protocol" class="select">
+              <option value="ws">ws (WebSocket)</option>
+              <option value="wss">wss (WebSocket + TLS)</option>
+            </select>
+          </div>
+          <div>
+            <label>Host</label>
+            <input id="host" class="input" value="localhost" placeholder="broker host">
+          </div>
+          <div>
+            <label>Port</label>
+            <input id="port" class="input" value="8083" placeholder="8083/8084">
+          </div>
+          <div>
+            <label>Path</label>
+            <input id="wsPath" class="input" value="/mqtt" placeholder="/mqtt">
+          </div>
+          <div>
+            <label>Username</label>
+            <input id="username" class="input" value="">
+          </div>
+          <div>
+            <label>Password</label>
+            <input id="password" type="password" class="input" value="">
+          </div>
+          <div>
+            <label>Client ID</label>
+            <input id="clientId" class="input" value="">
+          </div>
+          <div class="full">
+            <label>Topic tự subscribe sau connect (phân cách bởi dấu phẩy)</label>
+            <input id="autoTopics" class="input" placeholder="vd: sensor/#, notification/+">
+          </div>
+        </div>
+        <div class="fields" style="margin-top:8px;">
+          <button id="connectBtn" class="btn btn-accent btn-block" style="grid-column:span 1;">&#128268; Connect</button>
+          <button id="disconnectBtn" class="btn btn-danger btn-block" style="grid-column:span 1;">&#128474; Disconnect</button>
+        </div>
+        <div class="status-grid">
+          <div class="status-item"><div class="lbl">Trạng thái</div><div class="val" id="statusState">DISCONNECTED</div></div>
+          <div class="status-item"><div class="lbl">URL</div><div class="val" id="statusUrl">—</div></div>
+          <div class="status-item"><div class="lbl">Client ID</div><div class="val" id="statusClient">—</div></div>
+          <div class="status-item"><div class="lbl">Lỗi gần nhất</div><div class="val" id="statusErr">—</div></div>
+          <div class="status-item"><div class="lbl">Message nhận</div><div class="val" id="statusMsgCount">0</div></div>
+        </div>
+        <p class="help" style="margin-top:8px;">Kết nối này đang thực <b>trực tại trình duyệt</b> qua WebSocket (mqtt.js) — không проoibus через сервер/контроллер/маршрут, toàn u i klient (view). Trình duyệt phải có truy cád mạng trực tới broker na websocket portu (vd 8083/8084).</p>
+      </div>
+    </section>
+<div class="grid-2">
+
+      <!-- PUBLISH -->
+      <section class="card">
+        <div class="title">2. Publish (trực từ browser)</div>
+        <div class="body">
+          <div class="fields">
+            <div class="full">
+              <label>Topic</label>
+              <input id="pubTopic" class="input" placeholder="vd: iot/device/led1">
+            </div>
+            <div class="full">
+              <label>Message</label>
+              <textarea id="pubMessage" class="textarea" placeholder="Nhập nội...">ON</textarea>
+            </div>
+            <div>
+              <label>QoS</label>
+              <select id="pubQos" class="select">
+                <option value="0">0 - tối đa 1 lần</option>
+                <option value="1">1 - ít nhất 1 lần</option>
+                <option value="2">2 - chính xác 1 lần</option>
+              </select>
+            </div>
+            <div style="display:flex;align-items:flex-end;">
+              <label class="switch"><input type="checkbox" id="pubRetain"> Retain</label>
+            </div>
+          </div>
+          <div class="row-actions" style="margin-top:12px;">
+            <button id="publishBtn" class="btn btn-accent btn-block">&#128228; Publish</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- SUBSCRIBE -->
+      <section class="card">
+        <div class="title">3. Subscribe (trực từ browser)</div>
+        <div class="body">
+          <div class="fields">
+            <div>
+              <label>Topic</label>
+              <input id="subTopic" class="input" placeholder="vd: iot/#">
+            </div>
+            <div>
+              <label>QoS</label>
+              <select id="subQos" class="select">
+                <option value="0">0</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+              </select>
+            </div>
+          </div>
+          <div class="row-actions" style="margin-top:12px;">
+            <button id="subBtn" class="btn btn-accent btn-block">&#128229; Subscribe</button>
+          </div>
+          <div style="margin-top:12px;">
+            <label>Danh sách đang subscribe (client-side)</label>
+            <div id="subscriptionList" class="help">— Chưa có topic —</div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- MESSAGE LOG -->
+    <section class="card">
+      <div class="title" style="display:flex;justify-content:space-between;align-items:center;">
+        <span>4. Message nhận (live trong browser)</span>
+        <button id="clearLogBtn" class="btn btn-danger btn-sm">&#128465; Xóa log</button>
+      </div>
+      <div class="body">
+        <div id="msgLog" class="log-box"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/mqtt-browser/mqtt.min.js"></script>
+  <script>
+const $ = (id) => document.getElementById(id);
+    let client = null;
+    let connected = false;
+    let clientUrl = '';
+    let clientIdUsed = '';
+    let msgCount = 0;
+    const subscriptions = [];
+
+    function addLog(topic, payload, type, meta) {
+      const log = $('msgLog');
+      const item = document.createElement('div');
+      item.className = 'log-item ' + (type || '');
+      const t = document.createElement('span'); t.className = 't'; t.textContent = new Date().toLocaleTimeString('vi-VN');
+      const top = document.createElement('span'); top.className = 'top'; top.textContent = topic;
+      const extra = document.createElement('span'); extra.className = 'extra';
+      extra.textContent = meta ? 'qos:' + meta.qos + ' retain:' + (meta.retain ? 'Y' : 'N') : '';
+      const msg = document.createElement('span'); msg.className = 'msg'; msg.textContent = payload;
+      item.appendChild(t); item.appendChild(top); item.appendChild(extra); item.appendChild(msg);
+      log.prepend(item);
+      while (log.children.length > 200) log.removeChild(log.lastChild);
+    }
+
+    function setStatus(state, err) {
+      const b = $('statusBadge');
+      if (connected) { b.className = 'badge ok'; b.textContent = 'ĐÃ KẾT NỐI'; }
+      else if (state === 'CONNECTING') { b.className = 'badge warn'; b.textContent = 'ĐANG KẾT NỐI...'; }
+      else if (err) { b.className = 'badge err'; b.textContent = 'LỖI'; }
+      else { b.className = 'badge'; b.textContent = 'CHƯA KẾT NỐI'; }
+      $('statusState').textContent = connected ? 'CONNECTED' : (state || 'DISCONNECTED');
+      $('statusUrl').textContent = clientUrl || '—';
+      $('statusClient').textContent = clientIdUsed || '—';
+      $('statusErr').textContent = err || '—';
+      $('statusMsgCount').textContent = msgCount;
+      $('connectBtn').disabled = connected;
+      $('disconnectBtn').disabled = !connected;
+      $('publishBtn').disabled = !connected;
+      $('subBtn').disabled = !connected;
+    }
+
+    function renderSubscriptions() {
+      const list = $('subscriptionList');
+      list.innerHTML = '';
+      if (!subscriptions.length) { list.innerHTML = '— Chưa có topic —'; return; }
+      subscriptions.forEach((t) => {
+        const item = document.createElement('div');
+        item.className = 'sub-item';
+        const code = document.createElement('code'); code.textContent = t;
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-danger btn-sm'; btn.textContent = 'Bỏ sub';
+        btn.onclick = () => doUnsubscribe(t);
+        item.appendChild(code); item.appendChild(btn);
+        list.appendChild(item);
+      });
+    }
+
+    function buildWsUrl() {
+      const protocol = $('protocol').value;
+      const host = $('host').value.trim();
+      const port = String($('port').value.trim() || '');
+      let path = $('wsPath').value.trim();
+      if (!path.startsWith('/')) path = '/' + path;
+      let url;
+      if (host.includes('://')) url = host;
+      else url = protocol + '://' + host + (port ? ':' + port : '');
+      if (url.endsWith('/')) url = url.slice(0, -1);
+      return url + path;
+    }
+
+    async function doConnect() {
+      try {
+        if (typeof mqtt === 'undefined') throw new Error('Thư viện mqtt.js không load đúng');
+        connected = false;
+        setStatus('CONNECTING');
+        clientUrl = buildWsUrl();
+        clientIdUsed = $('clientId').value.trim() || ('browser_' + Math.random().toString(16).substring(2, 10));
+        const opts = {
+          clientId: clientIdUsed,
+          keepalive: 60,
+          clean: true,
+          reconnectPeriod: 5000,
+          connectTimeout: 10000,
+        };
+        const u = $('username').value.trim();
+        const p = $('password').value;
+        if (u) opts.username = u;
+        if (p) opts.password = p;
+        let done = false;
+        const timeout = setTimeout(() => { if (!done) { connected = false; setStatus('', 'Hết thời gian chờ kết nối'); } }, 15000);
+
+        client = mqtt.connect(clientUrl, opts);
+
+        client.on('connect', (connack) => {
+          clearTimeout(timeout); done = true; connected = true;
+          setStatus('CONNECTED');
+          addLog('Hệ thống', 'Kết nối OK (client-side): ' + clientUrl, 'publish');
+          const auto = $('autoTopics').value.split(',').map((s) => s.trim()).filter(Boolean);
+          auto.forEach((t) => doSubscribe(t, 0, true));
+        });
+        client.on('message', (topic, payload) => {
+          msgCount++;
+          setStatus('CONNECTED');
+          let text = payload;
+          if (typeof payload === 'object') { try { text = JSON.stringify(payload); } catch (e) { text = String(payload); } }
+          addLog(topic, String(text), 'received', { qos: 0, retain: false });
+        });
+        client.on('error', (err) => {
+          if (!done) { clearTimeout(timeout); done = true; connected = false; }
+          setStatus('', err && err.message ? err.message : String(err));
+        });
+        client.on('offline', () => { if (connected) { connected = false; setStatus('OFFLINE'); } });
+        client.on('close', () => { connected = false; setStatus('CLOSED'); });
+        client.on('reconnect', () => { setStatus('RECONNECTING'); });
+      } catch (e) {
+        connected = false;
+        setStatus('', e.message);
+        addLog('Hệ thống', 'Kết nối lỗi: ' + e.message, 'error');
+      }
+    }
+function doDisconnect() {
+      if (client) {
+        try { if (client.removeAllListeners) client.removeAllListeners(); } catch (e) {}
+        try { client.end(true); } catch (e) {}
+        client = null;
+      }
+      connected = false;
+      subscriptions.length = 0;
+      renderSubscriptions();
+      setStatus('DISCONNECTED', '');
+      addLog('Hệ thống', 'Đã ngắt kết nối', 'publish');
+    }
+
+    async function doPublish() {
+      const topic = $('pubTopic').value.trim();
+      const message = $('pubMessage').value;
+      const qos = parseInt($('pubQos').value, 10) || 0;
+      const retain = $('pubRetain').checked;
+      if (!topic) { addLog('Hệ thống', 'Chưa nhập topic', 'error'); return; }
+      if (!connected) { addLog('Hệ thống', 'Chưa kết nối', 'error'); return; }
+      try {
+        client.publish(topic, message, { qos, retain }, (err) => {
+          if (err) { addLog(topic, 'Publish lỗi: ' + err.message, 'error'); return; }
+          addLog(topic, message + ' → đã gửi (browser)', 'publish', { qos, retain });
+        });
+      } catch (e) {
+        addLog(topic, 'Publish lỗi: ' + e.message, 'error');
+      }
+    }
+
+    async function doSubscribe(topic, qos, silent) {
+      topic = topic || $('subTopic').value.trim();
+      qos = qos || parseInt($('subQos').value, 10) || 0;
+      if (!topic) { addLog('Hệ thống', 'Chưa nhập topic', 'error'); return; }
+      if (!connected) { addLog('Hệ thống', 'Chưa kết nối', 'error'); return; }
+      try {
+        client.subscribe(topic, { qos }, (err, granted) => {
+          if (err) { addLog(topic, 'Subscribe lỗi: ' + err.message, 'error'); return; }
+          if (!subscriptions.includes(topic)) subscriptions.push(topic);
+          renderSubscriptions();
+          if (!silent) addLog(topic, 'Đã đăng ký subscribe (browser)', 'subscribe');
+        });
+      } catch (e) {
+        addLog(topic, 'Subscribe lỗi: ' + e.message, 'error');
+      }
+    }
+
+    function doUnsubscribe(topic) {
+      if (!connected || !client) { addLog(topic, 'Chưa kết nối', 'error'); return; }
+      try {
+        client.unsubscribe(topic, (err) => {
+          if (err) { addLog(topic, 'Unsubscribe lỗi: ' + err.message, 'error'); return; }
+          const idx = subscriptions.indexOf(topic);
+          if (idx >= 0) subscriptions.splice(idx, 1);
+          renderSubscriptions();
+          addLog(topic, 'Đã hủy subscribe', 'subscribe');
+        });
+      } catch (e) {
+        addLog(topic, 'Unsubscribe lỗi: ' + e.message, 'error');
+      }
+    }
+
+    function clearAllLog() {
+      $('msgLog').innerHTML = '';
+      msgCount = 0;
+      setStatus('CONNECTED');
+    }
+
+    $('connectBtn').onclick = doConnect;
+    $('disconnectBtn').onclick = doDisconnect;
+    $('publishBtn').onclick = doPublish;
+    $('subBtn').onclick = () => doSubscribe();
+    $('clearLogBtn').onclick = clearAllLog;
+    $('pubTopic').addEventListener('keydown', (e) => { if (e.key === 'Enter') doPublish(); });
+    $('subTopic').addEventListener('keydown', (e) => { if (e.key === 'Enter') doSubscribe(); });
+    setStatus('DISCONNECTED');
+  </script>
+</body>
+</html>

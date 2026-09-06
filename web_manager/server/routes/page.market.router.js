@@ -99,6 +99,20 @@ router.get('/warning_for_site', (req, res) => {
   res.render('teznews/report_warning',{ detail: "", route: 'tool' });
 });
 
+router.get('/mqtt', (req, res) => {
+  res.render('mqtt/control', {
+    mqttConfig: {
+      protocol: process.env.MQTT_PROTOCOL || 'mqtt',
+      host: process.env.MQTT_HOST || 'localhost',
+      port: process.env.MQTT_PORT || '1883',
+      user: process.env.MQTT_USER || '',
+      pass: process.env.MQTT_PASS || '',
+      clientId: process.env.MQTT_CLIENT_ID || 'web_manager',
+      keepalive: process.env.MQTT_KEEPALIVE || '60',
+    },
+  });
+});
+
 router.get('/abouttest', (req, res) => {
   let options = {
       maxAge: 1000 * 60 * 150, // would expire after 15 minutes

@@ -7,6 +7,7 @@ const customerRoutes = require("./customer.route.js");
 const documentRoutes = require("./document.route.js");
 const serviceRoutes = require("./service.api.route.js");
 const socialRoutes = require("./social.route.js");
+const mqttRoutes = require("./mqtt.route.js");
 
 const router = express.Router();
 
@@ -24,6 +25,7 @@ router.use("/groups", groupRoutes);
 router.use("/customers", customerRoutes);
 router.use("/service", serviceRoutes);
 router.use("/social", socialRoutes);
+router.use("/mqtt", mqttRoutes);
 
 
 
