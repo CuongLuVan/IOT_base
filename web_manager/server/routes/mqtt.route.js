@@ -1,7 +1,14 @@
 const express = require('express');
 const mqttCtrl = require('../controllers/mqtt.controller.js');
+const isAuthenticated = require('../middlewares/authenticate.js');
+const authorizeMqtt = require('../middlewares/authorizeMqtt.js');
 
 const router = express.Router();
+
+// Lukitse koko /api/mqtt:
+//  1) isAuthenticated  -> vaatii voimassa olevan tokenin (oauthen2)
+//  2) authorizeMqtt    -> sallii vain ylläpitotason käyttäjät (ei tavallinen asiakas)
+router.use(isAuthenticated, authorizeMqtt);
 
 router.route('/status').get(mqttCtrl.getStatus);
 router.route('/config').get(mqttCtrl.getConfig);

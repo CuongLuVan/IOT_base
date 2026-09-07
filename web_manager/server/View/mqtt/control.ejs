@@ -235,8 +235,15 @@
 
     const $ = (id) => document.getElementById(id);
 
+    function authHeaders() {
+      const h = { 'Content-Type': 'application/json' };
+      const token = localStorage.getItem('token');
+      if (token) h.Authorization = 'Bearer ' + token;
+      return h;
+    }
+
     async function api(path, method, body) {
-      const opts = { method: method || 'GET', headers: { 'Content-Type': 'application/json' } };
+      const opts = { method: method || 'GET', headers: authHeaders() };
       if (body !== undefined) opts.body = JSON.stringify(body);
       const res = await fetch(API + path, opts);
       const json = await res.json().catch(() => ({}));
@@ -311,7 +318,7 @@
 
     async function pollMessages() {
       try {
-        const json = await (await fetch(API + '/messages?after=' + lastMessageId)).json();
+        const json = await (await fetch(API + '/messages?after=' + lastMessageId, { headers: authHeaders() })).json();
         if (!json.result) return;
         const { messages, lastId } = json.result;
         if (messages && messages.length) {
@@ -447,7 +454,7 @@ async function doConnect() {
           await navigator.serviceWorker.register('/mqtt/service-worker.js');
         }
         const reg = await navigator.serviceWorker.ready;
-        const keyResp = await fetch('/api/mqtt/push/key');
+        const keyResp = await fetch(API + '/push/key', { headers: authHeaders() });
         const keyJson = await keyResp.json();
         if (!keyJson.result || !keyJson.result.publicKey) throw new Error('Không lấy được VAPID public key');
         let sub = await reg.pushManager.getSubscription();
@@ -458,9 +465,9 @@ async function doConnect() {
           });
         }
         const filter = $('notiffilter').value.trim();
-        const resp = await fetch('/api/mqtt/push/subscribe', {
+        const resp = await fetch(API + '/push/subscribe', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders(),
           body: JSON.stringify({ subscription: sub, topic: filter }),
         });
         const j = await resp.json();
@@ -483,9 +490,9 @@ async function doConnect() {
         const sub = await reg.pushManager.getSubscription();
         if (sub) {
           try {
-            await fetch('/api/mqtt/push/unsubscribe', {
+            await fetch(API + '/push/unsubscribe', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: authHeaders(),
               body: JSON.stringify({ endpoint: sub.endpoint }),
             });
           } catch (e) { /* bỏ qua */ }
@@ -508,9 +515,9 @@ async function doConnect() {
         const reg = await navigator.serviceWorker.ready;
         const sub = await reg.pushManager.getSubscription();
         if (!sub) return;
-        const resp = await fetch('/api/mqtt/push/subscribe', {
+        const resp = await fetch(API + '/push/subscribe', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders(),
           body: JSON.stringify({ subscription: sub, topic: $('notiffilter').value.trim() }),
         });
         if (resp.ok) setBgStatus('Đã cập nhật bộ lọc topic nhận thông báo', 'ok');
@@ -533,7 +540,7 @@ async function doConnect() {
         const icon = $('importCfgIcon');
         icon.textContent = '&#8635;';
         $('importCfgBtn').disabled = true;
-        const resp = await fetch('/api/mqtt/config');
+        const resp = await fetch(API + '/config', { headers: authHeaders() });
         const j = await resp.json();
         if (!resp.ok || !j.result) throw new Error(j.error || 'Không lấy được cấu hình');
         const c = j.result;
@@ -559,7 +566,7 @@ async function doConnect() {
     async function loadConfigOnStart() {
       // tự load thông参数 MQTT_* ngay tại page để đồng bộ tản giá với server
       try {
-        const resp = await fetch('/api/mqtt/config');
+        const resp = await fetch(API + '/config', { headers: authHeaders() });
         const j = await resp.json();
         if (!resp.ok || !j.result) return;
         const c = j.result;
