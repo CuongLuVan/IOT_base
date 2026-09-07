@@ -46,7 +46,11 @@ class User extends CommonModel {
     return ('SELECT username, email, phone, avatar, fullname, permission_id, address, note FROM customer WHERE deleteflag =0 UNION ALL SELECT username, email, phone, avatar, fullname, permission_id, address, note FROM users WHERE deleteflag =0;');
 }
   getConditionManisfest(info){
-    return "users.deleteflag=0 AND users.permission_id>"+info.permission_id+ " ";
+    var permId = parseInt(String(info.permission_id), 10);
+    if (!permId || permId < 0) {
+      return "users.deleteflag=0 ";
+    }
+    return "users.deleteflag=0 AND users.permission_id>"+permId+ " ";
   }
 
   getJsonTofind(){
@@ -54,8 +58,9 @@ class User extends CommonModel {
   }
 
   async checkValueEmailData(email){
-    var squelGet=squel.select().from('users').where('email="' + email +'"').where('deleteflag=0');
-    var info= await knex.raw(squelGet.toString());
+    var squelGet=squel.select().from('users').where('email = ?', email).where('deleteflag=0');
+    var p = squelGet.toParam();
+    var info= await knex.raw(p.text, p.values);
     if((info!=null)&&(info.length>0)) {
       return true;
     }
@@ -65,10 +70,11 @@ class User extends CommonModel {
   async checkUserExistingSql(data){
       var userToget = squel.select().from('users').
       where( squel.expr()
-                  .and("phone='"+data["phone"]+"'")
-                  .or("email='"+data["email"]+"'")
+                  .and('phone = ?', data["phone"])
+                  .or('email = ?', data["email"])
       ).where("deleteflag=0");
-      return await this.queryDatabase(userToget.toString());
+      var p = userToget.toParam();
+      return await this.queryDatabase(p.text, p.values);
   }
   async registerToUserSql(data){
       let dataUser=  this.getFieldToAdd();//  DataTableFieldAdd[table];

@@ -55,10 +55,10 @@ class CommonModel extends  BaseModelBookshelf {
     getFieldLinkShort(){
         return null;
     }
-    async queryDatabase(sql){
+    async queryDatabase(sql, params=[]){
         try
         {
-            var data= await  knex.raw(sql);
+            var data= await  knex.raw(sql, params || []);
             if(data==null) return false;
             return data[0];
         }
@@ -66,10 +66,10 @@ class CommonModel extends  BaseModelBookshelf {
             return false;
         }
     }
-    async queryDatabaseDetail(sql){
+    async queryDatabaseDetail(sql, params=[]){
         try
         {
-            var data= await  knex.raw(sql);
+            var data= await  knex.raw(sql, params || []);
             if(data==null) return false;
             return {error:false,data: data[0]};
         }
@@ -188,9 +188,10 @@ class CommonModel extends  BaseModelBookshelf {
             if(request.currentUser.permission_id<=TableManifest.NEW_REGISTER)
             {
                 var checkUsser = squel.select().from('users')
-                              .where("email='"+request.body["email"]+"'")
+                              .where('email = ?', request.body["email"])
                               .where("deleteflag=0");
-                var result= await knex.raw(checkUsser.toString());
+                var p = checkUsser.toParam();
+                var result= await knex.raw(p.text, p.values);
                 if ((result==null)||(result[0].length==0)) {
                     if(request.currentUser.permission_id<=request.body.permission_id){
                         return true;
