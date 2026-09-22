@@ -13,7 +13,8 @@ var session = require('express-session');
 //var credentials = {key: privateKey, cert: certificate};
 //const morgan = require('morgan');
 const cors = require('cors');
-//const helmet = require('helmet');
+const helmet = require('helmet');
+const { apiLimiter } = require('./rateLimit.js');
 //const compression = require('compression');
 //const methodOverride = require('method-override');
 //const { TrendingUpTwoTone } = require('@material-ui/icons');
@@ -44,6 +45,7 @@ app.use(session({
 app.use(i18n.init);
 app.set('port', process.env.APP_PORT || 3000);
 app.set('host', process.env.APP_HOST || 'localhost');
+app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : false);
 
 //https://tecadmin.net/setup-ssl-certificate-with-node-js-in-linux/
 /*https.createServer(credentials, app).listen( process.env.APP_PORT || 3000, () => {
@@ -54,7 +56,8 @@ app.set('host', process.env.APP_HOST || 'localhost');
 //app.use(express.urlencoded({limit: '100mb'}));
 app.use(cors());
 app.options('*', cors()) // include before other routes
-//app.use(helmet());
+app.use(helmet());
+app.use('/api', apiLimiter);
 //app.use(compression());
 //app.use(methodOverride());
 app.use(bodyParser.json({limit: '50mb'}));

@@ -14,31 +14,18 @@ const router = express.Router();
 const multer = require('multer');
 const files = require('../utils/files.js');
 const urlStaticLink=  require('../config/urlSetting.js');
+const { uploadLimiter } = require('../config/rateLimit.js');
 
 
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const folder = 'public/uploads/datas';
-    if (!fs.existsSync(folder)) {
-      fs.mkdirSync(folder, { recursive: true });
-    }
+let upload = multer({ storage: files.storage, limits: files.uploadLimits, fileFilter: files.excelFilter });
 
-    cb(null, folder);
-  },
-  filename: function (req, file, cb) {
-    cb(null, Date.now() + '-' + file.originalname);
-  },
-});
+router.route('/import-data').post(uploadLimiter, isAuthenticatedCustomer, files.handleUpload(upload.single('file')), customerCtrl.importDataInfo);
 
-let upload = multer({ storage: storage, fileFilter: files.excelFilter });
+let uploadImage = multer({ storage: files.storage, limits: files.uploadLimits, fileFilter: files.imageFilter });
 
-router.route('/import-data').post(isAuthenticatedCustomer, upload.single('file'), customerCtrl.importDataInfo);
-
-let uploadImage = multer({ storage: storage, fileFilter: files.imageFilter });
-
-router.route('/import-image-admin').post(isAuthenticated, uploadImage.single('file'), customerCtrl.importDataInfo);
-router.route('/import-image').post(uploadImage.single('file'), customerCtrl.importDataInfo);
-router.route('/import-image-customer').post(uploadImage.single('file'), customerCtrl.importDataInfo);
+router.route('/import-image-admin').post(uploadLimiter, isAuthenticated, files.handleUpload(uploadImage.single('file')), customerCtrl.importDataInfo);
+router.route('/import-image').post(uploadLimiter, isAuthenticatedCustomer, files.handleUpload(uploadImage.single('file')), customerCtrl.importDataInfo);
+router.route('/import-image-customer').post(uploadLimiter, isAuthenticatedCustomer, files.handleUpload(uploadImage.single('file')), customerCtrl.importDataInfo);
 
 
 

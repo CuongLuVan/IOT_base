@@ -11,15 +11,21 @@ const bcrypt = require('bcrypt');
 const  customerCtrl = require('../controllers/customer.controller.js');
 const {returnNotFound,returnOKCustom ,returnNotAuthen} = require('../utils/returnResponse.js');
 const WarningInfo = require("../config/warningInfo.js");
+const { authLimiter } = require('../config/rateLimit.js');
+const authSessionCtrl = require('../controllers/authSession.controller.js');
+const authenticateMutile = require('../middlewares/authenticateMutile.js');
 
 
 
 
-router.route('/login').post(validate(schema.login),authCtrl.login);
-router.route('/login_customer').post(validate(schema.login),authCtrl.loginCustomer);
-router.route('/login_customer_manage').post(validate(schema.login),authCtrl.loginCustomerAdmin);
+router.route('/login').post(authLimiter, validate(schema.login),authCtrl.login);
+router.route('/login_customer').post(authLimiter, validate(schema.login),authCtrl.loginCustomer);
+router.route('/login_customer_manage').post(authLimiter, validate(schema.login),authCtrl.loginCustomerAdmin);
 router.route('/tocken').get( authCtrl.getTocken);
 router.route('/tocken_customer').get(authCtrl.getTockenCustomer);
+router.route('/refresh').post(authLimiter, authSessionCtrl.refresh);
+router.route('/logout').post(authenticateMutile, authSessionCtrl.logout);
+router.route('/logout-all').post(authenticateMutile, authSessionCtrl.logoutAll);
 router.route('/user').get(isAuthenticated, (req, res) => {
   User.query().where( { users_id: req.currentUser.users_id })
   .select(

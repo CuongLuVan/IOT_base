@@ -81,8 +81,12 @@ socialCtrl.stockReportValue =async function (req, res) {
 }
 
 socialCtrl.stockImport =async function (req, res) {
-    var file=req.body.file.path;
+    if (!req.file) return returnFalse(res,"File is required",WarningInfo.NOT_UPLOAD_FILE);
+    var file=req.file.path;
     var selectTable=req.body.selectStock;
+    if (typeof selectTable !== 'string' || !/^[A-Za-z0-9_]+$/.test(selectTable)) {
+        return returnFalse(res,"Invalid stock table",WarningInfo.DATA_NOT_EXSITING);
+    }
     var stock= new StockCommon();
     if(!await stock.chechTableExisting("stock_info_"+selectTable))
     {

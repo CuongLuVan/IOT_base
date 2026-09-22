@@ -6,6 +6,7 @@ const CustomerAcess= require('../middlewareDatabase/CustomerAcess.js');
 const  {getRamdomData}  = require('../../utils/utilsString.js');
 const {returnNotAuthen,returnOKCustom } = require('../../utils/returnResponse.js');
 const WarningInfo = require("../../config/warningInfo.js");
+const { createAccessSession, createRefreshSession } = require('../../services/authToken.service.js');
 
 
 class oAuthen2Customer extends CommonModel {
@@ -34,48 +35,39 @@ class oAuthen2Customer extends CommonModel {
     }
 
     async responseLogin(res,user){
-        try
-        {
-            var dataTocken= getRamdomData(256);
-            var permission_id=user.permission_id;
-            //var permission_id = 2;
-            var current_id=user.customer_id;
-            var listDataContain="";
-            //listDataContain+=current_id;
-            var authen2 = squel.insert().into("oauthen2customer")
-                    .set("permission_id",permission_id)
-                    .set("customeid",current_id)
-                    .set("tocken",dataTocken)
-                    .set("id_updated",current_id)
-                    .set("id_created",current_id)
-                    .set("deleteflag",0)
-                    .set("created_at",'NOW()',{dontQuote: true})
-                    .set("updated_at",'NOW()',{dontQuote: true})
-                    .set("deleteflag",0)
-                    .set("time_relase",'NOW() + INTERVAL 7 DAY',{dontQuote: true});
-    
-            if(user.permission_id==2){
-                var dataCompany = squel.select().from("company")
-                .where("id_created = "+current_id )
-                .where("deleteflag = 0");
-               
-                var infoCompany = await knex.raw(dataCompany.toString());
-                if ((infoCompany!=null)&&(infoCompany.length>0)) {
-                    for(var i=0;i<infoCompany[0].length;i++)
-                    {
-                        listDataContain+=infoCompany[0][i].company_id;
-                        if(i!==(infoCompany[0].length-1))  listDataContain+=",";
-                    }
-                }  
+        try {
+            const permission_id = user.permission_id;
+            const current_id = user.customer_id;
+            let valueManifest = '';
+            if (permission_id === 2) {
+                const companies = await knex('company')
+                    .select('company_id')
+                    .where({ id_created: current_id, deleteflag: 0 });
+                valueManifest = companies.map((company) => company.company_id).join(',');
             }
-            authen2.set("value_manifest",listDataContain);
-            var x = await knex.raw(authen2.toString());
-            return returnOKCustom(res,{success: true,token:dataTocken,email: user.email,avatar:user.avatar});
-        }
-        catch(ie){
+            const session = await knex.transaction(async (trx) => {
+                const access = await createAccessSession({
+                    tokenType: 'customer', userId: current_id, permissionId: permission_id,
+                    valueManifest
+                }, trx);
+                const refresh = await createRefreshSession({
+                    tokenType: 'customer', userId: current_id, permissionId: permission_id,
+                    valueManifest, sessionId: access.sessionId
+                }, trx);
+                return { access, refresh };
+            });
+            return returnOKCustom(res, {
+                success: true,
+                token: session.access.accessToken,
+                accessToken: session.access.accessToken,
+                refreshToken: session.refresh.refreshToken,
+                expiresIn: '15m',
+                email: user.email,
+                avatar: user.avatar
+            });
+        } catch (ie) {
             return returnNotAuthen(res,ie,WarningInfo.EXPRIED_LOGIN);
         }
-        
     }
 
     get tableName() {  return "oauthen2customer";}
