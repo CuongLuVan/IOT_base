@@ -63,8 +63,8 @@ customerCtrl.getNumberPages = async function (req, res) {
     var checkInaval = tableSelect.checkManifestSpecialCustomer("view");
     if(!checkInaval)  return returnNotFound(res,{ message: "Database Not Acess 2"},WarningInfo.NOT_ACESS_DATABASE);
     var itemSelect=tableSelect.getValueToSelectToFind(req.body.dataFind);
-    var dataTableSQL= "SELECT COUNT(*) FROM " + tableSelect.getNameTable() + " where deleteflag=0 "+itemSelect;
-    var infoData = await tableSelect.queryDatabaseDetail(dataTableSQL);
+    var dataTableSQL= "SELECT COUNT(*) FROM " + tableSelect.getNameTable() + " where deleteflag=0 "+itemSelect.sql;
+    var infoData = await tableSelect.queryDatabaseDetail(dataTableSQL, itemSelect.params);
     return returnInfoQuery(res,infoData)
 }
 
@@ -120,9 +120,11 @@ customerCtrl.updateData= async  function (req, res) {
     return returnNotFound(res,{ message: "Database not Acess" },WarningInfo.NOT_ACESS_DATABASE);
   }
   let data=req.body;
-  var dataAdd= await knex.raw(tableSelect.addRecordIsExisting(req));
+  var addParam = tableSelect.addRecordIsExisting(req);
+  var dataAdd= await knex.raw(addParam.text, addParam.values);
   if((dataAdd==null)||(dataAdd.length<1)) return returnNotFound(res,"Không tồn tại bản ghi dữ liệu này",WarningInfo.DATA_NOT_EXSITING);     
-  var deleteAdd= await knex.raw(tableSelect.deleteFlagToRecord(req,dataAdd[0].insertId));
+  var deleteParam = tableSelect.deleteFlagToRecord(req,dataAdd[0].insertId);
+  var deleteAdd= await knex.raw(deleteParam.text, deleteParam.values);
   if((deleteAdd==null)||(deleteAdd.length<1)) return returnFalse(res,"Lỗi cập nhật dữ liệu",WarningInfo.ERROR_SERVER);
   let infoShortName = tableSelect.getFieldLinkShort();
     if(infoShortName!=null){
@@ -138,10 +140,11 @@ customerCtrl.registerUser = async function (req, res) {
     checkDatataBaseInval=true;
     var userToget = squel.select().from('customer').
                         where( squel.expr()
-                                    .and("phone='"+req.body["phone"]+"'")
-                                    .or("email='"+req.body["email"]+"'")
+                                    .and("phone= ?", req.body["phone"])
+                                    .or("email= ?", req.body["email"])
                         ).where("deleteflag=0");
-    var result = await knex.raw(userToget.toString());
+    var p = userToget.toParam();
+    var result = await knex.raw(p.text, p.values);
     if(result!=null&&result[0].length>0) 
         return returnFalse(res,{ message: "phone and email is existing" } ,WarningInfo.ACCAO_EXSITING);
     let data=req.body;
@@ -162,7 +165,8 @@ customerCtrl.registerUser = async function (req, res) {
           .set("created_at","NOW()",{dontQuote: true}) 
           .set("updated_at","NOW()",{dontQuote: true})
           .set("deleteflag",0);
-    result = await  knex.raw(authen.toString());
+    var p = authen.toParam();
+    result = await  knex.raw(p.text, p.values);
     if(result==null||result[0].length<1)   return returnFalse(res,error,WarningInfo.DATA_WORNG);
     return returnOK(res,{result:"Please waitting admin comfirm"});
 }
@@ -170,23 +174,24 @@ customerCtrl.registerUser = async function (req, res) {
 customerCtrl.resetPass= async function  (req, res) {
   //var acount="SELECT * FROM users " +request.body;
   var authen = squel.select().from('customer')
-                        .where("email='"+data["email"]+"'")
-                        .where("forgot_pass_token='"+data["forgot_pass_token"]+"'")
+                        .where("email= ?", data["email"])
+                        .where("forgot_pass_token= ?", data["forgot_pass_token"])
                         .where("deleteflag=0");
-   var result= await knex.raw(authen.toString());
+   var p = authen.toParam();
+   var result= await knex.raw(p.text, p.values);
    if ((result==null)||(result.length==0)) {
     return returnNotFound(res,{ message: "acao Not exitting "},WarningInfo.ACOUNT_NOT_EXIST);
    }
    ////mailBoxSupport.sendEmailNomal(result[0]["add_table"].email,"please comfirm email "+result[0]["add_table"].forgot_pass_token)
 }
-
 customerCtrl.changePassword= async function(req, res) {
   //var acount="SELECT * FROM users " +request.body;
-  var authen = squel.select().from('customer')
-                        .where("email='"+data["email"]+"'")
-                        .where("forgot_pass_token='"+data["forgot_pass_token"]+"'")
+   var authen = squel.select().from('customer')
+                        .where("email= ?", data["email"])
+                        .where("forgot_pass_token= ?", data["forgot_pass_token"])
                         .where("deleteflag=0");
-   var result= await knex.raw(authen.toString());
+   var p = authen.toParam();
+   var result= await knex.raw(p.text, p.values);
    if ((result==null)||(result.length==0)) {
       return returnNotFound(res,{ message: "acao Not exitting "},WarningInfo.ACOUNT_NOT_EXIST);
    }
@@ -207,6 +212,7 @@ customerCtrl.getAllAdvertisementContent  = async function(req, res) {
 }
 
 function getAllInfoProductInList(product_group,start,end){
+  var params = [];
   var sql = '';
   if(start==end) {
     sql = ` SELECT  COUNT(product_store.store_product_id)  as number_store `;
@@ -226,21 +232,29 @@ function getAllInfoProductInList(product_group,start,end){
 
   if(product_group==0){
     if(start!=end){
-      sql = sql +' LIMIT '+start+','+end+';';
+      sql = sql +' LIMIT ? , ?;';
+      params.push(start);
+      params.push(end);
     }
-    return sql;
+    return {sql: sql, params: params};
   }else{
-    sql = sql+'AND product.product_group_id in ('+product_group+') ';
+    sql = sql+'AND product.product_group_id in (';
+    var groupArray = Array.isArray(product_group) ? product_group : [product_group];
+    sql += groupArray.map(() => '?').join(',');
+    sql += ') ';
+    params = params.concat(groupArray);
   }
   if(start==end){
-    return sql;
+    return {sql: sql, params: params};
   }
-  sql = sql +'LIMIT '+start+','+end+';';
-  return sql;
+  sql = sql +'LIMIT ?, ?;';
+  params.push(start);
+  params.push(end);
+  return {sql: sql, params: params};
 }
 
-
 function getAllInfoProductDetailCompany(company_id,start,end,product_group = -1){
+  var params = [];
   var sql = '	SELECT product_store.*,product.product_group_id,product_image.cost_real,product.store,'
   +' product_image.promotion , product.name,product.detail,product.image,product.name_short ,'
   +' product_image.name_image_detail ,product_image.image_info_detail ,'
@@ -250,18 +264,22 @@ function getAllInfoProductDetailCompany(company_id,start,end,product_group = -1)
   +' WHERE product.deleteflag =0  '
   +' AND product_store.store_product_id=( SELECT MIN(product_store.store_product_id) testID '
   +' FROM product_store WHERE  product_store.product_id= product.product_id ) AND';
-  if(product_group!=undefined &&product_group>0) 
-          sql = sql + ` product.product_group_id = ${product_group} AND `; 
+  if(product_group!=undefined &&product_group>0) {
+          sql = sql + ' product.product_group_id = ? AND ';
+          params.push(product_group);
+  }
 
-  sql = sql +'  product.company_id = '+company_id+' LIMIT '+start+','+end+';';
-  return sql;
+  sql = sql +'  product.company_id = ? LIMIT ?, ?;';
+  params.push(company_id);
+  params.push(start);
+  params.push(end);
+  return {sql: sql, params: params};
 }
 
 
 customerCtrl.getAllInfoProduct  = async function(req, res) {
-  var sql =  getAllInfoProductInList(req.query.type,0,3);
-
-  var x= await knex.raw(sql);
+  var sqlObj =  getAllInfoProductInList(req.query.type,0,3);
+  var x= await knex.raw(sqlObj.sql, sqlObj.params);
   if ((x!=null)&&(x.length>0)) {
       return returnOK(res,x[0]);
   }
@@ -286,9 +304,11 @@ customerCtrl.getAllInfoAdvertisementFromID  = async function(req, res) {
   return returnOK(res,[]);
 }
 customerCtrl.getAllInfoAdvertisementProductFromID  = async function(req, res) {
+  var dataArray = Array.isArray(req.body.data) ? req.body.data : [req.body.data];
+  var placeholders = dataArray.map(() => '?').join(',');
   var sql= "SELECT advertisement_product.*,product_group.product_group_content FROM advertisement_product LEFT JOIN product_group on product_group.product_group_id=advertisement_product.group_product_id  WHERE advertisement_product.deleteflag=0 AND group_product_id in ("+
-      req.body.data.toString() +")  LIMIT 0,1000";
-  var x= await knex.raw(sql);
+      placeholders +")  LIMIT 0,1000";
+   var x= await knex.raw(sql, dataArray);
   if ((x!=null)&&(x.length>0)) {
       return returnOK(res,x[0]);
   }
@@ -298,8 +318,8 @@ customerCtrl.getAllInfoAdvertisementProductFromID  = async function(req, res) {
 
 
 customerCtrl.getInfoProduct  = async function(req, res) {
-  var sql= "SELECT product_store.*,product.name,product.detail,product.image FROM product_store LEFT JOIN product on product_store.product_id=product.product_id WHERE product_store.deleteflag =0  AND product.store="+ req.body["type"];
-  var x= await knex.raw(sql);
+  var sql= "SELECT product_store.*,product.name,product.detail,product.image FROM product_store LEFT JOIN product on product_store.product_id=product.product_id WHERE product_store.deleteflag =0  AND product.store= ?";
+  var x= await knex.raw(sql, [req.body["type"]]);
   if ((x!=null)&&(x.length>0)) {
       return returnOK(res,x[0]);
   }
@@ -307,8 +327,8 @@ customerCtrl.getInfoProduct  = async function(req, res) {
 }
 
 customerCtrl.getInfoProductStore = async function(req, res) {
-  var sql = getAllInfoProductInList(req.body["product_group"],req.body["start"],req.body["end"]); 
-  var x= await knex.raw(sql);
+  var sqlObj = getAllInfoProductInList(req.body["product_group"],req.body["start"],req.body["end"]); 
+  var x= await knex.raw(sqlObj.sql, sqlObj.params);
   if ((x!=null)&&(x.length>0)) {
       return returnOK(res,x[0]);
   }
@@ -324,9 +344,8 @@ customerCtrl.getDetailProduct  = async function(req, res) {
             FROM product_image LEFT JOIN product on product_image.product_id=product.product_id 
             LEFT JOIN product_store on product_image.image_id=product_store.image_id 
             LEFT JOIN company on company.company_id=product.company_id 
-            WHERE product_image.deleteflag =0 AND product_image.product_id=`
-          + req.query.type +"   AND product_store.deleteflag =0";
-  var x= await knex.raw(sql);
+            WHERE product_image.deleteflag =0 AND product_image.product_id= ?   AND product_store.deleteflag =0`;
+  var x= await knex.raw(sql, [req.query.type]);
   if ((x!=null)&&(x.length>0)) {
       return returnOK(res,x[0]);
   }
@@ -335,9 +354,8 @@ customerCtrl.getDetailProduct  = async function(req, res) {
 
 
 customerCtrl.getDetailShop  = async function(req, res) {
-  var sql= "SELECT social_shop.* FROM social_shop  WHERE social_shop.deleteflag =0 AND social_shop.product_id="
-          + req.query.type;
-  var x= await knex.raw(sql);
+  var sql= "SELECT social_shop.* FROM social_shop  WHERE social_shop.deleteflag =0 AND social_shop.product_id= ?";
+  var x= await knex.raw(sql, [req.query.type]);
   if ((x!=null)&&(x.length>0)) {
       return returnOK(res,x[0]);
   }
@@ -363,7 +381,7 @@ customerCtrl.setDataInBill = async (req, res) => {
       let userid = req.currentUser.users_id;
       var tableSelect=mangerModelUser('product_buy');
       var sqlBuyproduct =tableSelect.buyProductSQL(userid,0,data);
-      var x= await knex.raw(sqlBuyproduct);
+      var x= await knex.raw(sqlBuyproduct.text, sqlBuyproduct.values);
       // if ((customerSql==null)||(customerSql.length==0)) {
       //   return returnNotFound(res,{ message: "Not find Sql "});
       // }
@@ -371,15 +389,18 @@ customerCtrl.setDataInBill = async (req, res) => {
         return returnNotFound(res,{ message: "Not find Sql "},WarningInfo.NOT_ACESS_DATABASE);
       }
       var sqlStringProduct= "INSERT INTO product_buy_detail (buyproduct_id,image_id, quantity, KM, created_at, updated_at, id_created, id_updated, deleteflag, oldid) VALUES ";
+      var paramsProduct = [];
       var thefist=false;
       data.value.forEach(element => { 
         if(thefist) sqlStringProduct =sqlStringProduct +",";
-        var addCustomer = '('+x[0].insertId+','+element.imageInfo.image_id+','+element.number+
-                            ',0,NOW(),NOW(),'+userid+','+userid+',0,0)';
-        sqlStringProduct = sqlStringProduct + addCustomer;
+        sqlStringProduct = sqlStringProduct +'('+x[0].insertId+',?,NOW(),NOW(),?,?,0,0)';
+        paramsProduct.push(element.imageInfo.image_id);
+        paramsProduct.push(element.number);
+        paramsProduct.push(userid);
+        paramsProduct.push(userid);
         thefist=true;
     });
-    var databuyProduct= await knex.raw(sqlStringProduct);
+    var databuyProduct= await knex.raw(sqlStringProduct, paramsProduct);
     if ((databuyProduct!=null)&&(databuyProduct.length>0)) {
         return returnOK(res,x[0].insertId);
     }
@@ -422,17 +443,20 @@ customerCtrl.setTheBillData  = async function(req, res) {
         }
         dataInTheBill.Total = Total;
         var sqlBuyproduct =tableSelect.buyProductSQL(userid,saleId,dataInTheBill);
-        var x= await knex.raw(sqlBuyproduct);
+        var x= await knex.raw(sqlBuyproduct.text, sqlBuyproduct.values);
         var sqlStringProduct= "INSERT INTO product_buy_detail (buyproduct_id,image_id, quantity, KM, created_at, updated_at, id_created, id_updated, deleteflag, oldid) VALUES ";
+        var paramsProduct = [];
         var thefist=false;
         dataInTheBill.value.forEach(element => { 
             if(thefist) sqlStringProduct =sqlStringProduct +",";
-            var addCustomer = '('+x[0].insertId+','+element.imageInfo.image_id+','+element.number+
-                                ',0,NOW(),NOW(),'+userid+','+userid+',0,0)';
-            sqlStringProduct = sqlStringProduct + addCustomer;
+            sqlStringProduct = sqlStringProduct +'('+x[0].insertId+',?,NOW(),NOW(),?,?,0,0)';
+            paramsProduct.push(element.imageInfo.image_id);
+            paramsProduct.push(element.number);
+            paramsProduct.push(userid);
+            paramsProduct.push(userid);
             thefist=true;
         });
-        var databuyProduct= await knex.raw(sqlStringProduct);
+        var databuyProduct= await knex.raw(sqlStringProduct, paramsProduct);
         dataBill.push({bill:x[0].insertId});
         if ((databuyProduct!=null)&&(databuyProduct.length>0)) {
           await mesageBox.sendTheWarningThebill(saleId,"Có đơn hàng",
@@ -473,23 +497,29 @@ customerCtrl.registerNewCustomer = async function(req, res) {
 
 customerCtrl.getDetailTheBill  = async function(req, res) {
   var dataThebill = {bill:null,data:[]};
-  var sql= "SELECT product_buy_detail.*,product_image.*,product.name FROM product_buy_detail  LEFT JOIN product_image on product_buy_detail.image_id=product_image.image_id LEFT JOIN product on product.product_id=product_image.product_id  WHERE product_buy_detail.deleteflag =0 AND product_buy_detail.buyproduct_id in ("+ req.body['bill'] +")";
+  var billArray = Array.isArray(req.body['bill']) ? req.body['bill'] : [req.body['bill']];
+  var placeholders = billArray.map(() => '?').join(',');
+  var sql= "SELECT product_buy_detail.*,product_image.*,product.name FROM product_buy_detail  LEFT JOIN product_image on product_buy_detail.image_id=product_image.image_id LEFT JOIN product on product.product_id=product_image.product_id  WHERE product_buy_detail.deleteflag =0 AND product_buy_detail.buyproduct_id in ("+placeholders+")";
   if(req.body.hasOwnProperty("is_s_lock")) return returnOK(res,[]);
-  var x= await knex.raw(sql);
+  var x= await knex.raw(sql, billArray);
   if ((x==null)||(x.length==0))  return returnNotFound(res,{ message: "acao Not exitting "},WarningInfo.DATA_NOT_EXSITING);
   dataThebill.data = x[0];
-  sql= "SELECT product_buy.* FROM product_buy  WHERE buyproduct_id ="+ req.body['bill'] +"  AND deleteflag=0";
+  sql= "SELECT product_buy.* FROM product_buy  WHERE buyproduct_id = ?  AND deleteflag=0";
+  var paramsBill = [req.body['bill']];
   if(req.body.hasOwnProperty("phone_info_lock")){
-    sql = sql + ` AND phone LIKE "${req.body.phone_info_lock}" ;` ;
+    sql = sql + " AND phone LIKE ? ";
+    paramsBill.push("%"+req.body.phone_info_lock+"%");
   }
-  var x1= await knex.raw(sql);
+  var x1= await knex.raw(sql, paramsBill);
   if ((x1==null)||(x1.length==0))  return returnNotFound(res,{ message: "acao Not exitting "},WarningInfo.DATA_NOT_EXSITING);
   dataThebill.bill = x1[0][0];
   return returnOK(res,dataThebill);
 }
 customerCtrl.getLstProduct  = async function(req, res) {
-  var sql= "SELECT product.* FROM product   WHERE deleteflag =0 AND product_id in ("+ req.body['product_id'] +")";
-  var x= await knex.raw(sql);
+  var infoArray = Array.isArray(req.body['product_id']) ? req.body['product_id'] : [req.body['product_id']];
+  var placeholders = infoArray.map(() => '?').join(',');
+  var sql= "SELECT product.* FROM product   WHERE deleteflag =0 AND product_id in ("+placeholders+")";
+  var x= await knex.raw(sql, infoArray);
   if ((x!=null)&&(x.length>0)) {
       return returnOK(res,x[0]);
   }
@@ -497,27 +527,27 @@ customerCtrl.getLstProduct  = async function(req, res) {
 }
 
 customerCtrl.getDetailAllTheBill  = async function(req, res) {
-  var sql= "SELECT product_buy.* FROM product_buy  where deleteflag=0 AND customer_id="+ req.currentUser.users_id;
-  var x= await knex.raw(sql);
-  if ((x!=null)&&(x.length>0)) {
-      return returnOK(res,x[0]);
-  }
-  return returnOK(res,[]);
+   var sql= "SELECT product_buy.* FROM product_buy  where deleteflag=0 AND customer_id= ? ";
+   var x= await knex.raw(sql, [req.currentUser.users_id]);
+   if ((x!=null)&&(x.length>0)) {
+       return returnOK(res,x[0]);
+   }
+   return returnOK(res,[]);
 }
 
 customerCtrl.getDetailAllTheBillCancel  = async function(req, res) {
-  var sql= "SELECT product_buy_return.* FROM product_buy_return  where deleteflag=0 AND customer_id="+ req.currentUser.users_id;
-  var x= await knex.raw(sql);
-  if ((x!=null)&&(x.length>0)) {
-      return returnOK(res,x[0]);
-  }
-  return returnOK(res,[]);
+   var sql= "SELECT product_buy_return.* FROM product_buy_return  where deleteflag=0 AND customer_id= ?";
+   var x= await knex.raw(sql, [req.currentUser.users_id]);
+   if ((x!=null)&&(x.length>0)) {
+       return returnOK(res,x[0]);
+   }
+   return returnOK(res,[]);
 }
 
 
 customerCtrl.getDetailAllProductBack  = async function(req, res) {
-  var sql= "SELECT product_back.* FROM product_back  where deleteflag=0 AND id_created="+ req.currentUser.users_id;
-  var x= await knex.raw(sql);
+   var sql= "SELECT product_back.* FROM product_back  where deleteflag=0 AND id_created= ?";
+   var x= await knex.raw(sql, [req.currentUser.users_id]);
   if ((x!=null)&&(x.length>0)) {
       return returnOK(res,x[0]);
   }
@@ -525,10 +555,11 @@ customerCtrl.getDetailAllProductBack  = async function(req, res) {
 }
 
 customerCtrl.getDetailProductPages  = async function(req, res) {
-    var product_pages = squel.select().from('product_pages')
-                          .where("product_id="+req.query.type)
+     var product_pages = squel.select().from('product_pages')
+                          .where("product_id= ?", req.query.type)
                           .where("deleteflag=0");
-    var result= await knex.raw(product_pages.toString());
+     var p = product_pages.toParam();
+     var result= await knex.raw(p.text, p.values);
     if ((result==null)||(result.length==0)) {
         return returnNotFound(res,{ message: "acao Not exitting "},WarningInfo.DATA_NOT_EXSITING);
     }
@@ -537,8 +568,10 @@ customerCtrl.getDetailProductPages  = async function(req, res) {
 
 customerCtrl.getAllinfoUserChat  = async function(req, res) {
   if(req.body.info.length==0) return returnOK(res,[]);
-  var customer = "SELECT customer.customer_id,customer.username,customer.avatar FROM customer where deleteflag=0 AND customer_id in ("+req.body.info+");";
-  var result= await knex.raw(customer);
+  var infoArray = Array.isArray(req.body.info) ? req.body.info : [req.body.info];
+  var placeholders = infoArray.map(() => '?').join(',');
+  var customer = "SELECT customer.customer_id,customer.username,customer.avatar FROM customer where deleteflag=0 AND customer_id in ("+placeholders+");";
+  var result= await knex.raw(customer, infoArray);
   if ((result==null)||(result.length==0)) {
       return returnNotFound(res,{ message: "acao Not exitting "},WarningInfo.ACCAO_NOT_EXSITING);
   }
@@ -547,8 +580,8 @@ customerCtrl.getAllinfoUserChat  = async function(req, res) {
 
 customerCtrl.getAllinfoNewProduct  = async function(req, res) {
 
-  var sql =  getAllInfoProductInList(req.body["product_group"],0,3);
-  var x= await knex.raw(sql);
+  var sqlObj =  getAllInfoProductInList(req.body["product_group"],0,3);
+  var x= await knex.raw(sqlObj.sql, sqlObj.params);
   if ((x!=null)&&(x.length>0)) {
       return returnOK(res,x[0]);
   }
@@ -557,15 +590,15 @@ customerCtrl.getAllinfoNewProduct  = async function(req, res) {
 
 
 customerCtrl.customerInCompany = async function (req, res) {
+  var dataArray = Array.isArray(req.body.data) ? req.body.data : [req.body.data];
+  var placeholders = dataArray.map(() => '?').join(',');
   var sql =`
       SELECT company_of_customer.* FROM  company_of_customer WHERE company_of_customer.company_id in
         (SELECT product.company_id FROM  product WHERE product.product_id in  
-            (SELECT product_image.product_id FROM product_image WHERE product_image.image_id in (${req.body.data}) and product_image.deleteflag =0 GROUP BY  product_image.product_id)
+            (SELECT product_image.product_id FROM product_image WHERE product_image.image_id in (${placeholders}) and product_image.deleteflag =0 GROUP BY  product_image.product_id)
           AND product.deleteflag =0  GROUP BY  product.company_id) 
       AND company_of_customer.deleteflag =0;`;
-
-
-  var x= await knex.raw(sql);
+  var x= await knex.raw(sql, dataArray);
   if ((x!=null)&&(x.length>0)) {
       return returnOK(res,x[0]);
   }
@@ -575,24 +608,26 @@ customerCtrl.customerInCompany = async function (req, res) {
 
 
 customerCtrl.getLstCustomerBill  = async function(req, res) {
-      var sql= "SELECT product_buy.* FROM product_buy  WHERE customer_id ="+ req.currentUser.users_id +"  AND deleteflag=0";
-      var x= await knex.raw(sql);
+  var sql= "SELECT product_buy.* FROM product_buy  WHERE customer_id = ?  AND deleteflag=0";
+  var x= await knex.raw(sql, [req.currentUser.users_id]);
       if ((x==null)||(x.length==0))  return returnNotFound(res,{ message: "acao Not exitting "},WarningInfo.DATA_NOT_EXSITING);
       return returnOK(res,x[0]);
 }
 
 customerCtrl.cancelCustomerBill  = async function(req, res) {
 //status = 40
-  var sql= "SELECT product_buy.* FROM product_buy WHERE customer_id="+ req.currentUser.users_id + " AND buyproduct_id = "+req.body.buyproduct_id +"  AND deleteflag=0";
-  var x= await knex.raw(sql);
+  var sql= "SELECT product_buy.* FROM product_buy WHERE customer_id= ? AND buyproduct_id = ?  AND deleteflag=0";
+  var x= await knex.raw(sql, [req.currentUser.users_id, req.body.buyproduct_id]);
   if ((x==null)||(x[0].length==0))  return returnNotFound(res,{ message: "data Not exitting "},WarningInfo.DATA_NOT_EXSITING);
   var tableSelect=mangerModelUser("product_buy"); 
   req.body = x[0][0];
   req.body.table = "product_buy";
   req.body.status = 40;
-  var dataAdd= await knex.raw(tableSelect.addRecordIsExisting(req));
+  var addParam = tableSelect.addRecordIsExisting(req);
+  var dataAdd= await knex.raw(addParam.text, addParam.values);
   if((dataAdd==null)||(dataAdd.length<1)) return returnNotFound(res,"Không tồn tại bản ghi dữ liệu này",WarningInfo.DATA_NOT_EXSITING);     
-  var deleteAdd= await knex.raw(tableSelect.deleteFlagToRecord(req,dataAdd[0].insertId));
+  var deleteParam = tableSelect.deleteFlagToRecord(req,dataAdd[0].insertId);
+  var deleteAdd= await knex.raw(deleteParam.text, deleteParam.values);
   if((deleteAdd==null)||(deleteAdd.length<1)) return returnFalse(res,"Lỗi cập nhật dữ liệu",WarningInfo.ERROR_SERVER); 
   var infoData = await tableSelect.checkSqlUpdateAdmin(req,req.body);   
   return returnInfoQuery(res,infoData);     
@@ -600,37 +635,37 @@ customerCtrl.cancelCustomerBill  = async function(req, res) {
 
 customerCtrl.customerBuyAgainBill  = async function(req, res) {
 
-    var sql= "SELECT product_buy.* FROM product_buy  WHERE customer_id="+ req.currentUser.users_id + " AND buyproduct_id = "+req.body.buyproduct_id +"  AND deleteflag=0";
-    var x= await knex.raw(sql);
+    var sql= "SELECT product_buy.* FROM product_buy  WHERE customer_id= ? AND buyproduct_id = ?  AND deleteflag=0";
+    var x= await knex.raw(sql, [req.currentUser.users_id, req.body.buyproduct_id]);
     if ((x==null)||(x.length==0))  return returnNotFound(res,{ message: "data Not exitting "},WarningInfo.DATA_NOT_EXSITING);
-    sql= "SELECT product_buy_detail.* FROM product_buy_detail  WHERE buyproduct_id = "+req.body.buyproduct_id +"  AND deleteflag=0";
-    var detail= await knex.raw(sql);
+    sql= "SELECT product_buy_detail.* FROM product_buy_detail  WHERE buyproduct_id = ?  AND deleteflag=0";
+    var detail= await knex.raw(sql, [req.body.buyproduct_id]);
     if ((detail==null)||(detail.length==0))  return returnNotFound(res,{ message: "Product Not exitting "},WarningInfo.DATA_NOT_EXSITING);
-    sql= "SELECT product_store.* FROM product_store  WHERE ";
-    detail[0].forEach((element,index) => {
-      if(index>0)   sql = sql +" OR "
-      sql = sql + " image_id="+ element.image_id ;
-    });
-    sql =  sql+ " AND deleteflag=0 AND contain<number";
-    var detail1= await knex.raw(sql);
+    var detailParams = detail[0].map(element => element.image_id);
+    var detailPlaceholders = detailParams.map(() => '?').join(',');
+    sql= "SELECT product_store.* FROM product_store  WHERE image_id IN ("+detailPlaceholders+") AND deleteflag=0 AND contain<number";
+    var detail1= await knex.raw(sql, detailParams);
     if ((detail1==null)||(detail1.length==0))  return returnNotFound(res,{ message: "Product Not exitting "},WarningInfo.DATA_NOT_EXSITING);
 
     let data=x[0][0];
     var userid=req.currentUser.users_id;
     let tableSelect=mangerModelUser('product_buy');
     var sqlBuyproduct =tableSelect.buyProductSQL(userid,0,data);
-    var xa= await knex.raw(sqlBuyproduct);
+    var xa= await knex.raw(sqlBuyproduct.text, sqlBuyproduct.values);
     var sqlStringProduct= "INSERT INTO product_buy_detail (buyproduct_id,image_id, quantity, KM, created_at, updated_at, id_created, id_updated, deleteflag, oldid) VALUES ";
+    var paramsProduct = [];
     var thefist=false;
 
     detail[0].forEach(element => { 
         if(thefist) sqlStringProduct =sqlStringProduct +",";
-        var addCustomer = '('+xa[0].insertId+','+element.image_id+','+element.quantity+
-                            ',0,NOW(),NOW(),'+userid+','+userid+',0,0)';
-        sqlStringProduct = sqlStringProduct + addCustomer;
+        sqlStringProduct = sqlStringProduct +'('+xa[0].insertId+',?,NOW(),NOW(),?,?,0,0)';
+        paramsProduct.push(element.image_id);
+        paramsProduct.push(element.quantity);
+        paramsProduct.push(userid);
+        paramsProduct.push(userid);
         thefist=true;
     });
-    var databuyProduct= await knex.raw(sqlStringProduct);
+    var databuyProduct= await knex.raw(sqlStringProduct, paramsProduct);
     if ((databuyProduct!=null)&&(databuyProduct.length>0)) {
         return returnOK(res,xa[0].insertId);
     }
@@ -640,13 +675,13 @@ customerCtrl.customerBuyAgainBill  = async function(req, res) {
 
 
 customerCtrl.getStatusOrder  = async function(req, res) {
-      var sql=  "SELECT product_buy.* FROM product_buy  WHERE customer_id="+ req.currentUser.users_id + " AND buyproduct_id = "+req.body.buyproduct_id +";";
-      var x= await knex.raw(sql);
+      var sql=  "SELECT product_buy.* FROM product_buy  WHERE customer_id= ? AND buyproduct_id = ?;";
+      var x= await knex.raw(sql, [req.currentUser.users_id, req.body.buyproduct_id]);
       var infoData = {};
       if ((x==null)||(x.length==0))  return returnNotFound(res,{ message: "acao Not exitting "},WarningInfo.DATA_NOT_EXSITING);
       infoData.product_buy = x[0];
-      sql=  "SELECT product_buy_return.* FROM product_buy_return  WHERE  product_buy_return.buyproduct_id = "+req.body.buyproduct_id +";";
-      x= await knex.raw(sql);
+      sql=  "SELECT product_buy_return.* FROM product_buy_return  WHERE  product_buy_return.buyproduct_id = ?;";
+      x= await knex.raw(sql, [req.body.buyproduct_id]);
       if ((x==null)||(x.length==0))  return returnNotFound(res,{ message: "acao Not exitting "},WarningInfo.DATA_NOT_EXSITING);
       infoData.product_buy_return = x[0];
 
@@ -654,7 +689,8 @@ customerCtrl.getStatusOrder  = async function(req, res) {
 }
 
 customerCtrl.searchLocation  = async function(req, res) {
-      let dataInfo = req.body; //"city_id","province_id","village_id"
+      let dataInfo = req.body;
+      var params = [];
       var sql=  ` SELECT product_store.*,product.name as product_name,product.detail as product_detail ,
                         product.image, company.companyname,address.streetaddr `;
 
@@ -670,30 +706,39 @@ customerCtrl.searchLocation  = async function(req, res) {
 
       var addAnd = false;
       if(dataInfo.village!=0){
-          sql= sql +"  village_id = "+dataInfo.village;
+          sql= sql +"  village_id = ?";
+          params.push(dataInfo.village);
           addAnd = true;
       }
       if(dataInfo.province!=0){
           if(addAnd) sql= sql + " AND ";
-          sql= sql +" village_id = "+dataInfo.province;
+          sql= sql +" village_id = ?";
+          params.push(dataInfo.province);
           addAnd = true;
       }
       if(dataInfo.city!=0){
           if(addAnd) sql= sql + " AND ";
-          sql= sql +" village_id = "+dataInfo.city;
+          sql= sql +" village_id = ?";
+          params.push(dataInfo.city);
           addAnd = true;
       }
       if(dataInfo.nameLocation.length>2){
           if(addAnd) sql= sql + " AND ";
-          sql = sql + ` ( product_store.content LIKE '%${dataInfo.nameLocation}%'  
-                          OR address.streetaddr LIKE  '%${dataInfo.nameLocation}%' 
-                          OR company.companyname LIKE  '%${dataInfo.nameLocation}%'
-                          OR product.name LIKE '%${dataInfo.nameLocation}%') `;
+          sql = sql + ` ( product_store.content LIKE ?  
+                          OR address.streetaddr LIKE  ? 
+                          OR company.companyname LIKE  ?
+                          OR product.name LIKE ? )`;
+          params.push("%"+dataInfo.nameLocation+"%");
+          params.push("%"+dataInfo.nameLocation+"%");
+          params.push("%"+dataInfo.nameLocation+"%");
+          params.push("%"+dataInfo.nameLocation+"%");
       }
       sql = sql + ` AND product_store.deleteflag =0  `;
 
       if(dataInfo.hasOwnProperty("start")&&dataInfo.hasOwnProperty("end")){
-        sql = sql + ` LIMIT `+dataInfo.start+","+dataInfo.end+" ";
+        sql = sql + ` LIMIT ? , ?`;
+        params.push(dataInfo.start);
+        params.push(dataInfo.end);
       } else  {
         if(!dataInfo.hasOwnProperty("count_data"))
         {
@@ -701,7 +746,7 @@ customerCtrl.searchLocation  = async function(req, res) {
         }
       }
       sql = sql +";";
-      var x= await knex.raw(sql);
+      var x= await knex.raw(sql, params);
       if ((x==null)||(x.length==0))  return returnNotFound(res,{ message: "acao Not exitting "},WarningInfo.DATA_NOT_EXSITING);
       return returnOK(res,x[0]);
 }
@@ -709,9 +754,9 @@ customerCtrl.searchLocation  = async function(req, res) {
 customerCtrl.searchProduct  = async function(req, res) {
   var sql=  "SELECT product.* FROM product  LEFT JOIN company on company.company_id = product.company_id  ";
   sql = sql + ` LEFT JOIN product_store on product_store.product_id = product.product_id `;
-  sql = sql + ` WHERE product.deleteflag =0 AND product_store.number>product_store.contain AND product.name LIKE '%${req.body.productname}%' ;`;
+  sql = sql + ` WHERE product.deleteflag =0 AND product_store.number>product_store.contain AND product.name LIKE ? ;`;
   
-  var x= await knex.raw(sql);
+  var x= await knex.raw(sql, ["%"+req.body.productname+"%"]);
   if ((x==null)||(x.length==0))  return returnNotFound(res,{ message: "acao Not exitting "},WarningInfo.DATA_NOT_EXSITING);
   return returnOK(res,x[0]);
 }
@@ -728,11 +773,15 @@ customerCtrl.getProductOfShop  = async function(req, res) {
                         LEFT JOIN company on company.company_id = product_store.company_id
                         LEFT JOIN address on address.addr_id = product_store.addr_id WHERE  `;
 
-  sql = sql + `(  address.streetaddr LIKE  '%${dataInfo.nameLocation}%'
-                OR company.companyname LIKE  '%${dataInfo.nameLocation}%'
-                OR product.name LIKE '%${dataInfo.nameLocation}%') AND product_store.deleteflag =0 AND  product_image.image_id= ( SELECT MIN(product_image.image_id) testID	FROM product_image WHERE  product_image.product_id= product_store.product_id) `;
+  sql = sql + `(  address.streetaddr LIKE ?
+                OR company.companyname LIKE ?
+                OR product.name LIKE ?) AND product_store.deleteflag =0 AND  product_image.image_id= ( SELECT MIN(product_image.image_id) testID	FROM product_image WHERE  product_image.product_id= product_store.product_id) `;
+    var likeParam = "%"+dataInfo.nameLocation+"%";
+    var paramsShop = [likeParam, likeParam, likeParam];
     if(dataInfo.hasOwnProperty("start")&&dataInfo.hasOwnProperty("end")){
-      sql = sql + ` LIMIT `+dataInfo.start+","+dataInfo.end+" ";
+      sql = sql + ` LIMIT ? , ?`;
+      paramsShop.push(dataInfo.start);
+      paramsShop.push(dataInfo.end);
     } else  {
       if(!dataInfo.hasOwnProperty("count_data"))
       {
@@ -740,30 +789,33 @@ customerCtrl.getProductOfShop  = async function(req, res) {
       }
     }
 
-  var x= await knex.raw(sql);
+   var x= await knex.raw(sql, paramsShop);
   if ((x==null)||(x.length==0))  return returnNotFound(res,{ message: "acao Not exitting "},WarningInfo.DATA_NOT_EXSITING);
   return returnOK(res,x[0]);
 
 }
 customerCtrl.searchGroupCompany  = async function(req, res) {
   let dataInfo = req.body; 
+  var params = [];
   var SQLSearch = '';
   if(dataInfo.village!=0){
-      SQLSearch = ` AND group_company.village_id =${dataInfo.village} `;
+      SQLSearch = ` AND group_company.village_id = ? `;
+      params.push(dataInfo.village);
   }
   else{
     if(dataInfo.province!=0){
-        SQLSearch = ` AND group_company.village_id in (SELECT village.village_id FROM village WHERE village.province_id = ${dataInfo.province})`;
+        SQLSearch = ` AND group_company.village_id in (SELECT village.village_id FROM village WHERE village.province_id = ?)`;
+        params.push(dataInfo.province);
     }
   }
   var sql=  "SELECT group_company.* FROM group_company ";
   sql = sql + ` WHERE group_company.deleteflag =0 ${SQLSearch} `;
-  if(dataInfo.nameLocation!=null&&dataInfo.nameLocation.length>2) sql = sql + ` AND group_company.name_group_company LIKE '%${req.body.productname}%' ;`;
-  else  sql = sql + ` ;`;
-  var x= await knex.raw(sql);
+  if(dataInfo.nameLocation!=null&&dataInfo.nameLocation.length>2) sql = sql + ` AND group_company.name_group_company LIKE ? `;
+  sql = sql + `;`;
+  if(dataInfo.nameLocation!=null&&dataInfo.nameLocation.length>2) params.push("%"+req.body.productname+"%");
+  var x= await knex.raw(sql, params);
   if ((x==null)||(x.length==0))  return returnNotFound(res,{ message: "acao Not exitting "},WarningInfo.DATA_NOT_EXSITING);
   return returnOK(res,x[0]);
-
 }
 
 customerCtrl.getGroupCompany  = async function(req, res) {
@@ -771,13 +823,14 @@ customerCtrl.getGroupCompany  = async function(req, res) {
 
   var sql=  "SELECT group_company_detail.*,company.companyname  FROM group_company_detail ";
   sql = sql + ` LEFT JOIN company on group_company_detail.company_id = company.company_id `;
-  sql = sql + ` WHERE group_company_detail.deleteflag =0 AND group_company_detail.group_company_id=${req.body.group_company_id} LIMIT 0,1000;`;
-  var x= await knex.raw(sql);
+  sql = sql + ` WHERE group_company_detail.deleteflag =0 AND group_company_detail.group_company_id= ? LIMIT 0,1000;`;
+  var x= await knex.raw(sql, [req.body.group_company_id]);
   if ((x==null)||(x.length==0))  return returnNotFound(res,{ message: "acao Not exitting "},WarningInfo.DATA_NOT_EXSITING);
   let dataReturn = x[0];
   var dataTosearch =[];
   if(dataReturn.length==0)  return returnOK(res,{company:[],product:[]});
   for(var i=0;i<dataReturn.length;i++) dataTosearch.push(dataReturn[i].company_id);
+  var placeholders = dataTosearch.map(() => '?').join(',');
   var sql = '	SELECT product_store.*,product.product_group_id,product_image.cost_real,'
   +' product_image.promotion , product.name,product.detail,product.image ,'
   +' product_image.name_image_detail ,product_image.image_info_detail ,'
@@ -787,9 +840,9 @@ customerCtrl.getGroupCompany  = async function(req, res) {
   +' WHERE product.deleteflag =0 AND product_store.deleteflag =0  '
   +' AND product_store.store_product_id=( SELECT MIN(product_store.store_product_id) testID '
   +' FROM product_store WHERE  product_store.product_id= product.product_id )'
-  +'AND product.company_id in ('+dataTosearch+')  LIMIT '+0+','+1000+';';
+  +' AND product.company_id in ('+placeholders+')  LIMIT 0,1000;';
 
-  var xa= await knex.raw(sql);
+  var xa= await knex.raw(sql, dataTosearch);
   if ((xa==null)||(xa.length==0))  return returnNotFound(res,{ message: "acao Not exitting "},WarningInfo.DATA_NOT_EXSITING);
   
   return returnOK(res,{company:dataReturn,product:xa[0]});
@@ -807,9 +860,12 @@ customerCtrl.getInfoLoactionStore = async function(req, res) {
                     WHERE product.deleteflag =0  
                     AND product_store.store_product_id=( SELECT MIN(product_store.store_product_id) testID 
                     FROM product_store WHERE  product_store.company_id= product.company_id )
-                    AND product.product_group_id in (${req.body["product_group"]}) LIMIT ${req.body["start"]},${req.body["end"]};`
+                    AND product.product_group_id in (?) LIMIT ?, ?;`
   
-  var x= await knex.raw(sql);
+  var groupArray = Array.isArray(req.body["product_group"]) ? req.body["product_group"] : [req.body["product_group"]];
+  var placeholders = groupArray.map(() => '?').join(',');
+  sql = sql.replace('in (?)', 'in ('+placeholders+')');
+  var x= await knex.raw(sql, [...groupArray, req.body["start"], req.body["end"]]);
   if ((x!=null)&&(x.length>0)) {
       return returnOK(res,x[0]);
   }
@@ -818,33 +874,39 @@ customerCtrl.getInfoLoactionStore = async function(req, res) {
 
 
 customerCtrl.getAllInfoProductCompany  = async function(req, res) {
-      let dataInfo = req.body; //"city_id","province_id","village_id"
+      let dataInfo = req.body;
+      var params = [];
       var sql=  "";
       
       if(dataInfo.hasOwnProperty("count_data")&&dataInfo.count_data==true){
           sql = ` SELECT  COUNT(product.product_id)  as number_store `;
           sql = sql +' FROM product WHERE' ;
-          if(dataInfo.company_id!=0)
-              sql = sql + ` product.company_id = ${dataInfo.company_id} AND `;  
-          if(dataInfo.hasOwnProperty("product_group")&&dataInfo.product_group>0)   sql = sql + ` product.product_group_id = ${dataInfo.product_group} AND `;  
+          if(dataInfo.company_id!=0) {
+              sql = sql + ` product.company_id = ? AND `;
+              params.push(dataInfo.company_id);
+          }
+          if(dataInfo.hasOwnProperty("product_group")&&dataInfo.product_group>0) {
+              sql = sql + ` product.product_group_id = ? AND `;
+              params.push(dataInfo.product_group);
+          }
           sql = sql +"  product.deleteflag =0;";
 
       }
       else
       {
-        var sql=  getAllInfoProductDetailCompany(dataInfo.company_id,dataInfo.start,dataInfo.end,dataInfo.product_group);
-      
+        var sqlObj =  getAllInfoProductDetailCompany(dataInfo.company_id,dataInfo.start,dataInfo.end,dataInfo.product_group);
+        sql = sqlObj.sql;
+        params = sqlObj.params;
       }
-      var x= await knex.raw(sql);
+      var x= await knex.raw(sql, params);
       if ((x==null)||(x.length==0))  return returnNotFound(res,{ message: "acao Not exitting "},WarningInfo.DATA_NOT_EXSITING);
       return returnOK(res,x[0]);
 }
 
-customerCtrl.getInfoshortName  = async function(option,addLogic="") {
-
+customerCtrl.getInfoshortName  = async function(option,addLogic="",addLogicParams=[]) {
   var sql=  ` SELECT ${option.type}.*   FROM ${option.type} Where 
-              ${option.type}.${option.type_id} =  '${option.name}' AND ${option.type}.deleteflag =0 `+ addLogic;
-  var x= await knex.raw(sql);
+              ${option.type}.${option.type_id} =  ? AND ${option.type}.deleteflag =0 `+ addLogic;
+  var x= await knex.raw(sql, [option.name, ...addLogicParams]);
   if((x==null)||(x.length==0))  return -1;
   if((x[0]==null)||(x[0].length==0))  return -1;
   let data = x[0][0];
@@ -854,9 +916,8 @@ customerCtrl.getInfoshortName  = async function(option,addLogic="") {
 
 customerCtrl.getInfoOfCompany  = async function(req, res) {
   var sql=  ` SELECT company.*   FROM company Where 
-                company.company_id =  ${req.body.company_id} AND company.deleteflag =0`;
-
-  var x= await knex.raw(sql);
+                company.company_id =  ? AND company.deleteflag =0`;
+  var x= await knex.raw(sql, [req.body.company_id]);
   if ((x==null)||(x.length==0))  return returnNotFound(res,{ message: "acao Not exitting "},WarningInfo.DATA_NOT_EXSITING);
   return returnOK(res,x[0]);
 }
@@ -864,15 +925,17 @@ customerCtrl.getInfoOfCompany  = async function(req, res) {
 customerCtrl.getInfoGroupProductCompany  = async function(req, res) {
   var sql=  `SELECT product_group.*   FROM product_group Where 
               product_group.id_created =  (SELECT company.id_created   FROM company Where 
-              company.company_id =${req.body.id_group} AND company.deleteflag =0) AND product_group.deleteflag =0`;
+              company.company_id = ? AND company.deleteflag =0) AND product_group.deleteflag =0`;
             
-  var x= await knex.raw(sql);
+  var x= await knex.raw(sql, [req.body.id_group]);
   if ((x==null)||(x.length==0))  return returnNotFound(res,{ message: "acao Not exitting "},WarningInfo.DATA_NOT_EXSITING);
   return returnOK(res,x[0]);
 }
 
 
 customerCtrl.getInfoLoactionStore = async function(req, res) {
+  var groupArray = Array.isArray(req.body["product_group"]) ? req.body["product_group"] : [req.body["product_group"]];
+  var placeholders = groupArray.map(() => '?').join(',');
   var sql =` 	SELECT product_store.*,product.product_group_id,product_image.cost_real,
                     product_image.promotion , product.name,product.detail,product.image ,
                     product_image.name_image_detail ,product_image.image_info_detail ,
@@ -883,18 +946,18 @@ customerCtrl.getInfoLoactionStore = async function(req, res) {
                     WHERE product.deleteflag =0  
                     AND product_store.store_product_id=( SELECT MIN(product_store.store_product_id) testID 
                     FROM product_store WHERE  product_store.company_id= product.company_id )
-                    AND product.product_group_id in (${req.body["product_group"]}) LIMIT ${req.body["start"]},${req.body["end"]};`
-  
-  var x= await knex.raw(sql);
+                    AND product.product_group_id in (${placeholders}) LIMIT ?, ?;`;
+  var x= await knex.raw(sql, [...groupArray, req.body["start"], req.body["end"]]);
   if ((x!=null)&&(x.length>0)) {
       return returnOK(res,x[0]);
   }
   return returnOK(res,[]);
 }
 
+
 customerCtrl.getInfoCompanyTopStore = async function(req, res) {
-  var sql =`SELECT company.* FROM company  WHERE company.deleteflag =0 ORDER BY company.top DESC LIMIT ${req.body["start"]},${req.body["end"]};`
-  var x= await knex.raw(sql);
+  var sql =`SELECT company.* FROM company  WHERE company.deleteflag =0 ORDER BY company.top DESC LIMIT ?, ?;`;
+  var x= await knex.raw(sql, [req.body["start"], req.body["end"]]);
   if ((x!=null)&&(x.length>0)) {
       return returnOK(res,x[0]);
   }
@@ -919,10 +982,12 @@ customerCtrl.saveUserInfo = async function(req, res) {
 
     var table ='customer';
     var tableSelect=mangerModelUser(table);
-    var dataAdd= await knex.raw(tableSelect.addRecordIsExisting(req));
+    var addParam = tableSelect.addRecordIsExisting(req);
+    var dataAdd= await knex.raw(addParam.text, addParam.values);
     if((dataAdd==null)||(dataAdd.length<1)) 
         return returnNotFound(res,"Không tồn tại bản ghi dữ liệu này", WarningInfo.DATA_NOT_EXSITING);     
-    var deleteAdd= await knex.raw(tableSelect.deleteFlagToRecord(req,dataAdd[0].insertId));
+    var deleteParam = tableSelect.deleteFlagToRecord(req,dataAdd[0].insertId);
+    var deleteAdd= await knex.raw(deleteParam.text, deleteParam.values);
     if((deleteAdd==null)||(deleteAdd.length<1)) 
         return returnFalse(res,"Lỗi cập nhật dữ liệu", WarningInfo.DATA_NOT_EXSITING);  
     
@@ -932,8 +997,9 @@ customerCtrl.saveUserInfo = async function(req, res) {
         var passwordData = await bcrypt.hash(data["password"], salt);
         updateInfo.set("password",passwordData).set("id_updated",req.currentUser.users_id)
               .set("updated_at","NOW()",{dontQuote: true})
-              .where('customer_id ='+req.currentUser.users_id);
-        let result = await  knex.raw(updateInfo.toString());
+              .where('customer_id = ?', req.currentUser.users_id);
+        var p = updateInfo.toParam();
+        let result = await  knex.raw(p.text, p.values);
         if(result==null||result[0].length<1)   return returnFalse(res,error,WarningInfo.DATA_WORNG);
         return returnOK(res,{result:"Data Update"});
     }
@@ -945,7 +1011,8 @@ customerCtrl.saveUserInfo = async function(req, res) {
         updateInfo.set(item,data[item]);
       }
     }
-    let result = await  knex.raw(updateInfo.toString());
+    var p = updateInfo.toParam();
+    let result = await  knex.raw(p.text, p.values);
     if(result==null||result[0].length<1)   return returnFalse(res,error,WarningInfo.DATA_WORNG);
     return returnOK(res,{result:"Data Update"});
 }
@@ -955,10 +1022,11 @@ customerCtrl.registerCustomer = async function(req, res) {
     var tableSelect=mangerModelUser('customer');
     var userToget = squel.select().from('customer').
                         where( squel.expr()
-                                    .and("phone='"+customer["phone"]+"'")
-                                    .or("email='"+customer["email"]+"'")
+                                    .and("phone= ?", customer["phone"])
+                                    .or("email= ?", customer["email"])
                         );
-    var result = await knex.raw(userToget.toString());
+    var p = userToget.toParam();
+    var result = await knex.raw(p.text, p.values);
     if(result!=null&&result[0].length>0) 
         return returnFalse(res,{ message: "Số điện thoại hoặc email đã đăng ký, xin vui lòng sử dụng tài khoản khác" } ,WarningInfo.ACCAO_EXSITING);
     
@@ -969,12 +1037,14 @@ customerCtrl.registerCustomer = async function(req, res) {
     customer.permission_id = 0;
     if(is_sale) customer.permission_id = 1;
     var authen=  tableSelect.addRecodeData(customer,"customer",0,0);
-    result = await  knex.raw(authen.toString());
+    var p = authen.toParam();
+    result = await  knex.raw(p.text, p.values);
     if(result==null||result[0].length<1)   return returnFalse(res,error,WarningInfo.DATA_WORNG);
     if(!is_sale)  return returnOK(res,{result:"Đăng ký thành công!"});
     company.top=0;
     authen=  tableSelect.addRecodeData(company,"company",result[0].insertId,2);
-    var resultCompany = await  knex.raw(authen.toString());
+    var p = authen.toParam();
+    var resultCompany = await  knex.raw(p.text, p.values);
     if(resultCompany==null||resultCompany[0].length<1)   return returnFalse(res,error,WarningInfo.DATA_WORNG);
     return returnOK(res,{result:"Xin vui lòng đợi Quản lý trang phản hồi lại."});
 }
@@ -983,11 +1053,12 @@ customerCtrl.registerCustomer = async function(req, res) {
 customerCtrl.regisisterCompany = async function(req, res) {
   let {company} = req.body;
   var editCus = squel.update().table("customer");
-  editCus.where('customer_id='+req.currentUser.users_id)
+  editCus.where('customer_id= ?', req.currentUser.users_id)
   editCus.set("id_updated",req.currentUser.users_id)
   .set("updated_at","NOW()",{dontQuote: true})
   .set("permission_id",2);
-  var x = await knex.raw(editCus.toString());
+  var p = editCus.toParam();
+  var x = await knex.raw(p.text, p.values);
 
   var tableSelect=mangerModelUser('company');
   let infoShortName = tableSelect.getFieldLinkShort();
@@ -996,7 +1067,8 @@ customerCtrl.regisisterCompany = async function(req, res) {
     }
   company.top=0;
   authen=  tableSelect.addRecodeData(company,"company",req.currentUser.users_id,2);
-  var resultCompany = await  knex.raw(authen.toString());
+  var p = authen.toParam();
+  var resultCompany = await  knex.raw(p.text, p.values);
   if(resultCompany==null||resultCompany[0].length<1)   return returnFalse(res,error,WarningInfo.DATA_WORNG);
   return returnOK(res,{result:"Xin vui lòng đợi Quản lý trang phản hồi lại."});
 }
@@ -1009,26 +1081,27 @@ customerCtrl.getAllBillInfoValue = async function(req, res) {
   LEFT JOIN product_image on product_buy_detail.image_id=product_image.image_id
   LEFT JOIN customer on customer.customer_id=product_buy.customer_id
   WHERE product_buy.deleteflag=0 AND `;
-  if(req.body.hasOwnProperty("status")) sql +=` product_buy.status= ${req.body.status} AND `;
-  sql +=` product_buy.selled_id= ${req.currentUser.users_id} LIMIT 0,1000`;
+  if(req.body.hasOwnProperty("status")) sql +=` product_buy.status= ? AND `;
+  sql +=` product_buy.selled_id= ? LIMIT 0,1000`;
+  var paramsBill = [];
+  if(req.body.hasOwnProperty("status")) paramsBill.push(req.body.status);
+  paramsBill.push(req.currentUser.users_id);
   
-  var resultCompany = await  knex.raw(sql);
+  var resultCompany = await  knex.raw(sql, paramsBill);
   if(resultCompany==null||resultCompany[0].length<1)   return returnFalse(res,error,WarningInfo.DATA_WORNG);
   return returnOK(res,resultCompany[0]);
 }
 
 customerCtrl.getLastdayProductBuy  = async function(req, res) {
-  var sql=  "select extract(YEAR from updated_at) as month,sum(Total) as total_value,COUNT(*) as total from product_buy  WHERE updated_at  >= now() - INTERVAL "+req.body.time
-              +" day AND deleteflag = 0 AND selled_id= "+req.currentUser.users_id +" group by month ;";
-  var x= await knex.raw(sql);
+  var sql=  "select extract(YEAR from updated_at) as month,sum(Total) as total_value,COUNT(*) as total from product_buy  WHERE updated_at  >= now() - INTERVAL ? day AND deleteflag = 0 AND selled_id= ? group by month ;";
+  var x= await knex.raw(sql, [req.body.time, req.currentUser.users_id]);
   if ((x==null)||(x.length==0))  return returnNotFound(res,{ message: "acao Not exitting "},WarningInfo.DATA_NOT_EXSITING);
   return returnOK(res,x[0]);
 }
 
 customerCtrl.getAllDataYearProductBuy  = async function(req, res) {
-  var sql=  "select extract(YEAR from updated_at) as month,sum(Total) as total_value,COUNT(*) as total from product_buy WHERE deleteflag = 0 AND selled_id= "
-            +req.currentUser.users_id +" group by month;";
-  var x= await knex.raw(sql);
+  var sql=  "select extract(YEAR from updated_at) as month,sum(Total) as total_value,COUNT(*) as total from product_buy WHERE deleteflag = 0 AND selled_id= ? group by month;";
+  var x= await knex.raw(sql, [req.currentUser.users_id]);
   if ((x==null)||(x.length==0))  return returnNotFound(res,{ message: "acao Not exitting "},WarningInfo.DATA_NOT_EXSITING);
   return returnOK(res,x[0]);
 }
@@ -1037,7 +1110,7 @@ customerCtrl.getAllDataYearProductBuy  = async function(req, res) {
 customerCtrl.setStatusProduct = async function(req, res) {
   let {product,status} = req.body;
   var editCus = squel.update().table("product")
-                .where('product_id='+product);
+                .where('product_id= ?', product);
   if(status==-1){
     editCus.set("deleteflag",0)
             .set("store",1)
@@ -1050,25 +1123,32 @@ customerCtrl.setStatusProduct = async function(req, res) {
             .set("updated_at","NOW()",{dontQuote: true});
   }
                
-  var x = await knex.raw(editCus.toString());
+  var p = editCus.toParam();
+  var x = await knex.raw(p.text, p.values);
   if ((x==null)||(x.length==0))  return returnNotFound(res,{ message: "Data eror "},WarningInfo.DATA_WORNG);
   return returnOK(res,x[0]);
 }
 
 customerCtrl.getPageDetail = async function(req, res) {
   let option ={name:req.body.data, type:"gro_pages_content",type_id:"name_short", colume:"filesave"};
-  var  id = await  customerCtrl.getInfoshortName(option,'AND gro_pages_content.type_langue='+ getLanggue(req));
+  var  id = await  customerCtrl.getInfoshortName(option,'AND gro_pages_content.type_langue= ?', [getLanggue(req)]);
   return returnOK(res,id);
 }
 
 
 customerCtrl.getAdsProduct = async function(req, res) {
-    var sql=  ` SELECT gro_pages_content.*   FROM gro_pages_content Where gro_pages_content.support_product and gro_pages_content.type_langue =`+getLanggue(req) + ` `;
-    if(req.body.support_product_lst)
-      sql = sql +  `in ( ${req.body.support_product.toString()}) AND gro_pages_content.deleteflag =0`;
-    else  sql = sql +  `=  ${req.body.support_product} AND gro_pages_content.deleteflag =0`;
-
-    var x= await knex.raw(sql);
+    var sql=  ` SELECT gro_pages_content.*   FROM gro_pages_content Where gro_pages_content.support_product and gro_pages_content.type_langue = ?`;
+    var params = [getLanggue(req)];
+    if(req.body.support_product_lst) {
+      var lstArray = Array.isArray(req.body.support_product_lst) ? req.body.support_product_lst : [req.body.support_product_lst];
+      var placeholders = lstArray.map(() => '?').join(',');
+      sql = sql + ` AND gro_pages_content.support_product in (${placeholders}) AND gro_pages_content.deleteflag =0`;
+      params = params.concat(lstArray);
+    } else {
+      sql = sql + ` = ? AND gro_pages_content.deleteflag =0`;
+      params.push(req.body.support_product);
+    }
+    var x= await knex.raw(sql, params);
     if ((x==null)||(x.length==0))  return returnNotFound(res,{ message: "Data Not exitting "},WarningInfo.DATA_NOT_EXSITING);
     return returnOK(res,x[0]);
 

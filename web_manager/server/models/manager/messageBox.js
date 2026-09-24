@@ -82,9 +82,10 @@ const DATA_TYPE_SOCIAL = {
 MesageBox.sendTheWarningThebill = async function (idUser,title,content) {
 
     var authen = squel.select().from('social_user')
-                            .where("id_user="+idUser)
+                            .where("id_user= ?", idUser)
                             .where("deleteflag=0");
-    var result= await knex.raw(authen.toString());
+    var p = authen.toParam();
+    var result= await knex.raw(p.text, p.values);
     if ((result==null)||(result.length==0)) {
             return false;
     }

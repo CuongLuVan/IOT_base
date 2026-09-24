@@ -40,7 +40,6 @@ QueueHandle_t deviceCommandQueue = NULL;
 #define BUF_SIZE                 1024
 #define UART_BAUD_RATE           115200
 #define UART_READ_TIMEOUT_MS     100
-#define EEPROM_SIZE              2048
 #define WIFI_QUEUE_SIZE_SENSOR   10
 #define WIFI_QUEUE_SIZE_STATUS   10
 #define WIFI_QUEUE_SIZE_COMMAND  10

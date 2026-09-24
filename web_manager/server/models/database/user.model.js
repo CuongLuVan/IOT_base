@@ -48,9 +48,9 @@ class User extends CommonModel {
   getConditionManisfest(info){
     var permId = parseInt(String(info.permission_id), 10);
     if (!permId || permId < 0) {
-      return "users.deleteflag=0 ";
+      return { sql: "users.deleteflag=0 ", params: [] };
     }
-    return "users.deleteflag=0 AND users.permission_id>"+permId+ " ";
+    return { sql: "users.deleteflag=0 AND users.permission_id > ? ", params: [permId] };
   }
 
   getJsonTofind(){
@@ -89,7 +89,8 @@ class User extends CommonModel {
       .set("created_at","NOW()",{dontQuote: true}) 
       .set("updated_at","NOW()",{dontQuote: true})
       .set("deleteflag",0);
-      return await this.queryDatabaseDetail(authen.toString());;
+      var p = authen.toParam();
+      return await this.queryDatabaseDetail(p.text, p.values);;
   }
 
 

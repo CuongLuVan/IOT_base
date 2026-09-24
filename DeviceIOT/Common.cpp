@@ -1,4 +1,5 @@
 #include "Common.h"
+#include "NetWork_Mqtt.h"
 #include <ArduinoJson.h>
 #include "define_All.h"
 
@@ -16,5 +17,9 @@ String getInfoDevice(InfoSensor sensorValue, InfoDeviceControl statusDevice)
     jsonBufferData["co"] = coString;
     String response;
     serializeJson(jsonBufferData, response);
+#if ENABLE_ASCON_AEAD128
+    return getAsconEncryptedPayload(response);
+#else
     return response;
+#endif
 }

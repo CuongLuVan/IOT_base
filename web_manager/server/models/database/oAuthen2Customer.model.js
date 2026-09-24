@@ -22,11 +22,12 @@ class oAuthen2Customer extends CommonModel {
    */
     checkInvalUserExistingTocken(tocken){
         var authen = squel.select().from("oauthen2customer")
-                        .where("tocken = '"+tocken+"'" )
+                        .where("tocken = ?", tocken)
                         .where("deleteflag = 0")
                         .where("time_relase > NOW()");
         return new Promise( ( resolve, reject ) => {
-            knex.raw(authen.toString()).then(function(result) {
+            var p = authen.toParam();
+            knex.raw(p.text, p.values).then(function(result) {
                 resolve( result[0] );
             }).catch(function(err){
                 return reject(err);
@@ -35,6 +36,7 @@ class oAuthen2Customer extends CommonModel {
     }
 
     async responseLogin(res,user){
+/*
         try {
             const permission_id = user.permission_id;
             const current_id = user.customer_id;
@@ -66,6 +68,45 @@ class oAuthen2Customer extends CommonModel {
                 avatar: user.avatar
             });
         } catch (ie) {
+*/
+        try
+        {
+            var dataTocken= getRamdomData(256);
+            var permission_id=user.permission_id;
+            var current_id=user.customer_id;
+            var listDataContain="";
+            var authen2 = squel.insert().into("oauthen2customer")
+                    .set("permission_id",permission_id)
+                    .set("customeid",current_id)
+                    .set("tocken",dataTocken)
+                    .set("id_updated",current_id)
+                    .set("id_created",current_id)
+                    .set("deleteflag",0)
+                    .set("created_at",'NOW()',{dontQuote: true})
+                    .set("updated_at",'NOW()',{dontQuote: true})
+                    .set("deleteflag",0)
+                    .set("time_relase",'NOW() + INTERVAL 7 DAY',{dontQuote: true});
+    
+            if(user.permission_id==2){
+                var dataCompany = squel.select().from("company")
+                .where("id_created = ?", current_id)
+                .where("deleteflag = 0");
+                var p = dataCompany.toParam();
+                var infoCompany = await knex.raw(p.text, p.values);
+                if ((infoCompany!=null)&&(infoCompany.length>0)) {
+                    for(var i=0;i<infoCompany[0].length;i++)
+                    {
+                        listDataContain+=infoCompany[0][i].company_id;
+                        if(i!==(infoCompany[0].length-1))  listDataContain+=",";
+                    }
+                }  
+            }
+            authen2.set("value_manifest",listDataContain);
+            var p = authen2.toParam();
+            var x = await knex.raw(p.text, p.values);
+            return returnOKCustom(res,{success: true,token:dataTocken,email: user.email,avatar:user.avatar});
+        }
+        catch(ie){
             return returnNotAuthen(res,ie,WarningInfo.EXPRIED_LOGIN);
         }
     }
@@ -110,11 +151,12 @@ class oAuthen2Customer extends CommonModel {
     }
     checkInvalUserExistingTocken=(tocken)=>{
         var authen = squel.select().from("oauthen2customer")
-                        .where("tocken = '"+tocken+"'" )
+                        .where("tocken = ?", tocken)
                         .where("deleteflag = 0")
                         .where("time_relase > NOW()");
         return new Promise( ( resolve, reject ) => {
-            knex.raw(authen.toString()).then(function(result) {
+            var p = authen.toParam();
+            knex.raw(p.text, p.values).then(function(result) {
                 resolve( result[0] );
             }).catch(function(err){
                 return reject(err);
@@ -124,10 +166,11 @@ class oAuthen2Customer extends CommonModel {
 
     async checkUserInval(tocken){
             var authen = squel.select().from("oauthen2customer")
-                        .where("tocken = '"+tocken+"'" )
+                        .where("tocken = ?", tocken)
                         .where("deleteflag = 0")
                         .where("time_relase > NOW()");
-            var infoUser= await knex.raw(authen.toString());
+            var p = authen.toParam();
+            var infoUser= await knex.raw(p.text, p.values);
             if ((infoUser!=null)&&(infoUser.length>0)) {
                 return infoUser[0];
             }

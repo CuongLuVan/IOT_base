@@ -1,0 +1,11 @@
+{
+  "scheme": "hmac-sha256",
+  "field": "signature",
+  "keyField": "keyId",
+  "ignoreTopics": ["$SYS/#"],
+  "keys": {
+    "device1": "replace_with_secret_for_device1",
+    "device2": "replace_with_secret_for_device2",
+    "iotuser": "replace_with_secret_for_iotuser"
+  }
+}

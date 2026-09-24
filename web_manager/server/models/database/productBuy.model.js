@@ -54,14 +54,15 @@ class ProductBuy extends CommonModel {
             .set("updated_at","NOW()",{dontQuote: true})
             .set("deleteflag",0)
             .set("oldid",0);
-    return thebill.toString();
+    return thebill.toParam();
   }
 
-  async getSaleInfo(company_id){
+   async getSaleInfo(company_id){
     var thebill = squel.select().from('company')
     .where('deleteflag=0')
-    .where('company_id = '+company_id);
-    var infoData = await this.queryDatabase(thebill.toString());
+    .where('company_id = ?', company_id);
+    var p = thebill.toParam();
+    var infoData = await this.queryDatabase(p.text, p.values);
     return infoData[0].id_created;
 
   }

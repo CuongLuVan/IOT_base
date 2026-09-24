@@ -11,3 +11,9 @@ class NetWork_Mqtt {
         void lisenMqtt();
         void MqttReconnect();
 };
+
+#if ENABLE_ASCON_AEAD128
+String getAsconEncryptedPayload(const String &payload);
+bool tryAsconDecryptPayload(const String &payload, String &plainText);
+void ensureAsconKeyReady();
+#endif

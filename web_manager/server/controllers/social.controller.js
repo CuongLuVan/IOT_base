@@ -21,14 +21,16 @@ socialCtrl.checkEmailRegister =async function (req, res) {
   {
     var tableSelect=mangerModel('customer');
     var checkCustomer = squel.select().from('customer')
-                        .where("email='"+req.body["email"]+"'")
+                        .where("email= ?", req.body["email"])
                         .where("deleteflag=0");
-    var dataCustomer = await  knex.raw(checkCustomer.toString());
+    var p = checkCustomer.toParam();
+    var dataCustomer = await  knex.raw(p.text, p.values);
     var empyUser=false;
 
     if ((dataCustomer==null)||(dataCustomer[0].length==0)) {
         empyUser=true;
-        dataCustomer = await  knex.raw(tableSelect.addFormToTableSQL(req.body));
+    var addParam = tableSelect.addFormToTableSQL(req.body);
+    dataCustomer = await  knex.raw(addParam.text, addParam.values);
         if ((dataCustomer==null)||(dataCustomer[0].length==0)){
             returnFalse(res,"Database inval",WarningInfo.ERROR_SERVER);
             return;
@@ -46,17 +48,20 @@ socialCtrl.checkEmailRegister =async function (req, res) {
     dataIport["mqtt_pass"]=getRamdomData(10);
     dataIport["mqtt_id"]=nameEmail[0];
     if(empyUser){
-        dataCustomer = await  knex.raw(tableSelect.addFormToTableSQL(dataIport));
+        var addParam = tableSelect.addFormToTableSQL(dataIport);
+        dataCustomer = await  knex.raw(addParam.text, addParam.values);
         returnOK(res,dataIport);
     }
     else
     {
-        var chechMQTT = squel.select().from('mqtt_user')
-                        .where("user_id="+dataCustomer[0][0].customer_id+"")
+            var chechMQTT = squel.select().from('mqtt_user')
+                        .where("user_id= ?", dataCustomer[0][0].customer_id+"")
                         .where("deleteflag=0");
-        var dataMqttUser = await  knex.raw(chechMQTT.toString());                
+        var p = chechMQTT.toParam();
+        var dataMqttUser = await  knex.raw(p.text, p.values);                
         if ((dataMqttUser==null)||(dataMqttUser[0].length==0)){
-            dataMqttUser = await  knex.raw(tableSelect.addFormToTableSQL(dataIport));
+            var addParam = tableSelect.addFormToTableSQL(dataIport);
+            dataMqttUser = await  knex.raw(addParam.text, addParam.values);
             returnOK(res,dataIport);
         }
         else
@@ -76,17 +81,23 @@ socialCtrl.stockReportValue =async function (req, res) {
     var stock= new StockCommon();
     var startTime = !!!req.body.startTime?null:req.body.startTime;
     var endTime = !!!req.body.endTime?null:req.body.endTime;
-    var infoData = await stock.queryDatabaseDetail(stock.getSQLStock(table,startTime,endTime));
+    var sqlStock = stock.getSQLStock(table,startTime,endTime);
+    var infoData = await stock.queryDatabaseDetail(sqlStock.text, sqlStock.values);
     return returnInfoQuery(res,infoData);
 }
 
 socialCtrl.stockImport =async function (req, res) {
+
     if (!req.file) return returnFalse(res,"File is required",WarningInfo.NOT_UPLOAD_FILE);
     var file=req.file.path;
     var selectTable=req.body.selectStock;
     if (typeof selectTable !== 'string' || !/^[A-Za-z0-9_]+$/.test(selectTable)) {
         return returnFalse(res,"Invalid stock table",WarningInfo.DATA_NOT_EXSITING);
     }
+
+    //var file=req.body.file.path;
+    //var selectTable=req.body.selectStock.replace(/[^a-zA-Z0-9_]/g, '');
+
     var stock= new StockCommon();
     if(!await stock.chechTableExisting("stock_info_"+selectTable))
     {
@@ -98,44 +109,59 @@ socialCtrl.stockImport =async function (req, res) {
         const inserts = await knex.transaction(async function(trx) {
             const workbook  = await XLSX.readFile(file, {});
             var sheet_name_list = workbook.SheetNames;
-            var stringDataSQL=' INSERT INTO `stock_info_'+selectTable+'` (`date`, `open`, `high`, `low`, `close`, `volume`)  VALUE '
             for(var i=0;i<sheet_name_list.length;i++){
                 var first_worksheet = workbook.Sheets[sheet_name_list[0]];
                 var data = XLSX.utils.sheet_to_json(first_worksheet,  {raw: false});
                 var arrayDelete=[];
                 var enableSql=false;
-                var newSQLCheck=stringDataSQL;
+                var insertValues=[];
+                var dateValues=[];
                 data.forEach((row,index)=>{
                     if(index>0){
-                        if(arrayDelete.length>0)   newSQLCheck=newSQLCheck+",";
-                        var idDate = 'str_to_date("'+row.DATE+'","%m/%d/%y")'
-                        arrayDelete.push(idDate);
-                        
-                        newSQLCheck =newSQLCheck +'('+idDate+','+row.OPEN+','+row.HIGH+','+row.LOW+','+row.CLOSE+','+row.VOLUME+')';
-                        enableSql=(arrayDelete.length==100);
+                        dateValues.push(row.DATE);
+                        insertValues.push([row.DATE,parseFloat(row.OPEN)||0,parseFloat(row.HIGH)||0,parseFloat(row.LOW)||0,parseFloat(row.CLOSE)||0,parseInt(row.VOLUME)||0]);
+                        enableSql=(dateValues.length==100);
                         
                     }
                     if(enableSql){
-                        var sqlToDelete ='DELETE FROM `stock_info_'+selectTable+'` WHERE date IN (' +arrayDelete+');';
-                        newSQLCheck = newSQLCheck+';'
-                        knex.raw(sqlToDelete).transacting(trx).then(trx.commit).catch(trx.rollback);
-                        knex.raw(newSQLCheck).transacting(trx).then(trx.commit).catch(trx.rollback);
+                        var sqlToDelete ='DELETE FROM `stock_info_'+selectTable+'` WHERE date IN (' +dateValues.map(()=>'?').join(',')+');';
+                        knex.raw(sqlToDelete, dateValues).transacting(trx).then(trx.commit).catch(trx.rollback);
+                        var insertSql='INSERT INTO `stock_info_'+selectTable+'` (`date`, `open`, `high`, `low`, `close`, `volume`) VALUES ';
+                        var insertParams=[];
+                        var thefist=false;
+                        for(var j=0;j<insertValues.length;j++){
+                            if(thefist) insertSql =insertSql +",";
+                            insertSql = insertSql +'('+insertValues[j].map(()=>'?').join(',')+')';
+                            insertParams = insertParams.concat(insertValues[j]);
+                            thefist=true;
+                        }
+                        insertSql = insertSql+';'
+                        knex.raw(insertSql, insertParams).transacting(trx).then(trx.commit).catch(trx.rollback);
                         enableSql=false;
-                        newSQLCheck=stringDataSQL;
-                        arrayDelete=[];
+                        insertValues=[];
+                        dateValues=[];
                     }
                });
-               if(arrayDelete.length>1) 
-               {
-                var sqlToDelete ='DELETE FROM `stock_info_'+selectTable+'` WHERE date IN (' +arrayDelete+');';
-                knex.raw(sqlToDelete).transacting(trx).then(trx.commit).catch(trx.rollback);
-                newSQLCheck = newSQLCheck+';'
-                knex.raw(newSQLCheck).transacting(trx).then(trx.commit).catch(trx.rollback);
-                enableSql=false;
-                newSQLCheck=stringDataSQL;
-                arrayDelete=[];
-               }
-               
+                if(dateValues.length>1) 
+                {
+                 var sqlToDelete ='DELETE FROM `stock_info_'+selectTable+'` WHERE date IN (' +dateValues.map(()=>'?').join(',')+');';
+                 knex.raw(sqlToDelete, dateValues).transacting(trx).then(trx.commit).catch(trx.rollback);
+                 var insertSql='INSERT INTO `stock_info_'+selectTable+'` (`date`, `open`, `high`, `low`, `close`, `volume`) VALUES ';
+                 var insertParams=[];
+                 var thefist=false;
+                 for(var j=0;j<insertValues.length;j++){
+                     if(thefist) insertSql =insertSql +",";
+                     insertSql = insertSql +'('+insertValues[j].map(()=>'?').join(',')+')';
+                     insertParams = insertParams.concat(insertValues[j]);
+                     thefist=true;
+                 }
+                 insertSql = insertSql+';'
+                 knex.raw(insertSql, insertParams).transacting(trx).then(trx.commit).catch(trx.rollback);
+                 enableSql=false;
+                 insertValues=[];
+                 dateValues=[];
+                }
+                
             }
             return returnOK(res,"OK");
         });

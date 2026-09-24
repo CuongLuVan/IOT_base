@@ -86,7 +86,7 @@ router.get('/group_page/:typePage', (req, res) => {
 
 router.get('/page_group/:typePage', async (req, res) => {
   let option ={name:req.params.typePage, type:"gro_pages_content",type_id:"name_short", colume:"pages_content_id"};
-  let  id = await  customerCtrl.getInfoshortName(option,'AND gro_pages_content.type_langue='+ getLanggue(req));
+  let  id = await  customerCtrl.getInfoshortName(option,'AND gro_pages_content.type_langue= ?', [getLanggue(req)]);
   res.render('teznews/articleGroup', { detail: id, route: '' });
  // res.render('home/groupDetail', { detail: data, route: '' });
 });

@@ -5,6 +5,31 @@
 #define SUPPORT_LORA 0
 #define SUPPORT_MQTT 1
 
+// false = giữ nguyên luồng MQTT hiện tại.
+// true  = xác thực chứng chỉ TLS/SSL bằng CA certificate lưu trong ROM/EEPROM.
+#define ENABLE_TLS_SSL false
+
+// false = giữ nguyên luồng MQTT/TLS hiện tại.
+// true  = bật mutual TLS: broker xác thực thiết bị bằng client certificate và private key.
+#define ENABLE_mTLS false
+
+// false = giữ nguyên payload MQTT hiện tại.
+// true  = ký và kiểm tra JSON MQTT bằng HMAC-SHA256.
+#define ENABLE_MESSAGE_AUTHENTICATION false
+
+// false = giữ nguyên luồng MQTT hiện tại.
+// true  = bật mã hóa Ascon-AEAD128 cho các payload MQTT ngoài lệnh handshake.
+#define ENABLE_ASCON_AEAD128 false
+#define ASCON_RANDOM_DIGITS 5
+#define ASCON_KEY_ROTATION_MS 86400000UL
+#define ASCON_PUBLIC_KEY_COUNT 10
+#define ASCON_PUBLIC_KEY_HEX_LENGTH 32
+#define ASCON_PUBLIC_KEY_ENTRY_LENGTH 33
+#define ASCON_PUBLIC_KEYS_ADDRESS 18000
+#define ASCON_HANDSHAKE_DIGITS_ADDRESS 18330
+#define ASCON_HANDSHAKE_DIGITS_MAX_LENGTH 8
+#define ASCON_KEY_ROTATION_TIME_ADDRESS 18350
+
 // 0 = use standard WiFiClient
 // 1 = use WiFiClientSecure for TLS-capable MQTT connections
 #define MQTT_NO_TLS 1
@@ -23,7 +48,35 @@
 
 #define UART_BUFFER_SIZE               1024
 #define UART_READ_TIMEOUT_MS           100
-#define EEPROM_SIZE                    2048
+#if ENABLE_MESSAGE_AUTHENTICATION
+#define EEPROM_SIZE                    (32 * 1024)
+#else
+#define EEPROM_SIZE                    (20 * 1024)
+#endif
+#define TLS_SSL_DATA_ADDRESS            1300
+#if ENABLE_MESSAGE_AUTHENTICATION
+#define TLS_SSL_DATA_MAX_LENGTH         (MESSAGE_AUTH_KEY_ID_ADDRESS - TLS_SSL_DATA_ADDRESS - 1)
+#else
+#define TLS_SSL_DATA_MAX_LENGTH         (EEPROM_SIZE - TLS_SSL_DATA_ADDRESS - 1)
+#endif
+
+// Mỗi dữ liệu PEM phải kết thúc bằng '\0'. Các vùng không chồng lấp nhau trong EEPROM.
+#define MTLS_CA_CERT_ADDRESS             1300
+#define MTLS_CA_CERT_MAX_LENGTH          4095
+#define MTLS_CLIENT_CERT_ADDRESS         5500
+#define MTLS_CLIENT_CERT_MAX_LENGTH      4095
+#define MTLS_PRIVATE_KEY_ADDRESS         9700
+#if ENABLE_MESSAGE_AUTHENTICATION
+#define MTLS_PRIVATE_KEY_MAX_LENGTH      (MESSAGE_AUTH_KEY_ID_ADDRESS - MTLS_PRIVATE_KEY_ADDRESS - 1)
+#else
+#define MTLS_PRIVATE_KEY_MAX_LENGTH      (EEPROM_SIZE - MTLS_PRIVATE_KEY_ADDRESS - 1)
+#endif
+
+// Message-authentication data: null-terminated key id and HMAC secret.
+#define MESSAGE_AUTH_KEY_ID_ADDRESS      20000
+#define MESSAGE_AUTH_KEY_ID_MAX_LENGTH   127
+#define MESSAGE_AUTH_SECRET_ADDRESS      20200
+#define MESSAGE_AUTH_SECRET_MAX_LENGTH   255
 
 #define JSON_BUFFER_SIZE               512
 #define JSON_SMALL_BUFFER_SIZE         128
