@@ -1,0 +1,4 @@
+{
+  "windowSeconds": 60,
+  "ignoreTopics": ["$SYS/#"]
+}

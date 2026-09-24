@@ -63,6 +63,7 @@ public:
     void writeString(int address, const char* str);
     void writeString(int address, String str);
     String readString(int address, int maxLen = 1024);
+    String readLargeString(int address, int maxLen);
     void writeChar(int address, char value);
     char readChar(int address);
     void saveWiFiCredentials(int ssidAddr, int passAddr, const char* ssid, const char* pass);

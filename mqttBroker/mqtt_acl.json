@@ -1,0 +1,14 @@
+{
+  "rules": [
+    {
+      "clientId": "device1",
+      "publish": ["devices/device1/data", "devices/device1/commands/#"],
+      "subscribe": ["devices/device1/commands/#"]
+    },
+    {
+      "username": "alice",
+      "publish": ["/users/alice"],
+      "subscribe": ["/users/alice"]
+    }
+  ]
+}

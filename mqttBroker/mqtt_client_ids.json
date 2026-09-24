@@ -1,0 +1,14 @@
+{
+  "clients": [
+    {
+      "clientId": "device1",
+      "username": "iotuser",
+      "label": "Temperature sensor 1"
+    },
+    {
+      "clientId": "device2",
+      "username": "test",
+      "label": "Door controller"
+    }
+  ]
+}
