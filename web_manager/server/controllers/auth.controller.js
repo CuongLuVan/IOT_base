@@ -7,6 +7,7 @@ const Oauthen2 = require('../models/database/oAuthen2.model.js');
 const OAuthen2Customer = require('../models/database/oAuthen2Customer.model.js');
 const {returnOK,returnOKCustom, returnNotAuthen,returnNotFound } = require('../utils/returnResponse.js');
 const WarningInfo = require("../config/warningInfo.js");
+const { verifyAccessToken } = require('../services/authToken.service.js');
 
 
 
@@ -117,36 +118,34 @@ authCtrl.loginCustomerAdmin = function(req, res) {
 
 authCtrl.getTocken = function(req, res) {
   const authorizationHeader = req.headers['authorization'];
-  let token;
-  if (authorizationHeader) {
-      token = authorizationHeader.split(' ')[1];
-  }
-  if (token) {
-      oauthen2.checkInvalUserExistingTocken(token).then((user) => {
+  const token = authorizationHeader && authorizationHeader.split(' ')[1];
+  try {
+      const claims = verifyAccessToken(token);
+      if (claims.type !== 'admin') throw new Error('Invalid token type');
+      oauthen2.checkInvalUserExistingTocken(claims.jti).then((user) => {
         returnOKCustom(res,{ user:user[0]});
       })
       .catch(function(err){
         return returnNotAuthen(res,{success: false,message:'No token ex'},WarningInfo.EXPRIED_LOGIN);
       });
-  } else {
+  } catch (err) {
     return returnNotAuthen(res,{success: false,message:'No token False'},WarningInfo.LOGIN_FAILSE);
   }
 }
 
 authCtrl.getTockenCustomer = function(req, res) {
   const authorizationHeader = req.headers['authorization'];
-  let token;
-  if (authorizationHeader) {
-      token = authorizationHeader.split(' ')[1];
-  }
-  if (token) {
-    oAuthen2Customer.checkInvalUserExistingTocken(token).then((user) => {
+  const token = authorizationHeader && authorizationHeader.split(' ')[1];
+  try {
+    const claims = verifyAccessToken(token);
+    if (claims.type !== 'customer') throw new Error('Invalid token type');
+    oAuthen2Customer.checkInvalUserExistingTocken(claims.jti).then((user) => {
         returnOKCustom(res,{ user:user[0]});
       })
       .catch(function(err){
         return returnNotAuthen(res,{success: false,message:'No token ex'},WarningInfo.EXPRIED_LOGIN);
       });
-  } else {
+  } catch (err) {
     return returnNotAuthen(res,{success: false,message:'No token False'},WarningInfo.LOGIN_FAILSE);
   }
 }

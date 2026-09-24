@@ -6,6 +6,7 @@ const CustomerAcess= require('../middlewareDatabase/CustomerAcess.js');
 const  {getRamdomData}  = require('../../utils/utilsString.js');
 const {returnNotAuthen,returnOKCustom } = require('../../utils/returnResponse.js');
 const WarningInfo = require("../../config/warningInfo.js");
+const { createAccessSession, createRefreshSession } = require('../../services/authToken.service.js');
 
 
 class oAuthen2Customer extends CommonModel {
@@ -35,6 +36,39 @@ class oAuthen2Customer extends CommonModel {
     }
 
     async responseLogin(res,user){
+/*
+        try {
+            const permission_id = user.permission_id;
+            const current_id = user.customer_id;
+            let valueManifest = '';
+            if (permission_id === 2) {
+                const companies = await knex('company')
+                    .select('company_id')
+                    .where({ id_created: current_id, deleteflag: 0 });
+                valueManifest = companies.map((company) => company.company_id).join(',');
+            }
+            const session = await knex.transaction(async (trx) => {
+                const access = await createAccessSession({
+                    tokenType: 'customer', userId: current_id, permissionId: permission_id,
+                    valueManifest
+                }, trx);
+                const refresh = await createRefreshSession({
+                    tokenType: 'customer', userId: current_id, permissionId: permission_id,
+                    valueManifest, sessionId: access.sessionId
+                }, trx);
+                return { access, refresh };
+            });
+            return returnOKCustom(res, {
+                success: true,
+                token: session.access.accessToken,
+                accessToken: session.access.accessToken,
+                refreshToken: session.refresh.refreshToken,
+                expiresIn: '15m',
+                email: user.email,
+                avatar: user.avatar
+            });
+        } catch (ie) {
+*/
         try
         {
             var dataTocken= getRamdomData(256);
@@ -75,7 +109,6 @@ class oAuthen2Customer extends CommonModel {
         catch(ie){
             return returnNotAuthen(res,ie,WarningInfo.EXPRIED_LOGIN);
         }
-        
     }
 
     get tableName() {  return "oauthen2customer";}

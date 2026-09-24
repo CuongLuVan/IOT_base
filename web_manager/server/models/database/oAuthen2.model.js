@@ -7,6 +7,7 @@ const CustomerAcess= require('../middlewareDatabase/CustomerAcess.js');
 const  {getRamdomData}  = require('../../utils/utilsString.js');
 const {returnFalse,returnOKCustom } = require('../../utils/returnResponse.js');
 const WarningInfo = require("../../config/warningInfo.js");
+const { createAccessSession, createRefreshSession } = require('../../services/authToken.service.js');
 
 class Oauthen2 extends CommonModel {
     get tableName() {  return "oauthen2";}
@@ -32,6 +33,50 @@ class Oauthen2 extends CommonModel {
             } )
         } );
     }
+
+ /*       async responseLogin(res,user){
+            try {
+                const permission_id = user.permission_id;
+                const current_id = user.users_id;
+                let valueManifest = String(current_id);
+                let enterpriseId = '';
+                if (permission_id >= TableManifest.NEW_REGISTER) {
+                    let sqlMain = "SELECT users_id FROM users WHERE deleteflag=0 and id_created=" + current_id;
+                    if (permission_id < TableManifest.ADMIN) {
+                        sqlMain += " UNION SELECT id_member AS users_id FROM decentralization_access WHERE id_admin=" + current_id + " and deleteflag=0 and id_member!=0";
+                    }
+                    const members = await knex.raw(sqlMain);
+                    for (let i = 0; i < members[0].length; i++) {
+                        valueManifest += "," + members[0][i].users_id;
+                    }
+                    let sqlEnterprise = "SELECT enterprise_id FROM decentralization_access WHERE deleteflag=0 and id_member=" + current_id;
+                    if (permission_id < TableManifest.ADMIN) {
+                        sqlEnterprise = "SELECT enterprise_id FROM decentralization_access WHERE deleteflag=0 and id_admin=" + current_id;
+                    }
+                    const enterprises = await knex.raw(sqlEnterprise);
+                    for (let i = 0; i < enterprises[0].length; i++) {
+                        enterpriseId += (i === 0 ? '' : ',') + enterprises[0][i].enterprise_id;
+                    }
+                }
+                const session = await knex.transaction(async (trx) => {
+                    const access = await createAccessSession({
+                        tokenType: 'admin', userId: current_id, permissionId: permission_id,
+                        enterpriseId, valueManifest
+                    }, trx);
+                    const refresh = await createRefreshSession({
+                        tokenType: 'admin', userId: current_id, permissionId: permission_id,
+                        enterpriseId, valueManifest, sessionId: access.sessionId
+                    }, trx);
+                    return { access, refresh };
+                });
+                returnOKCustom(res, {
+                    success: true,
+                    token: session.access.accessToken,
+                    accessToken: session.access.accessToken,
+                    refreshToken: session.refresh.refreshToken,
+                    expiresIn: '15m',
+                    email: user.email
+*/
     responseLogin(res,user){
         var dataTocken= getRamdomData(256);
         var permission_id=user.permission_id;
@@ -102,12 +147,10 @@ class Oauthen2 extends CommonModel {
                 }).catch(function(err1){
                     returnFalse(res,{success: false, message: 'Problem SQL.'},WarningInfo.ERROR_SERVER);
                 });
-                
-            }).catch(function(err1){
+            } catch (err) {
                 returnFalse(res,{success: false, message: 'Problem SQL.'},WarningInfo.ERROR_SERVER);
-            });           
-        }  
-    }
+            }
+        }
 
 
     getJsonTofind(){

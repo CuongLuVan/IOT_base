@@ -56,6 +56,9 @@ import CustomerApproval from './container/manager/CustomerApproval.js';
 import DataAllCompany from './container/manager/report/DataAllCompany.js';
 import ReportSpecial from './container/manager/report/ReportSpecial.js';
 
+import MachineMonitoring from './container/pages/MachineMonitoring';
+import OeeDashboard from './container/pages/OeeDashboard';
+import LineOeeDashboard from './container/pages/LineOeeDashboard';
 import store from './store/index.jsx';
 import chatBoxData from './reducers/chat-box-acess';
 
@@ -75,6 +78,9 @@ const App = () => {
             <Resource name="mqtt" options={{label:'Quản lý mqtt' ,"isMenuParent": true }} icon={BuildIcon} list={LockScreen} />
             <Resource name="mqtt_microservice" options={{label:'Tạo microservice',"menuParent": "mqtt"}} icon={BuildIcon} list={NomalTable} />
             <Resource name="mqtt_user" options={{label:'mqtt khách hàng',"menuParent": "mqtt"}} icon={SupervisorAccountIcon} list={NomalTable} />
+            <Resource name="machine_monitoring" options={{label:'Machine Monitor',"menuParent": "mqtt"}} icon={BuildIcon} list={MachineMonitoring} />
+            <Resource name="oee_dashboard" options={{label:'OEE Dashboard',"menuParent": "mqtt"}} icon={BuildIcon} list={OeeDashboard} />
+            <Resource name="line_oee" options={{label:'Line OEE Overview',"menuParent": "mqtt"}} icon={BuildIcon} list={LineOeeDashboard} />
             {/* bài báo*/}
             <Resource name="sPages" options={{label:'Nhóm bài báo' ,"isMenuParent": true }} icon={FeaturedPlayList}  list={LockScreen} />
             <Resource name="group_content_sub" options={{label:'Nhóm bài báo' ,"menuParent": "sPages"}} icon={FeaturedPlayList} list={NomalTable} />

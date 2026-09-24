@@ -5,26 +5,23 @@ const isAuthenticated = require('../middlewares/authenticate.js');
 const isAuthenMutile = require('../middlewares/authenticateMutile');
 const documentCtrl = require('../controllers/document.controller.js');
 const urlStaticLink=  require('../config/urlSetting.js');
+const files = require('../utils/files.js');
+const { uploadLimiter } = require('../config/rateLimit.js');
 const {uploadFileS3} = require('../models/S3UploadFile.js');
 const {returnOK,returnFalse,returnOKCustom,returnNotFound,returnInfoQuery } = require('../utils/returnResponse.js');
 const WarningInfo = require("../config/warningInfo.js");
 var fs = require('fs');
 
-var storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-      cb(null, dirFolder + '/public/img/')
-    },
-    filename: (req, file, cb) => {
-      cb(null,Date.now().toString()+ file.originalname)
-    }
-  });
-  
-var upload = multer({storage: storage});
+var upload = multer({
+  storage: files.storage,
+  limits: files.uploadLimits,
+  fileFilter: files.imageFilter
+});
 
-router.post('/uploadimage', upload.single("resumeFileBrowser"), async function (req, res) {
+router.post('/uploadimage', uploadLimiter, isAuthenticated, files.handleUpload(upload.single("resumeFileBrowser")), async function (req, res) {
+  if (!req.file) return res.status(400).json({ error: 'File is required' });
   
-  res.send(JSON.stringify({path:req.file.path,
-    file:req.file,
+  res.send(JSON.stringify({
     url:urlStaticLink+ '/uploads/datas/'+ req.file.filename})
   );
 

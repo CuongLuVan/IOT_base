@@ -18,8 +18,8 @@ const {getLanggue} = require('../utils/Validate.js');
 var customerCtrl={};
 
 customerCtrl.importDataInfo  =async  function(req, res) {
-  res.send(JSON.stringify({path:req.file.path,
-    file:req.file,
+  if (!req.file) return returnFalse(res,"File is required",WarningInfo.NOT_UPLOAD_FILE);
+  res.send(JSON.stringify({
     url:urlStaticLink+ '/uploads/datas/'+ req.file.filename})
   );
 

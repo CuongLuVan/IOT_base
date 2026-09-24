@@ -9,12 +9,13 @@ const {
   generateOrder,
   admin_updateOrder,
 } = require("../controllers/service.api.controller");
+const isAuthenticatedCustomer = require('../middlewares/authenticateCustomer.js');
 
 //TODO: ADD authorization middleware
 router.post("/", addService); 
-router.get("/available-service", getAllService);
-router.post("/generate-order", generateOrder);
-router.get("/orders", admin_getAllOrders);
-router.put("/confirm-order/:id", admin_updateOrder);
+router.get("/available-service", isAuthenticatedCustomer, getAllService);
+router.post("/generate-order", isAuthenticatedCustomer,  generateOrder);
+router.get("/orders", isAuthenticatedCustomer, admin_getAllOrders);
+router.put("/confirm-order/:id", isAuthenticatedCustomer, admin_updateOrder);
 
 module.exports = router;

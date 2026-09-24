@@ -1,0 +1,227 @@
+/* ========================================
+   Line OEE Overview Dashboard Styles
+   ======================================== */
+
+.line-oee {
+  background-color: #f5f5f5;
+  min-height: 100vh;
+  padding: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  color: #333;
+}
+
+/* === Header === */
+.line-oee__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: #fff;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.line-oee__menu-btn {
+  font-size: 22px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #555;
+  padding: 4px 8px;
+}
+
+.line-oee__header-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+}
+
+/* === Content === */
+.line-oee__content {
+  padding: 16px;
+}
+
+/* === Gauge Row === */
+.line-oee__gauge-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.line-oee__gauge-card {
+  flex: 1;
+  min-width: 200px;
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.line-oee__gauge-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #555;
+  margin-bottom: 8px;
+}
+
+.line-oee__gauge-wrapper {
+  position: relative;
+  width: 160px;
+  height: 105px;
+}
+
+.line-oee__gauge-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.line-oee__gauge-value {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 32px;
+  font-weight: 700;
+  color: #333;
+}
+
+.line-oee__gauge-scale {
+  display: flex;
+  justify-content: space-between;
+  width: 140px;
+  font-size: 11px;
+  color: #999;
+  margin-top: 2px;
+}
+
+/* === Charts Row === */
+.line-oee__charts-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.line-oee__chart-card {
+  flex: 1;
+  min-width: 400px;
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  padding: 16px;
+}
+
+.line-oee__chart-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #555;
+  text-align: center;
+  margin-bottom: 6px;
+}
+
+.line-oee__chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: 11px;
+  color: #555;
+}
+
+.line-oee__legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.line-oee__legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.line-oee__chart-container {
+  width: 100%;
+  height: 260px;
+}
+
+.line-oee__chart-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+/* === Tables Row === */
+.line-oee__tables-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.line-oee__table-card {
+  flex: 1;
+  min-width: 400px;
+  background: #fff;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  padding: 16px;
+}
+
+.line-oee__table-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.line-oee__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.line-oee__table thead th {
+  background-color: #fafafa;
+  font-weight: 600;
+  color: #555;
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+.line-oee__table tbody td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #f0f0f0;
+  color: #444;
+}
+
+.line-oee__table tbody tr:hover {
+  background-color: #f9f9f9;
+}
+
+.line-oee__table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Responsive */
+@media (max-width: 1000px) {
+  .line-oee__gauge-row {
+    flex-wrap: wrap;
+  }
+  .line-oee__gauge-card {
+    flex: 1 1 45%;
+  }
+  .line-oee__charts-row,
+  .line-oee__tables-row {
+    flex-direction: column;
+  }
+  .line-oee__chart-card,
+  .line-oee__table-card {
+    min-width: 100%;
+  }
+}
