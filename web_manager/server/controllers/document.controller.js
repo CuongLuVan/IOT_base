@@ -13,9 +13,9 @@ const {mangerModelAdmin} = require('../models/database/managerAll.model.js');
 
 var documentCtrl={};
 
-async function  queryInfoSql(sql,res=null){
+async function  queryInfoSql(sql,params=null,res=null){
     try{
-        var x= await knex.raw(sql);
+        var x= await knex.raw(sql, params);
         var data=[];
         if ((x!=null)&&(x.length>0)) {
             data= x[0];
@@ -27,8 +27,8 @@ async function  queryInfoSql(sql,res=null){
     }   
 }
 
-async function  querySqlAndChangeLink(sql){
-    var x= await queryInfoSql(sql);
+async function  querySqlAndChangeLink(sql,params=null){
+    var x= await queryInfoSql(sql,params);
     return x;
 }
 
@@ -81,7 +81,8 @@ documentCtrl.postAddPageToDataBase  = async function(request, res) {
             .set("created_at","NOW()",{dontQuote: true}) 
             .set("updated_at","NOW()",{dontQuote: true})
             .set("deleteflag",0);
-            var x = await queryInfoSql(addData.toString(),res);
+            var p = addData.toParam();
+            var x = await queryInfoSql(p.text, p.values, res);
             return returnOKCustom(res,{ data: x  });  
         }
  
@@ -121,8 +122,9 @@ documentCtrl.postUpdatePageToDataBase  = async function(request, res) {
         .set("id_updated",request.currentUser.users_id)
         .set("updated_at","NOW()",{dontQuote: true})
         .set("deleteflag",0)
-        .where('pages_content_id='+request.body['pages_content_id']);
-        var x = await queryInfoSql(addData.toString(),res);
+        .where('pages_content_id = ?', request.body['pages_content_id']);
+        var p = addData.toParam();
+        var x = await queryInfoSql(p.text, p.values, res);
         return returnOKCustom(res,{ data: x  });  
     }
 
@@ -144,7 +146,8 @@ documentCtrl.postAddProductPageToDataBase  = async function(request, res) {
         .set("created_at","NOW()",{dontQuote: true}) 
         .set("updated_at","NOW()",{dontQuote: true})
         .set("deleteflag",0);
-        var x = await queryInfoSql(addData.toString(),res);
+            var p = addData.toParam();
+            var x = await queryInfoSql(p.text, p.values, res);
         return returnOKCustom(res,{ data: x  });  
     }
 }
@@ -166,7 +169,8 @@ documentCtrl.postAddServicePageToDataBase  = async function(request, res) {
         .set("created_at","NOW()",{dontQuote: true}) 
         .set("updated_at","NOW()",{dontQuote: true})
         .set("deleteflag",0);
-        var result= await knex.raw(addData.toString())
+        var p = addData.toParam();
+        var result= await knex.raw(p.text, p.values)
         if ((result==null)||(result.length==0)) {
             return returnNotFound(res,{ message: "Error pages"},WarningInfo.ERROR_SERVER);
         }
@@ -188,8 +192,9 @@ documentCtrl.postUpdateServicePageToDataBase  = async function(request, res) {
             .set("filesave",link)
             .set("id_updated",request.currentUser.users_id)
             .set("updated_at","NOW()",{dontQuote: true})
-            .set("deleteflag",0).where('service_pages_id='+service_pages_id);
-        var result= await knex.raw(addData.toString())
+            .set("deleteflag",0)            .where('service_pages_id = ?', service_pages_id);
+        var p = addData.toParam();
+        var result= await knex.raw(p.text, p.values)
         if ((result==null)||(result.length==0)) {
             return returnNotFound(res,{ message: "Error pages"},WarningInfo.ERROR_SERVER);
         }
@@ -216,8 +221,9 @@ documentCtrl.postUpdateProductPageToDataBase  = async function(request, res) {
         .set("id_updated",request.currentUser.users_id)
         .set("updated_at","NOW()",{dontQuote: true})
         .set("deleteflag",0)
-        .where('product_pages_id='+product_pages_id);
-        var x = await queryInfoSql(addData.toString(),res);
+        .where('product_pages_id = ?', product_pages_id);
+            var p = addData.toParam();
+            var x = await queryInfoSql(p.text, p.values, res);
         return returnOKCustom(res,{ data: x  });  
     }
 
@@ -250,7 +256,8 @@ documentCtrl.postAddAdvertisementToDataBase  = async function(request, res) {
             .set("created_at","NOW()",{dontQuote: true}) 
             .set("updated_at","NOW()",{dontQuote: true})
             .set("deleteflag",0);
-            var x = await queryInfoSql(addData.toString(),res);
+            var p = addData.toParam();
+            var x = await queryInfoSql(p.text, p.values, res);
             return returnOKCustom(res,{ data: x  }); 
         }
         else
@@ -270,7 +277,8 @@ documentCtrl.postAddAdvertisementToDataBase  = async function(request, res) {
             .set("created_at","NOW()",{dontQuote: true}) 
             .set("updated_at","NOW()",{dontQuote: true})
             .set("deleteflag",0);
-            var x = await queryInfoSql(addData.toString(),res);
+            var p = addData.toParam();
+            var x = await queryInfoSql(p.text, p.values, res);
             return returnOKCustom(res,{ data: x  }); 
         }
          
@@ -304,8 +312,9 @@ documentCtrl.postUpdateAdvertisementToDataBase  = async function(request, res) {
             .set("id_updated",request.currentUser.users_id)
             .set("updated_at","NOW()",{dontQuote: true})
             .set("deleteflag",0)
-            .where('advertisement_id='+request.body['advertisement_id']);
-            var x = await queryInfoSql(addData.toString(),res);
+            .where('advertisement_id = ?', request.body['advertisement_id']);
+            var p = addData.toParam();
+            var x = await queryInfoSql(p.text, p.values, res);
                 return returnOKCustom(res,{ data: x  });  
         }
         else
@@ -323,8 +332,9 @@ documentCtrl.postUpdateAdvertisementToDataBase  = async function(request, res) {
             .set("id_updated",request.currentUser.users_id)
             .set("updated_at","NOW()",{dontQuote: true})
             .set("deleteflag",0)
-            .where('advertisement_product_id='+request.body['advertisement_product_id']);
-            var x = await queryInfoSql(addData.toString(),res);
+            .where('advertisement_product_id = ?', request.body['advertisement_product_id']);
+            var p = addData.toParam();
+            var x = await queryInfoSql(p.text, p.values, res);
                 return returnOKCustom(res,{ data: x  });  
         }
         
@@ -333,10 +343,10 @@ documentCtrl.postUpdateAdvertisementToDataBase  = async function(request, res) {
 }
 
 documentCtrl.getAllInMenuPage  = async function(listID) {
-    var sql= "SELECT gro_pages_content.*,group_content_sub.group_content , n FROM ( SELECT @prev := '', @n := 0 ) init JOIN ( SELECT gro_pages_content.*, @n := if(group_content_sub_id != @prev, 1, @n + 1) AS n, @prev := group_content_sub_id FROM gro_pages_content WHERE gro_pages_content.deleteflag =0 AND gro_pages_content.type_langue="+ getLanggue(req)+"  AND gro_pages_content.is_main_pages_id<1 and group_content_sub_id IN("
-                +listID+") ORDER BY set_to_fist ,pages_content_id DESC) gro_pages_content LEFT JOIN group_content_sub on group_content_sub.group_content_sub_id=gro_pages_content.group_content_sub_id WHERE n <= 2 "
-
-    var x= await knex.raw(sql);
+    var listArray = Array.isArray(listID) ? listID : [listID];
+    var placeholders = listArray.map(() => '?').join(',');
+    var sql= "SELECT gro_pages_content.*,group_content_sub.group_content , n FROM ( SELECT @prev := '', @n := 0 ) init JOIN ( SELECT gro_pages_content.*, @n := if(group_content_sub_id != @prev, 1, @n + 1) AS n, @prev := group_content_sub_id FROM gro_pages_content WHERE gro_pages_content.deleteflag =0 AND gro_pages_content.type_langue= ?  AND gro_pages_content.is_main_pages_id<1 and group_content_sub_id IN("+placeholders+") Order By set_to_fist ,pages_content_id DESC) gro_pages_content LEFT JOIN group_content_sub on group_content_sub.group_content_sub_id=gro_pages_content.group_content_sub_id WHERE n <= 2 ";
+    var x= await knex.raw(sql, [getLanggue(req), ...listArray]);
     if ((x!=null)&&(x.length>0)) {
         var subjects =[];
         var idItem=-1;
@@ -368,44 +378,47 @@ documentCtrl.getAllInMenuPage  = async function(listID) {
 
 documentCtrl.getAllContentDetailPage  = async function(req, res) {
     var listID = req.params.typePage;
-    var sql= "SELECT gro_pages_content.*,group_content_sub.group_content , n FROM ( SELECT @prev := '', @n := 0 ) init JOIN ( SELECT gro_pages_content.*, @n := if(group_content_sub_id != @prev, 1, @n + 1) AS n, @prev := group_content_sub_id FROM gro_pages_content WHERE gro_pages_content.deleteflag =0 AND gro_pages_content.type_langue="+ getLanggue(req)+" AND gro_pages_content.is_main_pages_id<1  and group_content_sub_id IN("
-                +listID+") ORDER BY set_to_fist ,pages_content_id DESC) gro_pages_content LEFT JOIN group_content_sub on group_content_sub.group_content_sub_id=gro_pages_content.group_content_sub_id WHERE n <= 10 ";
-                returnOKCustom(res,await queryInfoSql(sql));
+    var listArray = Array.isArray(listID) ? listID : [listID];
+    var placeholders = listArray.map(() => '?').join(',');
+    var sql= "SELECT gro_pages_content.*,group_content_sub.group_content , n FROM ( SELECT @prev := '', @n := 0 ) init JOIN ( SELECT gro_pages_content.*, @n := if(group_content_sub_id != @prev, 1, @n + 1) AS n, @prev := group_content_sub_id FROM gro_pages_content WHERE gro_pages_content.deleteflag =0 AND gro_pages_content.type_langue= ? AND gro_pages_content.is_main_pages_id<1  and group_content_sub_id IN("+placeholders+") Order By set_to_fist ,pages_content_id DESC) gro_pages_content LEFT JOIN group_content_sub on group_content_sub.group_content_sub_id=gro_pages_content.group_content_sub_id WHERE n <= 10 ";
+                returnOKCustom(res,await queryInfoSql(sql, [getLanggue(req), ...listArray]));
 }
 
 documentCtrl.getAllContentLatestPage  = async function(req, res) {
     var listID = req.params.typePage;
-    var sql= "SELECT gro_pages_content.*,group_content_sub.group_content , n FROM ( SELECT @prev := '', @n := 0 ) init JOIN ( SELECT gro_pages_content.*, @n := if(group_content_sub_id != @prev, 1, @n + 1) AS n, @prev := group_content_sub_id FROM gro_pages_content WHERE gro_pages_content.deleteflag =0 AND gro_pages_content.type_langue="+ getLanggue(req)+" AND gro_pages_content.is_main_pages_id<1  and group_content_sub_id IN("
-                +listID+") ORDER BY id_created DESC) gro_pages_content LEFT JOIN group_content_sub on group_content_sub.group_content_sub_id=gro_pages_content.group_content_sub_id WHERE n <= 10 ";
-                returnOKCustom(res,await queryInfoSql(sql));
+    var listArray = Array.isArray(listID) ? listID : [listID];
+    var placeholders = listArray.map(() => '?').join(',');
+    var sql= "SELECT gro_pages_content.*,group_content_sub.group_content , n FROM ( SELECT @prev := '', @n := 0 ) init JOIN ( SELECT gro_pages_content.*, @n := if(group_content_sub_id != @prev, 1, @n + 1) AS n, @prev := group_content_sub_id FROM gro_pages_content WHERE gro_pages_content.deleteflag =0 AND gro_pages_content.type_langue= ? AND gro_pages_content.is_main_pages_id<1  and group_content_sub_id IN("+placeholders+") Order BY id_created DESC) gro_pages_content LEFT JOIN group_content_sub on group_content_sub.group_content_sub_id=gro_pages_content.group_content_sub_id WHERE n <= 10 ";
+                returnOKCustom(res,await queryInfoSql(sql, [getLanggue(req), ...listArray]));
 }
 
 documentCtrl.getAllContentStartPage  = async function(req,res) {
-    var sql=  "SELECT gro_pages_content.*,group_content_sub.group_content , n FROM ( SELECT @prev := '', @n := 0 ) init JOIN ( SELECT gro_pages_content.*, @n := if(group_content_sub_id != @prev, 1, @n + 1) AS n, @prev := group_content_sub_id FROM gro_pages_content WHERE gro_pages_content.deleteflag =0 AND gro_pages_content.type_langue="+ getLanggue(req)+" AND gro_pages_content.is_main_pages_id<1 ORDER BY group_content_sub_id,set_to_fist,pages_content_id DESC) gro_pages_content LEFT JOIN group_content_sub on group_content_sub.group_content_sub_id=gro_pages_content.group_content_sub_id WHERE n <= 2";
-    returnOKCustom(res,await querySqlAndChangeLink(sql));
+    var langgue = getLanggue(req);
+    var sql=  "SELECT gro_pages_content.*,group_content_sub.group_content , n FROM ( SELECT @prev := '', @n := 0 ) init JOIN ( SELECT gro_pages_content.*, @n := if(group_content_sub_id != @prev, 1, @n + 1) AS n, @prev := group_content_sub_id FROM gro_pages_content WHERE gro_pages_content.deleteflag =0 AND gro_pages_content.type_langue= ? AND gro_pages_content.is_main_pages_id<1 ORDER BY group_content_sub_id,set_to_fist,pages_content_id DESC) gro_pages_content LEFT JOIN group_content_sub on group_content_sub.group_content_sub_id=gro_pages_content.group_content_sub_id WHERE n <= 2";
+    returnOKCustom(res,await querySqlAndChangeLink(sql, [langgue]));
 }
 
 documentCtrl.getAllInfoTool = async function(req,res) {
-    var sql=  "SELECT gro_pages_content.* FROM gro_pages_content WHERE type_langue="+ getLanggue(req)+" group_content_sub_id > 40 and deleteflag=0;";
-    returnOKCustom(res,await querySqlAndChangeLink(sql));
+    var langgue = getLanggue(req);
+    var sql=  "SELECT gro_pages_content.* FROM gro_pages_content WHERE type_langue= ?  group_content_sub_id > 40 and deleteflag=0;";
+    returnOKCustom(res,await querySqlAndChangeLink(sql, [langgue]));
 }
 
 documentCtrl.getAllInfoHome = async function(req,res) {
-    
-
-    var sql=  "SELECT gro_pages_content.* FROM gro_pages_content Where deleteflag=0 and type_langue ="+getLanggue(req)
-    +" and is_main_pages_id<1 ORDER BY set_to_fist DESC,pages_content_id DESC LIMIT 4";
-    returnOKCustom(res,await querySqlAndChangeLink(sql));
+    var langgue = getLanggue(req);
+    var sql=  "SELECT gro_pages_content.* FROM gro_pages_content Where deleteflag=0 and type_langue = ? and is_main_pages_id<1 ORDER BY set_to_fist DESC,pages_content_id DESC LIMIT 4";
+    returnOKCustom(res,await querySqlAndChangeLink(sql, [langgue]));
 }
 
 documentCtrl.getAllInGroupPage  = async function(req,res) {
     var is_main_pages_id = req.body['is_main_pages_id'];
+    var langgue = getLanggue(req);
     var sqlraw = squel.select().from('gro_pages_content')
         .where('deleteflag=0')
-        .where('type_langue='+ getLanggue(req))
-        .where('is_main_pages_id='+is_main_pages_id
-                +" OR pages_content_id ="+is_main_pages_id );
-    var x= await knex.raw(sqlraw.toString());
+        .where('type_langue = ?', langgue)
+        .where('is_main_pages_id = ? OR pages_content_id = ?', is_main_pages_id, is_main_pages_id);
+    var p = sqlraw.toParam();
+    var x= await knex.raw(p.text, p.values);
     var data=[];
     if ((x!=null)&&(x.length>0)) {
         data = x[0];
@@ -423,9 +436,9 @@ documentCtrl.getAllContentAdvertisement  = async function(req,res) {
 
 documentCtrl.getRamdomContent  = async function(req,res) {
     var dataValue = req.body.type + 10;
-    var sql= " SELECT gro_pages_content.* FROM gro_pages_content Where deleteflag=0 and type_langue="+ getLanggue(req) +" and group_content_sub_id<"+
-              +dataValue+  " and group_content_sub_id >"+req.body.type+" and is_main_pages_id<1  ORDER BY set_to_fist ASC LIMIT 10";
-              returnOKCustom(res,await queryInfoSql(sql));
+    var langgue = getLanggue(req);
+    var sql= " SELECT gro_pages_content.* FROM gro_pages_content Where deleteflag=0 and type_langue= ? and group_content_sub_id< ? and group_content_sub_id > ? and is_main_pages_id<1  ORDER BY set_to_fist ASC LIMIT 10";
+    returnOKCustom(res,await queryInfoSql(sql, [langgue, dataValue, req.body.type]));
 }
 
 module.exports =documentCtrl;

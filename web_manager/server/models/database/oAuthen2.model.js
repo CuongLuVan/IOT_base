@@ -8,9 +8,6 @@ const  {getRamdomData}  = require('../../utils/utilsString.js');
 const {returnFalse,returnOKCustom } = require('../../utils/returnResponse.js');
 const WarningInfo = require("../../config/warningInfo.js");
 
-/**
- * Enterprise model.
- */
 class Oauthen2 extends CommonModel {
     get tableName() {  return "oauthen2";}
     getNameTable(){ return 'oauthen2';}
@@ -20,16 +17,15 @@ class Oauthen2 extends CommonModel {
              add:CustomerAcess.NOT_ACESS,
              view:CustomerAcess.NOT_ACESS  }; 
   }
-  /**
-   * Table has timestamps.
-   */
+
     checkInvalUserExistingTocken(tocken){
         var authen = squel.select().from("oauthen2")
-                        .where("tocken = '"+tocken+"'" )
+                        .where("tocken = ?", tocken)
                         .where("deleteflag = 0")
                         .where("time_relase > NOW()");
+        var p = authen.toParam();
         return new Promise( ( resolve, reject ) => {
-            knex.raw(authen.toString()).then(function(result) {
+            knex.raw(p.text, p.values).then(function(result) {
                 resolve( result[0] );
             }).catch(function(err){
                 return reject(null);
@@ -56,7 +52,8 @@ class Oauthen2 extends CommonModel {
                 .set("time_relase",'NOW() + INTERVAL 7 DAY',{dontQuote: true});
         if(permission_id<TableManifest.NEW_REGISTER) {
                 authen2.set("value_manifest",listDataContain);
-                knex.raw(authen2.toString()).then(function(x) {
+                var p = authen2.toParam();
+                knex.raw(p.text, p.values).then(function(x) {
                     returnOKCustom( res,{
                         success: true,
                         token:dataTocken,
@@ -68,28 +65,32 @@ class Oauthen2 extends CommonModel {
         } 
         else 
         {
-            var sqlMain="SELECT users_id FROM users WHERE deleteflag=0 and id_created="+current_id;
+            var sqlMain="SELECT users_id FROM users WHERE deleteflag=0 and id_created = ?";
+            var paramsMain = [current_id];
             if(permission_id<TableManifest.ADMIN)
             {
-                    sqlMain +=" UNION "+ "SELECT id_member FROM decentralization_access WHERE id_admin="+current_id
-                    + " and deleteflag=0 and id_member!=0";
+                    sqlMain +=" UNION "+ "SELECT id_member FROM decentralization_access WHERE id_admin = ? AND deleteflag=0 and id_member!=0";
+                    paramsMain.push(current_id);
             }
-            knex.raw(sqlMain).then(function(x) {
+            knex.raw(sqlMain, paramsMain).then(function(x) {
                 for(var i=0;i<x[0].length;i++){
                     listDataContain+=","+x[0][i].users_id; 
                 }
-                var sqlMain1="SELECT enterprise_id FROM decentralization_access WHERE deleteflag=0 and id_member="+current_id;
+                var sqlMain1="SELECT enterprise_id FROM decentralization_access WHERE deleteflag=0 and id_member = ?";
+                var paramsMain1 = [current_id];
                 if(permission_id<TableManifest.ADMIN)
                 {
-                    sqlMain1="SELECT enterprise_id FROM decentralization_access WHERE deleteflag=0 and id_admin="+current_id;
+                    sqlMain1="SELECT enterprise_id FROM decentralization_access WHERE deleteflag=0 and id_admin = ?";
+                    paramsMain1 = [current_id];
                 }
-                knex.raw(sqlMain1).then(function(x) {
+                knex.raw(sqlMain1, paramsMain1).then(function(x) {
                     for(var i=0;i<x[0].length;i++){
                         listDataEnterprise_id+=","+x[0][i].enterprise_id; 
                     }
                     authen2.set("value_manifest",listDataContain)
                         .set("enterprise_id",listDataEnterprise_id);
-                    knex.raw(authen2.toString()).then(function(xa) {
+                    var p = authen2.toParam();
+                    knex.raw(p.text, p.values).then(function(xa) {
                         returnOKCustom( res,{ 
                                 success: true,
                                 token:dataTocken, 
@@ -108,10 +109,6 @@ class Oauthen2 extends CommonModel {
         }  
     }
 
-
-  
-
-    
 
     getJsonTofind(){
         return [];
@@ -134,8 +131,6 @@ class Oauthen2 extends CommonModel {
     getSQLReport(currentUser){
         return 'SELECT oauthen2.*, db.username As namecreate ,dc.username As nameupdate ,dg.content as contentauthen,dn.username as userauthen FROM oauthen2 LEFT JOIN users db ON db.users_id=oauthen2.id_created LEFT JOIN users dc ON dc.users_id=oauthen2.id_updated LEFT JOIN permission dg ON dg.permission_id=oauthen2.permission_id LEFT JOIN users dn ON dn.users_id=oauthen2.userid';
     }
-    
-
     
 }
 

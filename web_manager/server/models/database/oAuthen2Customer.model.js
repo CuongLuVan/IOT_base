@@ -21,11 +21,12 @@ class oAuthen2Customer extends CommonModel {
    */
     checkInvalUserExistingTocken(tocken){
         var authen = squel.select().from("oauthen2customer")
-                        .where("tocken = '"+tocken+"'" )
+                        .where("tocken = ?", tocken)
                         .where("deleteflag = 0")
                         .where("time_relase > NOW()");
         return new Promise( ( resolve, reject ) => {
-            knex.raw(authen.toString()).then(function(result) {
+            var p = authen.toParam();
+            knex.raw(p.text, p.values).then(function(result) {
                 resolve( result[0] );
             }).catch(function(err){
                 return reject(err);
@@ -38,10 +39,8 @@ class oAuthen2Customer extends CommonModel {
         {
             var dataTocken= getRamdomData(256);
             var permission_id=user.permission_id;
-            //var permission_id = 2;
             var current_id=user.customer_id;
             var listDataContain="";
-            //listDataContain+=current_id;
             var authen2 = squel.insert().into("oauthen2customer")
                     .set("permission_id",permission_id)
                     .set("customeid",current_id)
@@ -56,10 +55,10 @@ class oAuthen2Customer extends CommonModel {
     
             if(user.permission_id==2){
                 var dataCompany = squel.select().from("company")
-                .where("id_created = "+current_id )
+                .where("id_created = ?", current_id)
                 .where("deleteflag = 0");
-               
-                var infoCompany = await knex.raw(dataCompany.toString());
+                var p = dataCompany.toParam();
+                var infoCompany = await knex.raw(p.text, p.values);
                 if ((infoCompany!=null)&&(infoCompany.length>0)) {
                     for(var i=0;i<infoCompany[0].length;i++)
                     {
@@ -69,7 +68,8 @@ class oAuthen2Customer extends CommonModel {
                 }  
             }
             authen2.set("value_manifest",listDataContain);
-            var x = await knex.raw(authen2.toString());
+            var p = authen2.toParam();
+            var x = await knex.raw(p.text, p.values);
             return returnOKCustom(res,{success: true,token:dataTocken,email: user.email,avatar:user.avatar});
         }
         catch(ie){
@@ -118,11 +118,12 @@ class oAuthen2Customer extends CommonModel {
     }
     checkInvalUserExistingTocken=(tocken)=>{
         var authen = squel.select().from("oauthen2customer")
-                        .where("tocken = '"+tocken+"'" )
+                        .where("tocken = ?", tocken)
                         .where("deleteflag = 0")
                         .where("time_relase > NOW()");
         return new Promise( ( resolve, reject ) => {
-            knex.raw(authen.toString()).then(function(result) {
+            var p = authen.toParam();
+            knex.raw(p.text, p.values).then(function(result) {
                 resolve( result[0] );
             }).catch(function(err){
                 return reject(err);
@@ -132,10 +133,11 @@ class oAuthen2Customer extends CommonModel {
 
     async checkUserInval(tocken){
             var authen = squel.select().from("oauthen2customer")
-                        .where("tocken = '"+tocken+"'" )
+                        .where("tocken = ?", tocken)
                         .where("deleteflag = 0")
                         .where("time_relase > NOW()");
-            var infoUser= await knex.raw(authen.toString());
+            var p = authen.toParam();
+            var infoUser= await knex.raw(p.text, p.values);
             if ((infoUser!=null)&&(infoUser.length>0)) {
                 return infoUser[0];
             }

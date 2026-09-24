@@ -37,26 +37,28 @@ class StockCommon extends CommonModel {
 
   getSQLReport() {
     return "SELECT stock_info_"+TABLE_NAME+".*  FROM stock_info_"+TABLE_NAME+" ";
-    // + defineManifest.checkManifestTableUser(currentUser.permission_id,currentUser.users_id,currentUser.value_manifest));
   }
   getSQLStock(table,startTime=null,endTime=null) {
-    var SqlQuerry= "SELECT "+table+".*  FROM "+table;
+    var sanitizedTable = table.replace(/[^a-zA-Z0-9_]/g, '');
+    var SqlQuerry= "SELECT "+sanitizedTable+".*  FROM "+sanitizedTable;
+    var params=[];
     var enableStart = false;
     if(startTime!=null) {
-      SqlQuerry = SqlQuerry + " where date>" +startTime;
+      SqlQuerry = SqlQuerry + " where date > ?";
+      params.push(startTime);
       enableStart = true;
     }
     if(endTime!=null){
       if(enableStart){
-        SqlQuerry = SqlQuerry + " where ";
-      }
-      else {
         SqlQuerry = SqlQuerry + " and ";
       }
-      SqlQuerry = SqlQuerry + " date < "+endTime;
+      else {
+        SqlQuerry = SqlQuerry + " where ";
+      }
+      SqlQuerry = SqlQuerry + " date < ?";
+      params.push(endTime);
     }
-    return SqlQuerry;
-    // + defineManifest.checkManifestTableUser(currentUser.permission_id,currentUser.users_id,currentUser.value_manifest));
+    return {text: SqlQuerry, values: params};
   }
   getJsonTofind() {
     return [ "open","high","low","close","volume"];
