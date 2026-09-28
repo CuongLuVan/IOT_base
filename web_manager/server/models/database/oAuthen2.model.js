@@ -147,10 +147,11 @@ class Oauthen2 extends CommonModel {
                 }).catch(function(err1){
                     returnFalse(res,{success: false, message: 'Problem SQL.'},WarningInfo.ERROR_SERVER);
                 });
-            } catch (err) {
+            }).catch(function(err) {
                 returnFalse(res,{success: false, message: 'Problem SQL.'},WarningInfo.ERROR_SERVER);
-            }
+            });
         }
+    }
 
 
     getJsonTofind(){
