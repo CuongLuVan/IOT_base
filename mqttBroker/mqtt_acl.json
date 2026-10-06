@@ -2,13 +2,13 @@
   "rules": [
     {
       "clientId": "device1",
-      "publish": ["pubdevices/device1"],
-      "subscribe": ["subdevices/device1"]
+      "publish": ["devices/device1/data", "devices/device1/commands/#"],
+      "subscribe": ["devices/device1/commands/#"]
     },
     {
       "clientId": "device2",
-      "publish": ["pubdevices/device2"],
-      "subscribe": ["subdevices/device2"]
+      "publish": [],
+      "subscribe": ["devices/device1/data"]
     },
     {
       "username": "alice",

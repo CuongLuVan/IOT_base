@@ -2,8 +2,6 @@ var mosca = require('mosca')
 var events=require('events');
 var fs = require('fs');
 var crypto = require('crypto');
-var http = require('http');
-
 // Mosca 2.8.3 validates its options by passing a schema ID ("/Options") to
 // jsonschema. jsonschema 1.5+ requires the schema object instead, which makes
 // the broker exit before it can start. Resolve registered IDs for Mosca while
@@ -50,7 +48,6 @@ if (enable_TLS_SSL) {
       keyPath: tlsOptions.keyPath,
       certPath: tlsOptions.certPath
     };
-  
     console.log('TLS/SSL enabled for MQTT broker on port ' + settings.port);
   }
   catch (err) {
@@ -128,7 +125,7 @@ var aclOptions = {
 };
 var aclMap = {}; // clientId or username -> { publish: [...], subscribe: [...] }
 
-var enableClientID = true; // require a registered client ID for every device
+var enableClientID = false; // set to true to enable client ID anti-spoofing
 var clientIdOptions = {
   clientIdsPath: __dirname + '/mqtt_client_ids.json'
 };
@@ -313,176 +310,8 @@ try {
   console.error('Error loading mqtt_users.json:', err);
 }
 
-// Local administration API. It is disabled until MQTT_ADMIN_TOKEN is set so
-// device credentials cannot be provisioned by an unauthenticated caller.
-var adminApiToken = process.env.MQTT_ADMIN_TOKEN;
-var adminApiHost = process.env.MQTT_ADMIN_HOST || '127.0.0.1';
-var adminApiPort = Number(process.env.MQTT_ADMIN_PORT || 3085);
-
-function hashPassword(password) {
-  var salt = crypto.randomBytes(16).toString('hex');
-  var derived = crypto.scryptSync(password, salt, 64).toString('hex');
-  return 'scrypt$' + salt + '$' + derived;
-}
-
-function passwordMatches(storedPassword, suppliedPassword) {
-  if (typeof storedPassword !== 'string' || typeof suppliedPassword !== 'string') return false;
-  // Existing plaintext records remain supported until they are provisioned again.
-  if (storedPassword.indexOf('scrypt$') !== 0) return storedPassword === suppliedPassword;
-  var parts = storedPassword.split('$');
-  if (parts.length !== 3) return false;
-  var expected = Buffer.from(parts[2], 'hex');
-  var actual = crypto.scryptSync(suppliedPassword, parts[1], expected.length);
-  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
-}
-
-function readJsonConfig(fileName, property) {
-  var parsed = JSON.parse(fs.readFileSync(__dirname + '/' + fileName, 'utf8'));
-  if (!Array.isArray(parsed[property])) parsed[property] = [];
-  return parsed;
-}
-
-function writeJsonConfig(fileName, value) {
-  var target = __dirname + '/' + fileName;
-  var temporary = target + '.tmp';
-  fs.writeFileSync(temporary, JSON.stringify(value, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
-  fs.renameSync(temporary, target);
-}
-
-function refreshSecurityMaps(clientConfig, aclConfig, certConfig) {
-  clientIdMap = {};
-  clientConfig.clients.forEach(function(item) {
-    if (item.clientId) clientIdMap[item.clientId] = { username: item.username || null, label: item.label || null };
-  });
-  aclMap = {};
-  aclConfig.rules.forEach(function(rule) {
-    var entry = { publish: Array.isArray(rule.publish) ? rule.publish : [], subscribe: Array.isArray(rule.subscribe) ? rule.subscribe : [] };
-    if (rule.clientId) aclMap[rule.clientId] = entry;
-    if (rule.username) aclMap[rule.username] = entry;
-  });
-  deviceCertMap = {};
-  certConfig.devices.forEach(function(device) {
-    if (device.clientId && (device.fingerprint256 || device.fingerprint || device.subjectCN)) {
-      deviceCertMap[device.clientId] = device.fingerprint256 || device.fingerprint || device.subjectCN;
-    }
-  });
-}
-
-function isSafeDeviceField(value) {
-  return typeof value === 'string' && /^[A-Za-z0-9._:@-]{1,128}$/.test(value);
-}
-
-function normalizeImportedDevices(body) {
-  var devices = Array.isArray(body) ? body : body && body.devices;
-  if (!Array.isArray(devices) || devices.length === 0 || devices.length > 1000) {
-    throw new Error('Body must contain a devices array with 1 to 1000 entries.');
-  }
-  var ids = {};
-  return devices.map(function(device, index) {
-    if (!device || !isSafeDeviceField(device.clientId) || !isSafeDeviceField(device.username) ||
-        typeof device.password !== 'string' || device.password.length < 12 || device.password.length > 1024) {
-      throw new Error('Invalid device at index ' + index + '. clientId/username must use [A-Za-z0-9._:@-], and password must be 12-1024 characters.');
-    }
-    if (ids[device.clientId]) throw new Error('Duplicate clientId: ' + device.clientId);
-    ids[device.clientId] = true;
-    if (device.label != null && (typeof device.label !== 'string' || device.label.length > 256)) {
-      throw new Error('Invalid label for clientId: ' + device.clientId);
-    }
-    if (device.fingerprint256 != null && (typeof device.fingerprint256 !== 'string' || device.fingerprint256.length > 256)) {
-      throw new Error('Invalid fingerprint256 for clientId: ' + device.clientId);
-    }
-    return { clientId: device.clientId, username: device.username, password: device.password,
-      label: device.label || null, fingerprint256: device.fingerprint256 || null };
-  });
-}
-
-function importDevices(body) {
-  var devices = normalizeImportedDevices(body);
-  var usersConfig = readJsonConfig('mqtt_users.json', 'users');
-  var clientsConfig = readJsonConfig('mqtt_client_ids.json', 'clients');
-  var aclConfig = readJsonConfig('mqtt_acl.json', 'rules');
-  var certConfig = readJsonConfig('mqtt_device_certs.json', 'devices');
-  var passwords = {};
-  usersConfig.users.forEach(function(user) { passwords[user.username] = user.password; });
-  devices.forEach(function(device) {
-    if (passwords[device.username] && !passwordMatches(passwords[device.username], device.password)) {
-      throw new Error('Username is already assigned to a different password: ' + device.username);
-    }
-    passwords[device.username] = device.password;
-  });
-
-  devices.forEach(function(device) {
-    var existingUser = usersConfig.users.filter(function(user) { return user.username === device.username; })[0];
-    if (!existingUser) usersConfig.users.push({ username: device.username, password: hashPassword(device.password) });
-
-    clientsConfig.clients = clientsConfig.clients.filter(function(item) { return item.clientId !== device.clientId; });
-    clientsConfig.clients.push({ clientId: device.clientId, username: device.username, label: device.label || undefined });
-
-    aclConfig.rules = aclConfig.rules.filter(function(rule) { return rule.clientId !== device.clientId; });
-    aclConfig.rules.push({ clientId: device.clientId,
-      publish: ['pubdevices/' + device.clientId], subscribe: ['subdevices/' + device.clientId] });
-
-    if (device.fingerprint256) {
-      certConfig.devices = certConfig.devices.filter(function(item) { return item.clientId !== device.clientId; });
-      certConfig.devices.push({ clientId: device.clientId, fingerprint256: device.fingerprint256 });
-    }
-  });
-
-  writeJsonConfig('mqtt_users.json', usersConfig);
-  writeJsonConfig('mqtt_client_ids.json', clientsConfig);
-  writeJsonConfig('mqtt_acl.json', aclConfig);
-  writeJsonConfig('mqtt_device_certs.json', certConfig);
-  userList = usersConfig.users;
-  refreshSecurityMaps(clientsConfig, aclConfig, certConfig);
-  return devices.map(function(device) { return { clientId: device.clientId, username: device.username,
-    publish: 'pubdevices/' + device.clientId, subscribe: 'subdevices/' + device.clientId,
-    certificateRequired: !!deviceCertMap[device.clientId] }; });
-}
-
-function sendJson(response, statusCode, payload) {
-  response.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
-  response.end(JSON.stringify(payload));
-}
-
-function startAdminApi() {
-  if (!adminApiToken) {
-    console.warn('Device import API disabled: set MQTT_ADMIN_TOKEN to enable it.');
-    return;
-  }
-  if (!Number.isInteger(adminApiPort) || adminApiPort < 1 || adminApiPort > 65535) {
-    throw new Error('MQTT_ADMIN_PORT must be a valid TCP port.');
-  }
-  http.createServer(function(request, response) {
-    if (request.method !== 'POST' || request.url !== '/api/mqtt/devices/import') {
-      sendJson(response, 404, { error: 'Not found' });
-      return;
-    }
-    if (request.headers.authorization !== 'Bearer ' + adminApiToken) {
-      sendJson(response, 401, { error: 'Unauthorized' });
-      return;
-    }
-    var body = '';
-    request.setEncoding('utf8');
-    request.on('data', function(chunk) {
-      body += chunk;
-      if (Buffer.byteLength(body, 'utf8') > 1024 * 1024) request.destroy();
-    });
-    request.on('end', function() {
-      try {
-        var imported = importDevices(JSON.parse(body));
-        sendJson(response, 200, { imported: imported.length, devices: imported });
-      } catch (error) {
-        sendJson(response, 400, { error: error.message });
-      }
-    });
-  }).listen(adminApiPort, adminApiHost, function() {
-    console.log('Device import API listening on http://' + adminApiHost + ':' + adminApiPort);
-  });
-}
-
 var server = new mosca.Server(settings);
 server.on('ready', setup);
-startAdminApi();
 
 // thêm funtion check user
 
@@ -538,38 +367,64 @@ var authenticate = function(client, username, password, callback) {
       return;
     }
 
-    var clientId = client && client.id;
-    var registeredClient = !enableClientID || (clientId && clientIdMap[clientId]);
-    var expectedUsername = registeredClient && clientId ? clientIdMap[clientId].username : null;
-    var validCredentials = userList.some(function(item) {
-      return item.username === username && passwordMatches(item.password, pwd);
-    });
+   if (enableClientID) {
+      var clientId = client && client.id;
+      if (!clientId || !clientIdMap[clientId]) {
+        console.warn('Client ID validation failed: unknown clientId', client && client.id);
+      } else {
+        var expectedUsername = clientIdMap[clientId].username;
+        if (expectedUsername && username && expectedUsername !== username) {
+          console.warn('Client ID validation failed: username mismatch for', clientId, 'expected', expectedUsername, 'got', username);
+        } else {
+          // When client ID validation passes we can still verify certificate or username/password.
+          if (enableTLSCertificate) {
+            var stream = client && client.connection && client.connection.stream;
+            var peer = stream && typeof stream.getPeerCertificate === 'function' ? stream.getPeerCertificate(true) : null;
+            var peerFP = peer && (peer.fingerprint256 || peer.fingerprint);
+            var expected = clientId ? deviceCertMap[clientId] : null;
+            
+            if (peer && expected) {
+              if (peerFP && expected && peerFP.toLowerCase() === expected.toLowerCase()) {
+                authorized = true;
+              } else if (peer.subject && peer.subject.CN && expected === peer.subject.CN) {
+                authorized = true;
+              }
+            }
 
-    // A registered client must present its assigned username and password.
-    // A certificate is additionally required only when that client has a
-    // certificate fingerprint registered in mqtt_device_certs.json.
-    authorized = !!registeredClient && !!validCredentials &&
-      (!expectedUsername || expectedUsername === username);
-
-    if (!registeredClient) {
-      console.warn('Client ID validation failed: unknown clientId', clientId);
-    } else if (!validCredentials) {
-      console.warn('Username/password authentication failed for', clientIdentity);
-    } else if (expectedUsername && expectedUsername !== username) {
-      console.warn('Client ID validation failed: username mismatch for', clientId);
-    }
-
-    var expectedCertificate = clientId && deviceCertMap[clientId];
-    if (authorized && enableTLSCertificate && expectedCertificate) {
+            if (!authorized) {
+              console.warn('mTLS authentication failed for', clientId, 'peer fingerprint:', peer && peer.fingerprint256);
+            }
+          } else {
+            authorized = userList.some(function(item) {
+              return item.username === username && item.password === pwd;
+            });
+          }
+        }
+      }
+    } else if (enableTLSCertificate) {
+      // Perform mTLS per-device certificate verification only.
+      var id = client && (client.id || username);
       var stream = client && client.connection && client.connection.stream;
       var peer = stream && typeof stream.getPeerCertificate === 'function' ? stream.getPeerCertificate(true) : null;
       var peerFP = peer && (peer.fingerprint256 || peer.fingerprint);
-      var certificateMatches = peer && ((peerFP && peerFP.toLowerCase() === expectedCertificate.toLowerCase()) ||
-        (peer.subject && peer.subject.CN && expectedCertificate === peer.subject.CN));
-      authorized = !!certificateMatches;
-      if (!authorized) {
-        console.warn('mTLS authentication failed for', clientId, 'peer fingerprint:', peer && peer.fingerprint256);
+      var expected = id ? deviceCertMap[id] : null;
+
+      if (peer && expected) {
+        if (peerFP && expected && peerFP.toLowerCase() === expected.toLowerCase()) {
+          authorized = true;
+        } else if (peer.subject && peer.subject.CN && expected === peer.subject.CN) {
+          authorized = true;
+        }
       }
+
+      if (!authorized) {
+        console.warn('mTLS authentication failed for', id, 'peer fingerprint:', peer && peer.fingerprint256);
+      }
+    } else {
+      // Default username/password authentication
+      authorized = userList.some(function(item) {
+        return item.username === username && item.password === pwd;
+      });
     }
 
     if (enableBruteForce) {
