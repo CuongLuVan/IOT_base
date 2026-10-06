@@ -7,7 +7,7 @@
     },
     {
       "clientId": "device2",
-      "username": "test",
+      "username": "iotuser",
       "label": "Door controller"
     }
   ]

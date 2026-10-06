@@ -2,11 +2,11 @@
   "devices": [
     {
       "clientId": "device1",
-      "fingerprint256": "SHA256:REPLACE_WITH_DEVICE1_FINGERPRINT"
+      "fingerprint256": "0A:DA:1B:2B:F7:26:D3:1F:12:D3:24:DB:E2:D2:AA:87:C7:6F:A3:81:9B:29:51:E2:ED:D5:59:6D:84:BD:11:DB"
     },
     {
       "clientId": "device2",
-      "subjectCN": "device2.example.com"
+      "fingerprint256": "94:76:3C:51:36:52:65:6B:68:35:6C:56:34:B4:E7:59:52:87:A8:A8:96:64:03:70:F7:47:6E:97:18:03:04:4D"
     }
   ]
 }
