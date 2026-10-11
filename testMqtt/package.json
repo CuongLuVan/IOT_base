@@ -1,6 +1,11 @@
 {
+  "scripts": {
+    "sensor-sim": "node --env-file=.env mqtt_public_sensor_simulator.js",
+    "mqtt-test": "node --env-file=.env sample_test03.js"
+  },
   "dependencies": {
-    "mqtt": "^5.15.1",
+    "crypto": "^1.0.1",
+    "mqtt": "^5.16.0",
     "tls": "^0.0.1"
   }
 }
