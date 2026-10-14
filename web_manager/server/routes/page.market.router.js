@@ -112,6 +112,12 @@ router.get('/mqtt', (req, res) => {
     },
   });
 });
+router.get('/mqtt/certificate/create', (req, res) => {
+  res.render('mqtt/certificate-save');
+});
+router.get('/mqtt/certificate/get', (req, res) => {
+  res.render('mqtt/certificate-get');
+});
 
 router.get('/abouttest', (req, res) => {
   let options = {
@@ -147,4 +153,3 @@ router.get('/sample_pages/:typePage/:detailPages', (req, res) => {
 });
 
 module.exports = router;
-
