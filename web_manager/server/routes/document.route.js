@@ -62,5 +62,10 @@ router.route('/test_upload').post((req, res) => {
  // res.send(JSON.stringify({sample:false}));
 });
 
+
+router.route('/saveCertificateMqtt').post(isAuthenticated,  documentCtrl.saveCertificateMqtt);
+router.route('/getCertificateMqtt').post(isAuthenticated,  documentCtrl.getCertificateMqtt);
+
+
 module.exports =  router;
 
