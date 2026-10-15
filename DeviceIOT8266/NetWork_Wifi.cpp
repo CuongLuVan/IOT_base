@@ -1,0 +1,625 @@
+#include "NetWork_Wifi.h"
+#include "NetWork_RF.h"
+#include "NetWork_config.h"
+#include <WiFi.h>
+#include <WiFiClient.h>
+#include <WiFiServer.h>
+#include <WiFiUdp.h>
+#include <WebServer.h>
+#include <DNSServer.h>                    // WifiManager
+#include <StreamString.h>                   // webServer, Updater
+#include <ESPmDNS.h>
+#include "Memory.h" 
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <ArduinoJson.h>
+#include <HTTPClient.h>
+#include <Update.h>
+#include "define_All.h"
+#include <WiFiProv.h>
+#include "Common.h"
+#include "DebugInfo.h"
+#include <time.h>
+#include "MemoryData.h"
+
+extern NetWork_RF netWork_RF;
+extern String lastLoraPayload;
+
+uint32_t      ip_address[4] ={192,168,0,1};             // 544
+WebServer *webServer;
+StaticJsonDocument<512> jsonBuffer;
+
+static  String ssid;                        //string variable to store ssid
+static  String password;                         //string variable to store password
+static  SmartConfigStatus enableSmartConfig = SmartConfigStatus::DISABLE_SMARTCONFIG;
+static  SmartProvisioningBle enableProvisioningBle = SmartProvisioningBle::DISABLE_BLE;
+extern InfoSensor sensorValue;
+extern InfoDeviceControl statusDevice;
+
+String wifiIp = "";
+
+
+
+void NetWork_Wifi::setHeader()
+{
+  webServer->sendHeader(F("Cache-Control"), F("no-cache, no-store, must-revalidate"));
+  webServer->sendHeader(F("Pragma"), F("no-cache"));
+  webServer->sendHeader(F("Expires"), F("-1"));
+  webServer->sendHeader(F("Access-Control-Allow-Origin"), F("*"));
+
+}
+
+
+void NetWork_Wifi::handleRoot(){
+    String data = webServer->arg("data");
+    deserializeJson(jsonBuffer, data);
+    webServer->send(200, "application/json", "{'data':true}");
+}
+
+void NetWork_Wifi::handleSetUp(){
+    DEVICE_LOG_INFO("start NetWork_Wifi::handleSetUp");
+    String data = webServer->arg("data");
+    deserializeJson(jsonBuffer, data);
+    Memory::GetInstance()->writeString(WIFI_SETUP_JSON,data);
+    //WIFI_BLE_PROVISION  WIFI_SMART_CONFIG
+    Memory::GetInstance()->writeChar(WIFI_MODE,WIFI_BLE_SMART_CONFIG);
+    webServer->send(200, "application/json", "{'data':true}");
+    delay(WIFI_WEB_RESPONSE_DELAY_MS);
+    ESP.restart();            // Restart ESP
+    DEVICE_LOG_INFO("end NetWork_Wifi::handleSetUp");
+}
+
+void NetWork_Wifi::handleSetUpWifi(){
+    DEVICE_LOG_INFO("start NetWork_Wifi::handleSetUpWifi  xxxxxxxxxxxxxxx");
+    String data = webServer->arg("data");
+    deserializeJson(jsonBuffer, data);
+    //Memory::GetInstance()->writeString(WIFI_SETUP_JSON,data);
+    //WIFI_BLE_PROVISION  WIFI_SMART_CONFIG
+    Memory::GetInstance()->writeChar(WIFI_MODE,WIFI_START_CONNECT);
+    Memory::GetInstance()->writeString(WIFI_SSSID, jsonBuffer["ssid"].as<String>());
+    Memory::GetInstance()->writeString(WIFI_PASS,jsonBuffer["password"].as<String>());
+
+    webServer->send(200, "application/json", "{'data':true}");
+     DEVICE_LOG_INFO("end NetWork_Wifi::end................................");
+    delay(WIFI_WEB_RESPONSE_DELAY_MS);
+    ESP.restart();            // Restart ESP
+    DEVICE_LOG_INFO("end NetWork_Wifi::handleSetUpWifi");
+}
+
+extern DeviceCommand cmd;
+extern QueueHandle_t deviceCommandQueue;
+void NetWork_Wifi::handleControl(){
+    DEVICE_LOG_INFO("start NetWork_Wifi::handleControl");
+    String data = webServer->arg("data");
+   
+    cmd.commandType = webServer->arg("com").toInt();
+    cmd.commandValue = webServer->arg("value").toInt();
+   
+    if(cmd.commandType == COMMAND_TYPE_OTHER) {
+        cmd.reserved = COMMAND_RESERVED_NONE;
+    } else if(cmd.commandType == COMMAND_TYPE_CONTROL)  {
+        cmd.reserved = COMMAND_RESERVED_CONTROL;
+        #if SUPPORT_RTOS
+            if (deviceCommandQueue == NULL) return;
+            if (xQueueSend(deviceCommandQueue, &cmd, pdMS_TO_TICKS(50)) != pdTRUE) {
+                Serial.println("[MQTT] Failed to queue device command");
+            } else {
+                Serial.printf("[MQTT] Queued command type=%d value=%d\n", cmd.commandType, cmd.commandValue);
+            }
+        #else
+            MemoryData::GetInstance().deviceCommand_ = &cmd;
+            //Serial.printf("[MQTT] Queued (non-RTOS) command type=%d value=%d\n", cmd.commandType, cmd.commandValue);
+        #endif
+    }
+    webServer->send(200, "application/json", getInfoDevice(sensorValue,statusDevice));
+}
+
+void NetWork_Wifi::handleUpdate(){
+    DEVICE_LOG_INFO("start NetWork_Wifi::handleUpdate ...............  ");
+    webServer->send(200, "application/json", getInfoDevice(sensorValue,statusDevice));
+}
+
+
+
+void NetWork_Wifi::handleLoraGet(){
+    String payload = "{\"data\":\"\"}";
+    if (lastLoraPayload.length() > 0) {
+        String esc = lastLoraPayload;
+        esc.replace("\\", "\\\\");
+        esc.replace("\"", "\\\"");
+        payload = "{\"data\":\"" + esc + "\"}";
+    }
+    webServer->send(200, "application/json", payload);
+}
+
+void NetWork_Wifi::handleLoraPost(){
+    String data = webServer->arg("data");
+    bool ok = false;
+    if (data.length() > 0 && netWork_RF.sendData(data)) {
+        ok = true;
+    }
+    String payload = "{\"success\":" + String(ok ? "true" : "false") + ",\"data\":\"";
+    if (ok) {
+        String esc = data;
+        esc.replace("\\", "\\\\");
+        esc.replace("\"", "\\\"");
+        payload += esc;
+    }
+    payload += "\"}";
+    webServer->send(200, "application/json", payload);
+}
+
+void NetWork_Wifi::startWebServer()
+{
+    DEVICE_LOG_INFO("start NetWork_Wifi::startWebServer");
+    webServer = new class WebServer(WIFI_HTTP_PORT);
+    webServer->enableCORS(true);
+    webServer->on("/control", this->handleControl);
+    webServer->on("/update", this->handleUpdate);
+    webServer->on("/lora", HTTP_GET, this->handleLoraGet);
+    webServer->on("/lora", HTTP_POST, this->handleLoraPost);
+    webServer->begin(); // Web server start 
+    DEVICE_LOG_INFO("end NetWork_Wifi::startWebServer");
+}
+
+void NetWork_Wifi::startWebserverRoot()
+{
+    webServer = new class WebServer(WIFI_HTTP_PORT);
+    webServer->enableCORS(true);
+    webServer->on("/", this->handleRoot);
+    webServer->on("/setup", this->handleSetUp);
+    webServer->on("/lora", HTTP_GET, this->handleLoraGet);
+    webServer->on("/lora", HTTP_POST, this->handleLoraPost);
+    webServer->begin(); // Web server start
+}
+
+
+void NetWork_Wifi::setupHostPost(void){
+    DEVICE_LOG_INFO("start NetWork_Wifi::setupHostPost");
+    Serial.begin(115200);
+    // Set WiFi to station mode and disconnect from an AP if it was previously connected
+     WiFi.disconnect();
+
+    WiFi.mode(WIFI_STA);      // Disable AP mode
+    WiFi.enableSTA(true);
+    if (!WiFi.getAutoReconnect()) {
+        WiFi.setAutoReconnect(true);
+    }
+    WiFi.config(ip_address[0], ip_address[1], ip_address[2], ip_address[3]);  // Set static IP
+    delay(WIFI_CONFIG_DELAY_MS);
+    WiFi.setHostname(HOST_POST_INFO);
+    WiFi.softAP(HOST_POST_INFO,HOST_POST_INFO);
+    WiFi.begin();
+    Serial.println("Setup done"); 
+    DEVICE_LOG_INFO("end NetWork_Wifi::setupHostPost");
+}
+
+void NetWork_Wifi::startWebserverAP()
+{
+  DEVICE_LOG_INFO("end NetWork_Wifi::startWebserverAP ........... 1 ");
+    webServer = new class WebServer(WIFI_HTTP_PORT);
+    DEVICE_LOG_INFO("end NetWork_Wifi::startWebserverAP ........... 2 ");
+    webServer->enableCORS(true);
+    webServer->on("/wifi", this->handleSetUpWifi);
+    DEVICE_LOG_INFO("end NetWork_Wifi::startWebserverAP ........... 3 ");
+    webServer->begin(); // Web server start
+    DEVICE_LOG_INFO("end NetWork_Wifi::startWebserverAP ........... 4 ");
+}
+
+void NetWork_Wifi::setupAP(void){
+   DEVICE_LOG_INFO("end NetWork_Wifi::setupAP ...........1 ");
+    WiFi.disconnect();
+    DEVICE_LOG_INFO("end NetWork_Wifi::setupAP ........... 2");
+    WiFi.mode(WIFI_STA);      // Disable AP mode
+    DEVICE_LOG_INFO("end NetWork_Wifi::setupAP ........... 3");
+    WiFi.enableSTA(true);
+    DEVICE_LOG_INFO("end NetWork_Wifi::setupAP ........... 4");
+    if (!WiFi.getAutoReconnect()) {
+        WiFi.setAutoReconnect(true);
+    }
+    DEVICE_LOG_INFO("end NetWork_Wifi::setupAP ........... 5 ");
+    WiFi.config(ip_address[0], ip_address[1], ip_address[2], ip_address[3]); 
+    DEVICE_LOG_INFO("end NetWork_Wifi::setupAP ........... 6 ");
+    delay(WIFI_CONFIG_DELAY_MS);
+    DEVICE_LOG_INFO("end NetWork_Wifi::setupAP ........... 7 ");
+    WiFi.setHostname(HOST_POST_INFO);
+    DEVICE_LOG_INFO("end NetWork_Wifi::setupAP ...........  8 ");
+    WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASSWORD);
+    DEVICE_LOG_INFO("end NetWork_Wifi::setupAP ........... 9 ");
+    WiFi.begin();
+    DEVICE_LOG_INFO("end NetWork_Wifi::setupAP ........... 10 ");
+}
+
+void NetWork_Wifi::loopAP(void){
+   // DEVICE_LOG_INFO("start NetWork_Wifi::loopAP");
+    webServer->handleClient();
+    //DEVICE_LOG_INFO("end NetWork_Wifi::loopAP");
+}
+
+void NetWork_Wifi::loopHostPost(void){
+    webServer->handleClient();
+}
+
+bool NetWork_Wifi::checkModeHostPost(void){
+    // Kiểm tra nếu đang ở AP mode và SSID trùng HOST_POST_INFO
+    wifi_mode_t mode = WiFi.getMode();
+    if (mode != WIFI_AP && mode != WIFI_AP_STA) {
+        return false;
+    }
+
+    String apSsid = WiFi.softAPSSID();
+    if (apSsid == String(HOST_POST_INFO)) {
+        return true;
+    }
+
+    // Nếu có vẻ ở STA và không chạy AP thì không phải hostpost
+    if (mode == WIFI_STA) {
+        return false;
+    }
+
+    // Tình huống fallback: kiểm tra số client đang kết nối AP > 0
+    if (WiFi.softAPgetStationNum() > 0) {
+        return true;
+    }
+
+    return false;
+}
+
+
+bool isVersionNewer(const String& current, const String& server) {
+  int curMajor, curMinor, curPatch;
+  int serMajor, serMinor, serPatch;
+
+  sscanf(current.c_str(), "%d.%d.%d", &curMajor, &curMinor, &curPatch);
+  sscanf(server.c_str(), "%d.%d.%d", &serMajor, &serMinor, &serPatch);
+
+  if (serMajor > curMajor) return true;
+  if (serMajor == curMajor && serMinor > curMinor) return true;
+  if (serMajor == curMajor && serMinor == curMinor && serPatch > curPatch) return true;
+
+  return false;
+}
+
+void NetWork_Wifi::setupOTA(void){
+    DEVICE_LOG_INFO("start NetWork_Wifi::setupOTA");
+    if (WiFi.status() == WL_CONNECTED) {
+        HTTPClient http;
+        http.begin(linkOTA_ESP_32);
+        int httpCode = http.GET();
+        if (httpCode != HTTP_STATUS_OK) {
+          Serial.printf("Version check failed: %d\n", httpCode);
+          http.end();
+          return;
+        }
+        String payload = http.getString();
+        http.end();
+        DeserializationError error = deserializeJson(jsonBuffer, payload);
+
+        if (error) {
+          Serial.println("JSON parse failed");
+          return;
+        }
+        String serverVersion = jsonBuffer["version"];
+        String binUrl = jsonBuffer["bin"];
+        String currentFirmwareVersion = Memory::GetInstance()->readString(VERSION_OTA);;
+
+        Serial.printf("Current: %s, Server: %s\n", currentFirmwareVersion.c_str(), serverVersion.c_str());
+
+        if (!isVersionNewer(currentFirmwareVersion, serverVersion)) {
+          Serial.println("Version is up to date or newer than server. No update.");
+          return;
+        }
+
+        http.begin(binUrl);
+
+        Serial.println("Downloading firmware...");
+        unsigned long startTime = millis(); // Record start time
+        httpCode = http.GET();
+        if (httpCode == HTTP_CODE_OK) {
+          Serial.println("HTTP_CODE_OK");
+
+          WiFiClient* stream = http.getStreamPtr();
+          Serial.println("http.getStreamPtr");
+
+          if (Update.begin()) {
+            Serial.println("Uploading firmware...");
+            size_t written = 0;
+            unsigned long uploadStartTime = millis(); // Record upload start time
+            do {
+              written = Update.writeStream(*stream);
+              if (written > 0) {
+                Serial.print("Bytes written: ");
+                Serial.println(written);
+              }
+            } while (written > 0 && millis() - uploadStartTime < WIFI_OTA_UPLOAD_TIMEOUT_MS); // Continue writing until timeout or all data is written
+            
+            if (written == http.getSize()) {
+              Serial.println("Firmware upload successful");
+            } else {
+              Serial.println("Firmware upload failed");
+              return;
+            }
+
+            if (Update.end()) {
+              Serial.println("OTA update successful");
+              if (Update.isFinished()) {
+                Serial.println("Update successful, saving version...");
+                Memory::GetInstance()->writeString(VERSJON_SETUP_JSON,serverVersion);
+                Memory::GetInstance()->writeChar(WIFI_MODE,WIFI_START_CONNECT);
+                delay(WIFI_OTA_RESTART_DELAY_MS);
+                ESP.restart();
+              } else {
+                Serial.println("Update failed: incomplete");
+              }
+            } else {
+              Serial.println("OTA update failed");
+            }
+          } else {
+            Serial.println("Could not begin firmware update");
+          }
+        } else {
+          Serial.println("Failed to download firmware");
+        }
+
+        http.end();
+      } else {
+        Serial.println("Failed to connect to WiFi");
+      }
+    DEVICE_LOG_INFO("end NetWork_Wifi::setupOTA");
+}
+
+void NetWork_Wifi::loopOTA(void){
+
+}
+
+void NetWork_Wifi::connectWifi(void){
+    DEVICE_LOG_INFO("start NetWork_Wifi::connectWifi");
+
+  ssid = "";
+  password = "";
+  Memory::GetInstance()->getWiFiCredentials(WIFI_SSSID,WIFI_PASS,ssid,password);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+    DEVICE_LOG_INFO("end NetWork_Wifi::connectWifi"+ssid+ password);
+
+  
+
+
+  /*  Serial.begin(115200);
+    // Set WiFi to station mode and disconnect from an AP if it was previously connected
+    WiFi.mode(WIFI_STA);
+    WiFi.disconnect();
+    delay(100);
+    Serial.println("Setup done");*/
+}
+
+
+void NetWork_Wifi::getWifiStatusIP(){
+   wifiIp = WiFi.localIP().toString();
+}
+
+void NetWork_Wifi::printWifiStatusIP(){
+    DEVICE_LOG_INFO("printWifiStatusIP ------->" + wifiIp);
+}
+
+unsigned char NetWork_Wifi::checkWifi(){
+    return WiFi.status();
+}
+
+uint32_t NetWork_Wifi::getNetworkTimestamp(){
+    if (WiFi.status() != WL_CONNECTED) {
+        return 0;
+    }
+
+    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+    struct tm timeinfo;
+    if (!getLocalTime(&timeinfo, NTP_LOCALTIME_TIMEOUT_MS)) {
+        return 0;
+    }
+
+    return (uint32_t)mktime(&timeinfo);
+}
+
+unsigned char NetWork_Wifi::pingNetWork(){
+    if (WiFi.status() != WL_CONNECTED) {
+        return 0;
+    }
+
+    WiFiClient client;
+    const char *host = "clients3.google.com";
+    const uint16_t port = 80;
+    const char *path = "/generate_204";
+
+    if (!client.connect(host, port)) {
+        return 0;
+    }
+
+    client.print(String("GET ") + path + " HTTP/1.1\r\n" +
+                 "Host: " + host + "\r\n" +
+                 "Connection: close\r\n\r\n");
+
+    unsigned long timeout = millis();
+    while (client.connected() && millis() - timeout < WIFI_PING_TIMEOUT_MS) {
+        if (client.available()) {
+            String line = client.readStringUntil('\n');
+            if (line.startsWith("HTTP/1.1 204") || line.startsWith("HTTP/1.0 204")) {
+                client.stop();
+                return 1;
+            }
+        }
+    }
+
+    client.stop();
+    return 0;
+}
+
+
+void NetWork_Wifi::disconnetWifi(){
+    DEVICE_LOG_INFO("start NetWork_Wifi::disconnetWifi");
+    if (webServer != nullptr) {
+        webServer->close();
+        delete webServer;
+        webServer = nullptr;
+    }
+
+    if (WiFi.getMode() == WIFI_AP || WiFi.getMode() == WIFI_AP_STA) {
+        WiFi.softAPdisconnect(true);
+    }
+
+    if (WiFi.getMode() == WIFI_STA || WiFi.getMode() == WIFI_AP_STA) {
+        WiFi.disconnect(true, true);
+    }
+
+    //WiFi.mode(WIFI_OFF);
+    delay(WIFI_CONFIG_DELAY_MS);
+    DEVICE_LOG_INFO("end NetWork_Wifi::disconnetWifi");
+}
+
+void NetWork_Wifi::handerHospost(){
+     webServer->handleClient();
+}
+
+void NetWork_Wifi::handerClient(){
+     webServer->handleClient();
+}
+
+void NetWork_Wifi::startSmartConfig(){
+  // clear esp
+ // ESP.restart();            // Restart ESP
+}
+
+void NetWork_Wifi::setupSmartConfig(){
+     WiFi.mode(WIFI_AP_STA);
+    /* start SmartConfig */
+    WiFi.beginSmartConfig();
+    enableSmartConfig=  SmartConfigStatus::START_SMARTCONFIG;
+}
+
+uint64_t timeSmartConfig=0;
+void NetWork_Wifi::loopSmartConfig(){
+    if(SmartConfigStatus::DISABLE_SMARTCONFIG==enableSmartConfig){
+      if(SmartConfigStatus::START_SMARTCONFIG==enableSmartConfig){
+        if(WiFi.smartConfigDone()){
+          enableSmartConfig=  SmartConfigStatus::WAIT_WIFI_SMARTCONFIG;
+          timeSmartConfig = Memory::GetInstance()->getTimeStamp();
+        }
+      } else  if(SmartConfigStatus::WAIT_WIFI_SMARTCONFIG==enableSmartConfig){
+        if(WiFi.status() == WL_CONNECTED){
+            enableSmartConfig=  SmartConfigStatus::WIFI_CONNECT_SMARTCONFIG;
+            if((Memory::GetInstance()->getTimeStamp()-timeSmartConfig)>MAX_TIME_WAIT_CONFIG){
+              ESP.restart();            // Restart ESP
+            }
+        }
+      } else  if(SmartConfigStatus::WIFI_CONNECT_SMARTCONFIG==enableSmartConfig){
+          ssid = WiFi.SSID();
+          password = WiFi.psk();
+          // save to reset wifi
+          enableSmartConfig=  SmartConfigStatus::DISABLE_SMARTCONFIG;
+          Memory::GetInstance()->writeString(WIFI_SSSID,ssid);
+          Memory::GetInstance()->writeString(WIFI_PASS,password);
+          //WIFI_BLE_PROVISION  WIFI_SMART_CONFIG
+          Memory::GetInstance()->writeChar(WIFI_MODE,WIFI_START_CONNECT);
+          ESP.restart();            // Restart ESP
+      }
+    }
+}
+
+
+void NetWork_Wifi::setup(){
+  ssid = "";
+  password = "";
+
+
+}
+
+const char * pop = "abcd1234"; // Proof of possession - otherwise called a PIN - string provided by the device, entered by the user in the phone app
+const char * service_name = "PROV_123"; // Name of your device (the Espressif apps expects by default device name starting with "Prov_")
+const char * service_key = NULL; // Password used for SofAP method (NULL = no password needed)
+bool reset_provisioned = true; // When true the library will automatically delete previously provisioned data.
+#define WIFI_PROV_STA_AUTH_ERROR 0
+// WARNING: SysProvEvent is called from a separate FreeRTOS task (thread)!
+void  NetWork_Wifi::sysProvEvent(arduino_event_t *sys_event) {
+  switch (sys_event->event_id) {
+    case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+      Serial.print("\nConnected IP address : ");
+      Serial.println(IPAddress(sys_event->event_info.got_ip.ip_info.ip.addr));
+      break;
+    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED: Serial.println("\nDisconnected. Connecting to the AP again... "); break;
+    case ARDUINO_EVENT_PROV_START:            Serial.println("\nProvisioning started\nGive Credentials of your access point using smartphone app"); break;
+    case ARDUINO_EVENT_PROV_CRED_RECV:
+    {
+      Serial.println("\nReceived Wi-Fi credentials");
+      Serial.print("\tSSID : ");
+      ssid = (const char*)  sys_event->event_info.prov_cred_recv.ssid;
+      password = (const char*)  sys_event->event_info.prov_cred_recv.password;
+      Serial.println((const char *)sys_event->event_info.prov_cred_recv.ssid);
+      Serial.print("\tPassword : ");
+      Serial.println((char const *)sys_event->event_info.prov_cred_recv.password);
+      Memory::GetInstance()->writeString(WIFI_SSSID,ssid);
+      Memory::GetInstance()->writeString(WIFI_PASS,password);
+      //WIFI_BLE_PROVISION  WIFI_SMART_CONFIG
+      Memory::GetInstance()->writeChar(WIFI_MODE,WIFI_START_CONNECT);
+      ESP.restart();            // Restart ESP
+      // save eeprom
+      break;
+    }
+    case ARDUINO_EVENT_PROV_CRED_FAIL:
+    {
+      Serial.println("\nProvisioning failed!\nPlease reset to factory and retry provisioning\n");
+      if (sys_event->event_info.prov_fail_reason == WIFI_PROV_STA_AUTH_ERROR) {
+        Serial.println("\nWi-Fi AP password incorrect");
+      } else {
+        Serial.println("\nWi-Fi AP not found....Add API \" nvs_flash_erase() \" before beginProvision()");
+      }
+      break;
+    }
+    case ARDUINO_EVENT_PROV_CRED_SUCCESS: Serial.println("\nProvisioning Successful"); break;
+    case ARDUINO_EVENT_PROV_END:       {
+       Serial.println("\nProvisioning Ends");
+       enableProvisioningBle =  SmartProvisioningBle::DISABLE_BLE;
+    }   break;
+    default:                              break;
+  }
+}
+
+void NetWork_Wifi::startProvisioning(){
+  // clear esp
+  enableProvisioningBle =  SmartProvisioningBle::START_BLE;
+  //ESP.restart();            // Restart ESP
+}
+
+void NetWork_Wifi::setupProvisioning(){
+  DEVICE_LOG_INFO("start NetWork_Wifi::setupProvisioning");
+  // clear esp
+  WiFi.onEvent(sysProvEvent);
+
+  Serial.println("Begin Provisioning using BLE");
+  // Sample uuid that user can pass during provisioning using BLE
+  uint8_t uuid[16] = {0xb4, 0xdf, 0x5a, 0x1c, 0x3f, 0x6b, 0xf4, 0xbf,
+                      0xea, 0x4a, 0x82, 0x03, 0x04, 0x90, 0x1a, 0x02 };
+  /*WiFiProv.beginProvision(
+    WIFI_PROV_SCHEME_BLE,           // Scheme BLE
+    WiFiProvScheme_BLE,   // Handler BLE
+    WIFI_PROV_SECURITY_1,           // Security mode
+    pop,                            // POP (proof of possession)
+    service_name,                   // Tên BLE hiển thị
+    service_key,                    // Mã ghép BLE (tuỳ chọn)
+    NULL,                           // UUID (tuỳ chọn)
+    reset_provisioned               // Xóa cấu hình cũ?
+  );
+*/
+  WiFiProv.printQR(service_name, pop, "ble");
+  enableProvisioningBle =  SmartProvisioningBle::START_BLE;
+  timeSmartConfig = Memory::GetInstance()->getTimeStamp();
+  DEVICE_LOG_INFO("end NetWork_Wifi::setupProvisioning");
+}
+
+void NetWork_Wifi::loopProvisioning(){
+  DEVICE_LOG_INFO("start NetWork_Wifi::loopProvisioning");
+  // clear esp
+  if((Memory::GetInstance()->getTimeStamp()-timeSmartConfig)>MAX_TIME_WAIT_CONFIG){
+    ESP.restart();            // Restart ESP
+  }
+  DEVICE_LOG_INFO("end NetWork_Wifi::loopProvisioning");
+}
+
