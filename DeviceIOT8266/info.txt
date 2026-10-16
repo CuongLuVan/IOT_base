@@ -1,10 +1,70 @@
- Thêm define biến ENABLE_ASCON_AEAD128  , nếu = false thì không thay đổi logic hiện tại,
- nếu = true thì mã hóa Ascon-AEAD128 như sau: Ở ROM lưu trữ 10key (public key), sau khi khởi động ESP chip sẽ lấy 10key đó rồi sử dụng 
- con số ngẫu nhiên 5 số   từ 0 đến 9 ,
- Key mới = vị trí theo con số ngẫu nhiên đó lấy số thứ tự public key  rồi sẽ lấy key, các key dần dần sẽ XOR với nhau tạo key mới.
- sau đó thiết bị gửi bản tin mqtt dạng {co:6 , va:xxxxx} với xxxxx là số số ngẫu nhiên 5 số  lên broker
- khi thiết có yêu cầu {com:7 , value:""} từ mobile hoặc thiết bị khác thì esp sẽ gửi lại  {co:6 , va:xxxxx} 
- sau khi có key mới thì bản tin gửi đến từ mobile và esp sẽ thay đổi rule mới như sau sẽ gửi bản tin dạng như sau:
- tất cả json gửi đến và nhận đi trử lệnh  {com:7 , value:""} và {co:6 , va:xxxxx} thì data sẽ được mã hóa  Ascon-AEAD128 sẽ ra data yyyy
- và đóng gói theo rule sau : {com:1, value:yyyy, ....} . ở bên mobile và bên nhúng phải giải mã Ascon-AEAD128 qua key mới
- , hàm getInfoDevice sẽ  sử dụng mã hóa  Ascon-AEAD128  theo rule trên. Sau 1 ngày thiết bị đổi key mới giống như chu kỳ khởi động ESP
+How to Use RTOS with ESP8266 in Arduino IDE
+Yes, you can use an RTOS with the ESP8266, but you need to distinguish between the standard Arduino framework and an RTOS-based framework.
+There are two main approaches:
+- Standard ESP8266 Arduino Core: Supports Arduino functions and background system tasks, but does not provide the same FreeRTOS task-management API available on ESP32.
+- ESP8266 RTOS SDK: Espressif's RTOS-based development framework for ESP8266, built around FreeRTOS.
+1. Option 1 — Install an RTOS-based framework in Arduino IDE
+One third-party project is ESP8266RTOSArduCore, which aims to combine the Arduino programming style with the ESP8266 RTOS SDK.
+GitHub: ESP8266RTOSArduCore repository
+Installation steps on Windows
+1. Open Arduino IDE and select File → Preferences.
+2. Add the following URL to Additional Boards Manager URLs:
+   https://raw.githubusercontent.com/alexCajas/esp8266RTOSArduCore/main/package/package_esp8266RTOS_index.json
+3. Open Tools → Board → Boards Manager, search for the RTOS-based ESP8266 board package, and install it if the package index is available.
+4. Follow the repository's README to install the required development tools and dependencies. If the project provides a setup_env.bat script, follow its documented instructions.
+5. Select a board provided by the new framework and compile a basic example before migrating your existing project.
+Important: This is a third-party framework, not the standard ESP8266 Arduino Core. Compatibility with existing Arduino libraries, especially Wi-Fi, MQTT, and security libraries, must be verified. Check the repository's current installation instructions before proceeding.
+2. Example: Create an RTOS task
+The following example illustrates the FreeRTOS programming model. Use it only with a compatible RTOS-based core that provides the required FreeRTOS headers and APIs.
+#include <Arduino.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+void SensorTask(void *parameter) {
+  while (true) {
+    int value = analogRead(A0);
+
+    Serial.println(value);
+
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+
+  xTaskCreate(
+    SensorTask,
+    "SensorTask",
+    2048,
+    nullptr,
+    1,
+    nullptr
+  );
+}
+
+void loop() {
+  vTaskDelay(pdMS_TO_TICKS(1000));
+}
+
+
+How the example works
+- SensorTask() reads the ADC value and prints it to the serial monitor.
+- xTaskCreate() creates a FreeRTOS task.
+- vTaskDelay() suspends the task for approximately 100 milliseconds between readings.
+- pdMS_TO_TICKS(100) converts milliseconds into RTOS ticks.
+The stack size and its unit depend on the particular RTOS port. Verify the framework's requirements and available RAM before using this example in a real project.
+3. Which approach should you choose?
+Requirement	Recommendation
+MQTT communication and basic sensor monitoring	Standard ESP8266 Arduino Core
+Experimenting with FreeRTOS on ESP8266	ESP8266RTOSArduCore, subject to compatibility limitations
+Reliable task management with queues, mutexes, and semaphores	ESP32 with Arduino-ESP32 or ESP-IDF
+Official RTOS development for ESP8266	ESP8266 RTOS SDK
+4. Recommendation for an IoT framework
+For an IoT framework with separate tasks such as:
+- DeviceTask — device control.
+- SensorTask — sensor acquisition.
+- NetworkTask — Wi-Fi and MQTT communication.
+I recommend considering the ESP32 if you want a maintainable, extensible FreeRTOS architecture.
+The ESP8266 can be used with RTOS-based solutions, but its limited resources and library compatibility may become obstacles, especially for high-speed sensor acquisition.
+Official ESP8266 Arduino Core documentation: ESP8266 Arduino Core.
