@@ -1,11 +1,16 @@
 #include "HighSpeedSampler.h"
 
 #include <SPI.h>
-#include <esp_timer.h>
-
 #include "define_All.h"
 #include "DebugInfo.h"
 #include "SystemTask.h"
+
+// =====================================================================
+// ESP32-specific includes
+// =====================================================================
+#if PLATFORM_ESP32
+#include <esp_timer.h>
+#endif
 
 namespace {
 
@@ -14,7 +19,9 @@ constexpr uint32_t kImuRateHz = HS_ICM42688_SAMPLE_RATE_HZ;
 constexpr uint32_t kAdsRateHz = HS_ADS8866_SAMPLE_RATE_HZ;
 constexpr size_t kUdpHeaderSize = 28;
 constexpr size_t kUdpPayloadMax = 1150;
+#if SUPPORT_RTOS
 constexpr UBaseType_t kPacketQueueDepth = 24;
+#endif
 constexpr uint16_t kAdcBatchSize = 64;
 constexpr uint16_t kImuBatchSize = 16;
 constexpr uint16_t kAdsBatchSize = 64;
@@ -35,6 +42,24 @@ struct CaptureCommand {
     CaptureCommandType type;
     HighSpeedConfig config;
 };
+
+// Platform-agnostic microsecond timer
+inline uint64_t platformMicros() {
+#if PLATFORM_ESP32
+    return esp_timer_get_time();
+#else
+    return micros();
+#endif
+}
+
+// Platform-agnostic chip ID for session hashing
+inline uint32_t platformChipId() {
+#if PLATFORM_ESP32
+    return static_cast<uint32_t>(ESP.getEfuseMac());
+#else
+    return ESP.getChipId();
+#endif
+}
 
 class PacketBuilder {
 public:
@@ -68,6 +93,7 @@ public:
         dropped_ += count;
     }
 
+#if SUPPORT_RTOS
     void flush(QueueHandle_t queue) {
         if (count_ == 0) {
             return;
@@ -100,6 +126,13 @@ public:
         count_ = 0;
         payloadLength_ = 0;
     }
+#else
+    void flush(void* /*unused*/) {
+        // In non-RTOS mode, high-speed sampling is effectively disabled.
+        count_ = 0;
+        payloadLength_ = 0;
+    }
+#endif
 
 private:
     static void writeU16(uint8_t* out, uint16_t value) {
@@ -160,8 +193,18 @@ struct CaptureState {
     uint32_t missedAds;
 };
 
+// =====================================================================
+// SPI bus instances – ESP32 has HSPI/VSPI, ESP8266 has single SPI
+// =====================================================================
+#if PLATFORM_ESP32
 SPIClass icmSPI(HSPI);
 SPIClass adsSPI(VSPI);
+#else
+// ESP8266 has only one hardware SPI bus. High-speed multi-sensor
+// capture is not practical. We keep the code compilable but
+// effectively disabled via isModeAvailable().
+#endif
+
 CaptureState captureState;
 
 int16_t readSigned16(const uint8_t* data) {
@@ -174,14 +217,21 @@ void appendBigEndian16(uint8_t* data, int16_t value) {
     data[1] = static_cast<uint8_t>(bits);
 }
 
-uint8_t icmReadRegister(uint8_t address) {
+#if PLATFORM_ESP32
+// ICM-42688 SPI helpers – ESP32 only
+void icmReadRegister_impl(uint8_t address, uint8_t* value) {
     digitalWrite(HS_ICM_CS_PIN, LOW);
     icmSPI.beginTransaction(SPISettings(HS_ICM_SPI_HZ, MSBFIRST, SPI_MODE0));
     icmSPI.transfer(address | 0x80);
-    const uint8_t value = icmSPI.transfer(0);
+    *value = icmSPI.transfer(0);
     icmSPI.endTransaction();
     digitalWrite(HS_ICM_CS_PIN, HIGH);
-    return value;
+}
+
+uint8_t icmReadRegister(uint8_t address) {
+    uint8_t val;
+    icmReadRegister_impl(address, &val);
+    return val;
 }
 
 void icmWriteRegister(uint8_t address, uint8_t value) {
@@ -192,6 +242,7 @@ void icmWriteRegister(uint8_t address, uint8_t value) {
     icmSPI.endTransaction();
     digitalWrite(HS_ICM_CS_PIN, HIGH);
 }
+#endif
 
 uint8_t icmOdrRegisterValue(uint32_t rateHz) {
     switch (rateHz) {
@@ -213,6 +264,7 @@ uint8_t icmOdrRegisterValue(uint32_t rateHz) {
     }
 }
 
+#if PLATFORM_ESP32
 void icmReadBurst(uint8_t address, uint8_t* destination, size_t length) {
     digitalWrite(HS_ICM_CS_PIN, LOW);
     icmSPI.beginTransaction(SPISettings(HS_ICM_SPI_HZ, MSBFIRST, SPI_MODE0));
@@ -232,6 +284,7 @@ void adsConvertAndRead(uint16_t& sample) {
     sample = adsSPI.transfer16(0);
     adsSPI.endTransaction();
 }
+#endif
 
 void advanceOneSample(uint64_t& nextUs, uint32_t rateHz, uint32_t& remainder) {
     nextUs += 1000000UL / rateHz;
@@ -267,6 +320,7 @@ bool modeReadsAds(HighSpeedMode mode) {
     return mode == HS_MODE_ADS100K || mode == HS_MODE_ALL;
 }
 
+#if PLATFORM_ESP32
 void encodeAndAppendImu(uint64_t timestampUs) {
     uint8_t raw[14];
     uint8_t encoded[14];
@@ -276,12 +330,16 @@ void encodeAndAppendImu(uint64_t timestampUs) {
     }
     captureState.imu.append(encoded, sizeof(encoded), timestampUs);
 }
+#endif
 
 }  // namespace
 
 HighSpeedSampler::HighSpeedSampler()
-    : controlQueue(nullptr),
+    :
+#if SUPPORT_RTOS
+      controlQueue(nullptr),
       packetQueue(nullptr),
+#endif
       samplingActive(false),
       stopRequested(false),
       initialized(false),
@@ -297,6 +355,7 @@ bool HighSpeedSampler::setup() {
         return true;
     }
 
+#if SUPPORT_RTOS
     controlQueue = xQueueCreate(1, sizeof(CaptureCommand));
     packetQueue = xQueueCreate(kPacketQueueDepth, sizeof(HighSpeedUdpPacket));
     if (controlQueue == nullptr || packetQueue == nullptr) {
@@ -311,13 +370,20 @@ bool HighSpeedSampler::setup() {
         }
         return false;
     }
+#endif
 
+#if PLATFORM_ESP32
     initializeSensors();
+#else
+    // On ESP8266, high-speed sensors (ICM-42688, ADS8866) are not supported.
+    DEVICE_LOG_INFO("[HighSpeed] ESP8266: high-speed sensor capture disabled");
+#endif
     initialized = true;
     return true;
 }
 
 void HighSpeedSampler::initializeSensors() {
+#if PLATFORM_ESP32
     static_assert(HS_AUDIO_ADC_SAMPLE_RATE_HZ > 0,
                   "HS_AUDIO_ADC_SAMPLE_RATE_HZ must be greater than zero");
     static_assert(HS_AUDIO_ADC_SAMPLE_RATE_HZ <= 1000000UL,
@@ -358,9 +424,14 @@ void HighSpeedSampler::initializeSensors() {
     icmWriteRegister(kIcmAccelConfig0Register,
                      (icmReadRegister(kIcmAccelConfig0Register) & 0xF0) | odr);
     delay(2);
+#endif
 }
 
 bool HighSpeedSampler::startSampling(const HighSpeedConfig& config) {
+#if !SUPPORT_RTOS
+    // High-speed sampling requires RTOS task scheduling
+    return false;
+#else
     if (!initialized || controlQueue == nullptr || packetQueue == nullptr ||
         config.mode < HS_MODE_ADC_10KHZ || config.mode > HS_MODE_ALL ||
         config.udpTargetPort == 0 || config.durationMs == 0 ||
@@ -369,35 +440,62 @@ bool HighSpeedSampler::startSampling(const HighSpeedConfig& config) {
         return false;
     }
 
+#if PLATFORM_ESP32
     bool expectedInactive = false;
     if (!samplingActive.compare_exchange_strong(expectedInactive, true)) {
         return false;
     }
+#else
+    noInterrupts();
+    if (samplingActive) {
+        interrupts();
+        return false;
+    }
+    samplingActive = true;
+    interrupts();
+#endif
 
     CaptureCommand command = {CaptureCommandType::Start, config};
-    stopRequested.store(false);
+    stopRequested = false;
     if (xQueueSend(controlQueue, &command, 0) != pdTRUE) {
-        samplingActive.store(false);
+        samplingActive = false;
         return false;
     }
     return true;
+#endif
 }
 
 void HighSpeedSampler::stopSampling() {
+#if PLATFORM_ESP32
     if (samplingActive.load()) {
         stopRequested.store(true);
     }
+#else
+    if (samplingActive) {
+        stopRequested = true;
+    }
+#endif
 }
 
 bool HighSpeedSampler::isSamplingActive() const {
+#if PLATFORM_ESP32
     return samplingActive.load();
+#else
+    return samplingActive;
+#endif
 }
 
 bool HighSpeedSampler::isModeAvailable(HighSpeedMode mode) const {
     if (!initialized) {
         return false;
     }
+#if PLATFORM_ESP8266
+    // ESP8266 cannot do high-speed multi-sensor capture
+    (void)mode;
+    return false;
+#else
     return !modeReadsImu(mode) || icmAvailable;
+#endif
 }
 
 bool HighSpeedSampler::processSensorTask() {
@@ -405,14 +503,29 @@ bool HighSpeedSampler::processSensorTask() {
         return false;
     }
 
+#if !SUPPORT_RTOS
+    // Non-RTOS: no high-speed capture
+    return false;
+#else
+
+#if PLATFORM_ESP8266
+    // ESP8266: high-speed capture not supported, just drain control queue
+    CaptureCommand dummyCmd;
+    if (controlQueue != nullptr) {
+        xQueueReceive(controlQueue, &dummyCmd, 0);
+    }
+    return false;
+#endif
+
+#if PLATFORM_ESP32
     if (!captureState.active) {
         CaptureCommand command;
         if (xQueueReceive(controlQueue, &command, 0) == pdTRUE &&
             command.type == CaptureCommandType::Start) {
             captureState.config = command.config;
-            captureState.sessionId = static_cast<uint32_t>(esp_timer_get_time()) ^
-                static_cast<uint32_t>(ESP.getEfuseMac());
-            captureState.startedAtUs = esp_timer_get_time();
+            captureState.sessionId = static_cast<uint32_t>(platformMicros()) ^
+                platformChipId();
+            captureState.startedAtUs = platformMicros();
             captureState.stopAtUs = captureState.startedAtUs +
                 static_cast<uint64_t>(command.config.durationMs) * 1000ULL;
             captureState.nextAdcUs = captureState.startedAtUs;
@@ -438,14 +551,20 @@ bool HighSpeedSampler::processSensorTask() {
         return false;
     }
 
-    const uint64_t nowUs = esp_timer_get_time();
-    if (stopRequested.load() || nowUs >= captureState.stopAtUs) {
+    const uint64_t nowUs = platformMicros();
+    bool shouldStop = false;
+#if PLATFORM_ESP32
+    shouldStop = stopRequested.load();
+#else
+    shouldStop = stopRequested;
+#endif
+    if (shouldStop || nowUs >= captureState.stopAtUs) {
         captureState.adc.flush(packetQueue);
         captureState.imu.flush(packetQueue);
         captureState.ads.flush(packetQueue);
         captureState.active = false;
-        stopRequested.store(false);
-        samplingActive.store(false);
+        stopRequested = false;
+        samplingActive = false;
         DEVICE_LOG_INFO("[HighSpeed] Sensor capture ended; missed ADC/IMU/ADS=" +
             String(captureState.missedAdc) + "/" +
             String(captureState.missedImu) + "/" +
@@ -464,7 +583,7 @@ bool HighSpeedSampler::processSensorTask() {
         };
         captureState.ads.append(encoded, sizeof(encoded), sampleTimeUs);
         const uint32_t missed = skipMissedDeadlines(
-            esp_timer_get_time(), captureState.nextAdsUs, kAdsRateHz,
+            platformMicros(), captureState.nextAdsUs, kAdsRateHz,
             captureState.adsRemainder, captureState.missedAds);
         captureState.ads.addDropped(missed);
         SystemTask::recordMissedSamples(UDP_PACKET_ADS, missed);
@@ -473,12 +592,12 @@ bool HighSpeedSampler::processSensorTask() {
         }
     }
 
-    sampleTimeUs = esp_timer_get_time();
+    sampleTimeUs = platformMicros();
     if (modeReadsImu(captureState.config.mode) &&
         sampleTimeUs >= captureState.nextImuUs) {
         encodeAndAppendImu(sampleTimeUs);
         const uint32_t missed = skipMissedDeadlines(
-            esp_timer_get_time(), captureState.nextImuUs, kImuRateHz,
+            platformMicros(), captureState.nextImuUs, kImuRateHz,
             captureState.imuRemainder, captureState.missedImu);
         captureState.imu.addDropped(missed);
         SystemTask::recordMissedSamples(UDP_PACKET_IMU, missed);
@@ -487,7 +606,7 @@ bool HighSpeedSampler::processSensorTask() {
         }
     }
 
-    sampleTimeUs = esp_timer_get_time();
+    sampleTimeUs = platformMicros();
     if (modeReadsAdc(captureState.config.mode) &&
         sampleTimeUs >= captureState.nextAdcUs) {
         const uint16_t sample = static_cast<uint16_t>(analogRead(HS_ADC_PIN));
@@ -497,7 +616,7 @@ bool HighSpeedSampler::processSensorTask() {
         };
         captureState.adc.append(encoded, sizeof(encoded), sampleTimeUs);
         const uint32_t missed = skipMissedDeadlines(
-            esp_timer_get_time(), captureState.nextAdcUs, kAdcRateHz,
+            platformMicros(), captureState.nextAdcUs, kAdcRateHz,
             captureState.adcRemainder, captureState.missedAdc);
         captureState.adc.addDropped(missed);
         SystemTask::recordMissedSamples(UDP_PACKET_ADC, missed);
@@ -505,15 +624,26 @@ bool HighSpeedSampler::processSensorTask() {
             captureState.adc.flush(packetQueue);
         }
     }
+#endif // PLATFORM_ESP32
 
     return true;
+#endif // SUPPORT_RTOS
 }
 
-UBaseType_t HighSpeedSampler::packetQueueDepth() const {
+uint32_t HighSpeedSampler::packetQueueDepth() const {
+#if SUPPORT_RTOS
     return packetQueue == nullptr ? 0 : uxQueueMessagesWaiting(packetQueue);
+#else
+    return 0;
+#endif
 }
 
 bool HighSpeedSampler::receivePacket(HighSpeedUdpPacket& packet) {
+#if SUPPORT_RTOS
     return packetQueue != nullptr &&
         xQueueReceive(packetQueue, &packet, 0) == pdTRUE;
+#else
+    (void)packet;
+    return false;
+#endif
 }

@@ -2,9 +2,18 @@
 #define HIGHSPEEDSAMPLER_H
 
 #include <Arduino.h>
-#include <atomic>
-#include <freertos/FreeRTOS.h>
-#include <freertos/queue.h>
+#include "define_All.h"
+
+#if SUPPORT_RTOS
+  #if PLATFORM_ESP32
+    #include <freertos/FreeRTOS.h>
+    #include <freertos/queue.h>
+    #include <atomic>
+  #elif PLATFORM_ESP8266
+    #include <freertos/FreeRTOS.h>
+    #include <freertos/queue.h>
+  #endif
+#endif
 
 constexpr size_t HIGH_SPEED_UDP_MAX_DATAGRAM_SIZE = 28 + 1150;
 
@@ -50,7 +59,7 @@ public:
     bool processSensorTask();
     // Called only by TaskNetWork.
     bool receivePacket(HighSpeedUdpPacket& packet);
-    UBaseType_t packetQueueDepth() const;
+    uint32_t packetQueueDepth() const;
 
 private:
     HighSpeedSampler();
@@ -59,10 +68,18 @@ private:
 
     void initializeSensors();
 
+#if SUPPORT_RTOS
     QueueHandle_t controlQueue;
     QueueHandle_t packetQueue;
+#endif
+
+#if PLATFORM_ESP32
     std::atomic<bool> samplingActive;
     std::atomic<bool> stopRequested;
+#else
+    volatile bool samplingActive;
+    volatile bool stopRequested;
+#endif
     bool initialized;
     bool icmAvailable;
 };

@@ -5,19 +5,28 @@
 #include "HighSpeedSampler.h"
 
 #if SUPPORT_RTOS
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "freertos/queue.h"
+  #include "freertos/FreeRTOS.h"
+  #include "freertos/task.h"
+  #include "freertos/queue.h"
 #endif
 
-#include "driver/uart.h"
-#include "esp_log.h"
-#include "driver/gpio.h"
-#include "sdkconfig.h"
-#include "esp_intr_alloc.h"
-#include "soc/uart_reg.h"
-#include "soc/uart_struct.h"
-#include "esp_task_wdt.h"
+// =====================================================================
+// Platform-specific sensor includes
+// =====================================================================
+#if PLATFORM_ESP32
+  #include "driver/uart.h"
+  #include "esp_log.h"
+  #include "driver/gpio.h"
+  #include "sdkconfig.h"
+  #include "esp_intr_alloc.h"
+  #include "soc/uart_reg.h"
+  #include "soc/uart_struct.h"
+  #include "esp_task_wdt.h"
+#elif PLATFORM_ESP8266
+  // ESP8266 does not have these ESP-IDF drivers;
+  // standard Arduino functions are used instead.
+#endif
+
 #include <DHT.h>
 #include "PMS.h"
 #include "Common.h"
@@ -49,8 +58,14 @@ void TaskSensor::setup(void){
         DEVICE_LOG_INFO("[TaskSensor] High-speed sampler initialization failed");
     }
     dht.begin();
+
+#if PLATFORM_ESP32
     Serial1.begin(SENSOR_SERIAL_BAUD_RATE);   // GPIO1, GPIO3 (TX/RX pin on ESP-12E Development Board)
-        //Configuro la porta Serial2 (tutti i parametri hanno anche un get per effettuare controlli)
+#elif PLATFORM_ESP8266
+    // ESP8266 Serial1 TX only (GPIO2). For PMS sensor, use SoftwareSerial or
+    // share Serial. Using Serial for PMS on ESP8266.
+    // Serial1 is TX-only on ESP8266, skip begin for RX sensor use.
+#endif
 
 #if SUPPORT_RTOS
     if (sensorDataMutex == NULL) {

@@ -4,9 +4,21 @@
 
 #include <ArduinoJson.h>
 #include <WiFi.h>
+
+// =====================================================================
+// Platform-specific includes
+// =====================================================================
+#if PLATFORM_ESP32
 #include <esp_system.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#elif PLATFORM_ESP8266
+  #if SUPPORT_RTOS
+    // ESP8266 RTOS SDK provides FreeRTOS headers
+    #include <freertos/FreeRTOS.h>
+    #include <freertos/task.h>
+  #endif
+#endif
 
 #include "define_All.h"
 #include "DebugInfo.h"
@@ -27,6 +39,8 @@ const char* const kTaskNames[kTaskCount] = {
     "TaskDevice", "TaskSensor", "TaskNetwork", "SystemTask"
 };
 
+// ESP8266 is single-core, so std::atomic is not needed; use volatile instead.
+#if PLATFORM_ESP32
 std::atomic<uint32_t> collectedSamples[kSensorTypeCount] = {};
 std::atomic<uint32_t> missedSamples[kSensorTypeCount] = {};
 std::atomic<uint32_t> droppedSamples[kSensorTypeCount] = {};
@@ -36,12 +50,31 @@ std::atomic<uint32_t> bufferFullEvents = 0;
 std::atomic<bool> wifiConnected = false;
 std::atomic<bool> mqttConnected = false;
 std::atomic<bool> udpAvailable = false;
+#else
+volatile uint32_t collectedSamples[kSensorTypeCount] = {};
+volatile uint32_t missedSamples[kSensorTypeCount] = {};
+volatile uint32_t droppedSamples[kSensorTypeCount] = {};
+volatile uint32_t packetsSent[kSensorTypeCount] = {};
+volatile uint32_t packetErrors[kSensorTypeCount] = {};
+volatile uint32_t bufferFullEvents = 0;
+volatile bool wifiConnected_v = false;
+volatile bool mqttConnected_v = false;
+volatile bool udpAvailable_v = false;
+#endif
 
 SystemTaskSnapshot latestSnapshot = {};
+
+// ESP8266 does not have portMUX_TYPE; use noInterrupts/interrupts instead.
+#if PLATFORM_ESP32
 portMUX_TYPE snapshotMux = portMUX_INITIALIZER_UNLOCKED;
+#endif
+
 bool ntpConfigured = false;
 uint32_t lastNtpRequestMs = 0;
+
+#if SUPPORT_RTOS
 TaskHandle_t systemTaskHandle = nullptr;
+#endif
 
 int sensorIndex(UdpPacketType type)
 {
@@ -53,6 +86,7 @@ int sensorIndex(UdpPacketType type)
     }
 }
 
+#if SUPPORT_RTOS
 const char* taskStateName(uint8_t state)
 {
     switch (static_cast<eTaskState>(state)) {
@@ -64,6 +98,7 @@ const char* taskStateName(uint8_t state)
         default: return "invalid";
     }
 }
+#endif
 
 void synchronizeClockIfNeeded()
 {
@@ -79,6 +114,23 @@ void synchronizeClockIfNeeded()
     }
 }
 
+// Platform-agnostic critical section helpers
+inline void enterCriticalSnapshot() {
+#if PLATFORM_ESP32
+    portENTER_CRITICAL(&snapshotMux);
+#else
+    noInterrupts();
+#endif
+}
+
+inline void exitCriticalSnapshot() {
+#if PLATFORM_ESP32
+    portEXIT_CRITICAL(&snapshotMux);
+#else
+    interrupts();
+#endif
+}
+
 void collectSnapshot(uint32_t scheduleMisses)
 {
     synchronizeClockIfNeeded();
@@ -87,25 +139,52 @@ void collectSnapshot(uint32_t scheduleMisses)
     snapshot.uptimeMs = millis();
     snapshot.scheduleMisses = scheduleMisses;
     snapshot.freeHeapBytes = ESP.getFreeHeap();
+
+#if PLATFORM_ESP32
     snapshot.minFreeHeapBytes = ESP.getMinFreeHeap();
+#else
+    // ESP8266 doesn't have getMinFreeHeap; report current free heap instead
+    snapshot.minFreeHeapBytes = ESP.getFreeHeap();
+#endif
+
     snapshot.udpQueueDepth =
         HighSpeedSampler::GetInstance().packetQueueDepth();
     const time_t epoch = time(nullptr);
     snapshot.clockValid = epoch >= kMinimumValidEpoch;
     snapshot.epochSeconds = snapshot.clockValid ? static_cast<uint64_t>(epoch) : 0;
+
+#if PLATFORM_ESP32
     snapshot.wifiConnected = wifiConnected.load();
     snapshot.mqttConnected = mqttConnected.load();
     snapshot.udpAvailable = udpAvailable.load();
+#else
+    snapshot.wifiConnected = wifiConnected_v;
+    snapshot.mqttConnected = mqttConnected_v;
+    snapshot.udpAvailable = udpAvailable_v;
+#endif
     snapshot.cpuUsageSupported = false;
 
     for (size_t i = 0; i < kSensorTypeCount; ++i) {
+#if PLATFORM_ESP32
         snapshot.samplesCollected[i] = collectedSamples[i].load();
         snapshot.missedSamples[i] = missedSamples[i].load();
         snapshot.droppedSamples[i] = droppedSamples[i].load();
         snapshot.packetsSent[i] = packetsSent[i].load();
         snapshot.packetErrors[i] = packetErrors[i].load();
+#else
+        snapshot.samplesCollected[i] = collectedSamples[i];
+        snapshot.missedSamples[i] = missedSamples[i];
+        snapshot.droppedSamples[i] = droppedSamples[i];
+        snapshot.packetsSent[i] = packetsSent[i];
+        snapshot.packetErrors[i] = packetErrors[i];
+#endif
     }
+
+#if PLATFORM_ESP32
     snapshot.bufferFullEvents = bufferFullEvents.load();
+#else
+    snapshot.bufferFullEvents = bufferFullEvents;
+#endif
 
 #if SUPPORT_RTOS
     TaskHandle_t handles[kTaskCount] = {Task1, Task2, Task3, systemTaskHandle};
@@ -118,9 +197,9 @@ void collectSnapshot(uint32_t scheduleMisses)
     }
 #endif
 
-    portENTER_CRITICAL(&snapshotMux);
+    enterCriticalSnapshot();
     latestSnapshot = snapshot;
-    portEXIT_CRITICAL(&snapshotMux);
+    exitCriticalSnapshot();
 }
 
 } // namespace
@@ -153,9 +232,9 @@ void SystemTask::taskRun(void* parameter)
         if (nowMs - lastDebugLogMs >= SYSTEM_TASK_DEBUG_LOG_INTERVAL_MS) {
             lastDebugLogMs = nowMs;
             SystemTaskSnapshot snapshot;
-            portENTER_CRITICAL(&snapshotMux);
+            enterCriticalSnapshot();
             snapshot = latestSnapshot;
-            portEXIT_CRITICAL(&snapshotMux);
+            exitCriticalSnapshot();
             DEVICE_LOG_INFO("[SystemTask] heap=" + String(snapshot.freeHeapBytes) +
                 " min_heap=" + String(snapshot.minFreeHeapBytes) +
                 " wifi/mqtt/udp=" + String(snapshot.wifiConnected) + "/" +
@@ -173,7 +252,13 @@ void SystemTask::recordCollectedSamples(UdpPacketType type, uint32_t count)
 {
     const int index = sensorIndex(type);
     if (index >= 0) {
+#if PLATFORM_ESP32
         collectedSamples[index].fetch_add(count);
+#else
+        noInterrupts();
+        collectedSamples[index] += count;
+        interrupts();
+#endif
     }
 }
 
@@ -184,25 +269,47 @@ void SystemTask::recordMissedSamples(UdpPacketType type, uint32_t count)
         if (count == 0) {
             return;
         }
+#if PLATFORM_ESP32
         missedSamples[index].fetch_add(count);
         droppedSamples[index].fetch_add(count);
+#else
+        noInterrupts();
+        missedSamples[index] += count;
+        droppedSamples[index] += count;
+        interrupts();
+#endif
     }
 }
 
 void SystemTask::recordBufferFull(UdpPacketType type, uint32_t droppedCount)
 {
     const int index = sensorIndex(type);
+#if PLATFORM_ESP32
     bufferFullEvents.fetch_add(1);
     if (index >= 0) {
         droppedSamples[index].fetch_add(droppedCount);
     }
+#else
+    noInterrupts();
+    bufferFullEvents++;
+    if (index >= 0) {
+        droppedSamples[index] += droppedCount;
+    }
+    interrupts();
+#endif
 }
 
 void SystemTask::recordUdpSent(UdpPacketType type)
 {
     const int index = sensorIndex(type);
     if (index >= 0) {
+#if PLATFORM_ESP32
         packetsSent[index].fetch_add(1);
+#else
+        noInterrupts();
+        packetsSent[index]++;
+        interrupts();
+#endif
     }
 }
 
@@ -210,24 +317,37 @@ void SystemTask::recordUdpFailure(UdpPacketType type, uint32_t droppedCount)
 {
     const int index = sensorIndex(type);
     if (index >= 0) {
+#if PLATFORM_ESP32
         packetErrors[index].fetch_add(1);
         droppedSamples[index].fetch_add(droppedCount);
+#else
+        noInterrupts();
+        packetErrors[index]++;
+        droppedSamples[index] += droppedCount;
+        interrupts();
+#endif
     }
 }
 
 void SystemTask::setNetworkState(bool wifi, bool mqtt, bool udp)
 {
+#if PLATFORM_ESP32
     wifiConnected.store(wifi);
     mqttConnected.store(mqtt);
     udpAvailable.store(udp);
+#else
+    wifiConnected_v = wifi;
+    mqttConnected_v = mqtt;
+    udpAvailable_v = udp;
+#endif
 }
 
 String SystemTask::telemetryJson()
 {
     SystemTaskSnapshot snapshot;
-    portENTER_CRITICAL(&snapshotMux);
+    enterCriticalSnapshot();
     snapshot = latestSnapshot;
-    portEXIT_CRITICAL(&snapshotMux);
+    exitCriticalSnapshot();
 
     StaticJsonDocument<1024> document;
     document["event"] = "system.status";
@@ -249,7 +369,11 @@ String SystemTask::telemetryJson()
     for (size_t i = 0; i < kTaskCount; ++i) {
         JsonObject task = tasks.createNestedObject();
         task["name"] = kTaskNames[i];
+#if SUPPORT_RTOS
         task["state"] = taskStateName(snapshot.taskStates[i]);
+#else
+        task["state"] = "cooperative";
+#endif
         task["stack_hwm_units"] = snapshot.taskStackHighWater[i];
     }
 

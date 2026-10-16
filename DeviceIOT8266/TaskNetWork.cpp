@@ -11,8 +11,14 @@
 #include <freertos/task.h>
 #endif
 
-#include "driver/uart.h"
-#include "esp_log.h"
+// =====================================================================
+// Platform-specific includes
+// =====================================================================
+#if PLATFORM_ESP32
+  #include "driver/uart.h"
+  #include "esp_log.h"
+#endif
+
 #include "Common.h"
 #include "define_All.h"
 #include "DebugInfo.h"
@@ -38,24 +44,36 @@ QueueHandle_t deviceCommandQueue = NULL;
 #endif
 
 
-#define UART_NUM                 UART_NUM_0   // UART0
-#define TXD_PIN                  GPIO_NUM_1   // TXD0 (m?c d?nh l� GPIO1)
-#define RXD_PIN                  GPIO_NUM_3   // RXD0 (m?c d?nh l� GPIO3)
+// =====================================================================
+// UART configuration – ESP32 uses driver/uart.h, ESP8266 uses Serial
+// =====================================================================
+#if PLATFORM_ESP32
+  #define UART_NUM                 UART_NUM_0
+  #define TXD_PIN                  GPIO_NUM_1
+  #define RXD_PIN                  GPIO_NUM_3
+#endif
+
 #define BUF_SIZE                 1024
 #define UART_BAUD_RATE           115200
-#define UART_READ_TIMEOUT_MS     100
+#define UART_READ_TIMEOUT_MS_V   100
 #define WIFI_QUEUE_SIZE_SENSOR   10
 #define WIFI_QUEUE_SIZE_STATUS   10
 #define WIFI_QUEUE_SIZE_COMMAND  10
-#define WIFI_CHECK_LIMIT         10
-#define WIFI_RECONNECT_LIMIT     4
-#define WIFI_PING_RETRY_LIMIT    120
-#define NETWORK_RECOVERY_LIMIT   3
-#define MQTT_RETRY_LIMIT         30
-#define NETWORK_ERROR_LIMIT      200
-#define REALTIME_POLL_LIMIT      240
-#define NETWORK_POLL_INTERVAL_MS 500
-#define BUTTON_PIN               0   // GPIO n�t nh�n
+#define WIFI_CHECK_LIMIT_V       10
+#define WIFI_RECONNECT_LIMIT_V   4
+#define WIFI_PING_RETRY_LIMIT_V  120
+#define NETWORK_RECOVERY_LIMIT_V 3
+#define MQTT_RETRY_LIMIT_V       30
+#define NETWORK_ERROR_LIMIT_V    200
+#define REALTIME_POLL_LIMIT_V    240
+#define NETWORK_POLL_INTERVAL_MS_V 500
+
+#if PLATFORM_ESP8266
+  #define BUTTON_PIN               0     // GPIO0 (FLASH button on NodeMCU)
+#else
+  #define BUTTON_PIN               0
+#endif
+
 #define BUTTON_HOLD_TIME_1       3000
 #define BUTTON_HOLD_TIME_2       6000
 #define BUTTON_HOLD_TIME_3       10000
@@ -65,10 +83,10 @@ QueueHandle_t deviceCommandQueue = NULL;
 #define BUTTON_VALUE_3           3
 #define BUTTON_VALUE_4           4
 #define BUTTON_VALUE_5           5
-#define LORA_BUFFER_SIZE         255
-#define MQTT_PAYLOAD_SIZE        1024
-#define SENSOR_PAYLOAD_SIZE      256
-#define DEVICE_PAYLOAD_SIZE      256
+#define LORA_BUFFER_SIZE_V       255
+#define MQTT_PAYLOAD_SIZE_V      1024
+#define SENSOR_PAYLOAD_SIZE_V    256
+#define DEVICE_PAYLOAD_SIZE_V    256
 
 namespace {
 WiFiUDP highSpeedUdp;
@@ -181,6 +199,7 @@ static unsigned long lastExternalPingTime = 0;
 static const unsigned long EXTERNAL_PING_INTERVAL = 3600000UL; // 1 hour
 
 void setupUART(void){
+#if PLATFORM_ESP32
   uart_config_t uart_config = {
     .baud_rate = UART_BAUD_RATE,
     .data_bits = UART_DATA_8_BITS,
@@ -191,27 +210,36 @@ void setupUART(void){
   };
 
   uart_param_config(UART_NUM, &uart_config);
-
-  // G�n ch�n TX v� RX (kh�ng d�ng RTS/CTS)
   uart_set_pin(UART_NUM, TXD_PIN, RXD_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
-
-  // C�i d?t driver UART v?i RX buffer, kh�ng d�ng event queue
   uart_driver_install(UART_NUM, BUF_SIZE * 2, 0, 0, NULL, 0);
 
-  // In th�ng b�o kh?i d?ng
-  const char* start_msg = "ESP32 UART0 d� kh?i d?ng!\n";
+  const char* start_msg = "ESP32 UART0 initialized!\n";
   uart_write_bytes(UART_NUM, start_msg, strlen(start_msg));
+#elif PLATFORM_ESP8266
+  // ESP8266: UART0 is already initialized via Serial.begin() in setup()
+  // No additional driver setup needed.
+  Serial.println("ESP8266 UART0 initialized!");
+#endif
 }
 
 
 void updateStatusUART(void){
+#if PLATFORM_ESP32
   uint8_t data[BUF_SIZE];
   int len = uart_read_bytes(UART_NUM, data, sizeof(data) - 1, 0);
   if (len > 0) {
-    data[len] = '\0';  // Null-terminate d? li?u nh?n du?c
-    Serial.print("�� nh?n: ");
+    data[len] = '\0';
+    Serial.print("Received: ");
     Serial.println((char*)data);
   }
+#elif PLATFORM_ESP8266
+  // ESP8266: read from Serial (UART0)
+  if (Serial.available()) {
+    String received = Serial.readString();
+    Serial.print("Received: ");
+    Serial.println(received);
+  }
+#endif
 }
 
 
@@ -233,8 +261,8 @@ void TaskNetWork::setup(void){
 
     Memory::GetInstance()->initEEPROM(EEPROM_SIZE);
     modeStatus = Memory::GetInstance()->readChar(MODE_WIFI_ADRESS);
-    pinMode(BUTTON_PIN, INPUT_PULLUP); // N�t n?i GND, n�n d�ng INPUT_PULLUP
-    DEVICE_LOG_INFO("start TaskNetWork::setup ==>"+ String(modeStatus));
+    pinMode(BUTTON_PIN, INPUT_PULLUP);
+    DEVICE_LOG_INFO("start TaskNetWork::setup ==>" + String(modeStatus));
 
     #if SUPPORT_RTOS
 
@@ -303,10 +331,6 @@ void TaskNetWork::setup(void){
         netWork_Wifi.startSmartConfig();
         netWork_Wifi.setupSmartConfig();
     }else if(WIFI_BLE_SMART_CONFIG==modeStatus){
-        //netWork_Wifi.startProvisioning();
-        //netWork_Wifi.setupProvisioning();
-        //netWork_Wifi.startSmartConfig();
-        //netWork_Wifi.setupSmartConfig();
         DEVICE_LOG_INFO("WIFI_BLE_SMART_CONFIG .. ");
         netWork_Wifi.setupAP();
         netWork_Wifi.startWebserverAP();
@@ -387,9 +411,6 @@ bool checkNetWorkReConnect(void){
         processTimeData.state=3;
         processTimeData.numberCheck = 0;
         netWork_Wifi.startWebServer();
-       // netWork_Mqtt.getAllDataSetup();
-       // netWork_Mqtt.setupInfoMQTT();
-        //if(netWork_Mqtt.checkStatusMqtt()) netWork_Mqtt.sendMessageInfo("mqtt");
     }
     DEVICE_LOG_INFO("end checkNetWorkReConnect");
     return true;   
@@ -473,9 +494,6 @@ bool checkNetWorkERRORConnect(void){
     return true;
 }
 
-//boolean (* const xdrv_func_ptr[])(byte) PROGMEM = 
-//boolean (* const xdrv_func_ptr[])(byte) PROGMEM = 
-
 unsigned long pressStartTime = 0;
 bool isPressed = false;
 char valueButton = BUTTON_VALUE_DEFAULT;
@@ -484,7 +502,6 @@ void checkButton(){
   int buttonState = digitalRead(BUTTON_PIN);
 
   if (buttonState == LOW && !isPressed) {
-    // B?t d?u nh?n
     isPressed = true;
     pressStartTime = millis();
   }
@@ -492,7 +509,6 @@ void checkButton(){
   if (buttonState == LOW && isPressed) {
     unsigned long heldTime = millis() - pressStartTime;
 
-    // X�c d?nh gi� tr? d?a tr�n th?i gian gi?
     if (heldTime >= BUTTON_HOLD_TIME_4) {
       valueButton = BUTTON_VALUE_5;
     } else if (heldTime >= BUTTON_HOLD_TIME_3) {
@@ -506,7 +522,6 @@ void checkButton(){
     }
   }
 
-  // Khi nh? n�t
   if (buttonState == HIGH && isPressed) {
     isPressed = false;
     Serial.print("Button released -> value = ");
@@ -521,10 +536,7 @@ void checkButton(){
         netWork_Wifi.startSmartConfig();
         netWork_Wifi.setupSmartConfig();
       }else if(WIFI_BLE_SMART_CONFIG==valueButton){
-        //netWork_Wifi.startProvisioning();
-        //netWork_Wifi.setupProvisioning();
-        //netWork_Wifi.startSmartConfig();
-       // netWork_Wifi.setupSmartConfig();
+        // placeholder
       }else if(WIFI_START_OTA==valueButton){
         netWork_Wifi.setupOTA();
       }
@@ -564,15 +576,11 @@ void TaskNetWork::loopNetWork(void) {
           netWork_Wifi.handerClient();
           netWork_Mqtt.lisenMqtt();
         }
-        //netWork_Wifi.handerClient();
-        //netWork_Mqtt.lisenMqtt();
     } else if(WIFI_BLE_PROVISION==modeStatus){
       netWork_Wifi.loopProvisioning();
     }else if(WIFI_SMART_CONFIG==modeStatus){
       netWork_Wifi.loopSmartConfig();
     }else if(WIFI_BLE_SMART_CONFIG==modeStatus){
-        //netWork_Wifi.loopSmartConfig();
-        //netWork_Wifi.loopProvisioning();
         netWork_Wifi.loopAP();
     }else if(WIFI_START_OTA==modeStatus){
       netWork_Wifi.loopOTA();
@@ -636,8 +644,12 @@ void TaskNetWork::loopNetWork(void) {
 void TaskNetWork::taskRun(void * parameter) {
   //  DEVICE_LOG_INFO("start TaskNetWork::taskRun");
     #if SUPPORT_RTOS
+#if PLATFORM_ESP32
       Serial.print("TaskNetwork is running on core ");
       Serial.println(xPortGetCoreID());
+#else
+      Serial.println("TaskNetwork is running (ESP8266 single core)");
+#endif
 
       for(;;) {
           loopNetWork();

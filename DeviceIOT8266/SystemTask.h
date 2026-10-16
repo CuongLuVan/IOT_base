@@ -2,6 +2,7 @@
 #define SYSTEM_TASK_H
 
 #include <Arduino.h>
+#include "define_All.h"
 #include "HighSpeedSampler.h"
 
 struct SystemTaskSnapshot {

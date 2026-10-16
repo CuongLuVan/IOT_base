@@ -1,4 +1,17 @@
 
+// =====================================================================
+// ESP8266 Platform Compatibility Layer
+// =====================================================================
+// Detect platform: ESP32 vs ESP8266
+#if defined(ESP32)
+  #define PLATFORM_ESP32 1
+  #define PLATFORM_ESP8266 0
+#elif defined(ESP8266)
+  #define PLATFORM_ESP32 0
+  #define PLATFORM_ESP8266 1
+#else
+  #error "Unsupported platform. Only ESP32 and ESP8266 are supported."
+#endif
 
 #define MODE_WIFI_ADRESS          1
 #define SUPPORT_RTOS true
@@ -38,13 +51,25 @@
 #define COMMAND_RESERVED_CONTROL  0x01
 
 #define SERIAL_BAUD_RATE               115200
-#define TASK_STACK_SIZE                10000
+
+// =====================================================================
+// Task/RTOS settings – adjusted for ESP8266 limited RAM (~50 KB heap)
+// =====================================================================
+#if PLATFORM_ESP8266
+  #define TASK_STACK_SIZE                2048
+  #define TASK_NETWORK_STACK_SIZE        4096
+  #define TASK_SYSTEM_STACK_SIZE         2048
+#else
+  #define TASK_STACK_SIZE                10000
+  #define TASK_NETWORK_STACK_SIZE        10000
+  #define TASK_SYSTEM_STACK_SIZE         4096
+#endif
+
 #define TASK_CREATE_DELAY_MS           500
 #define TASK_SENSOR_PRIORITY           3
 #define TASK_NETWORK_PRIORITY          2
 #define TASK_DEVICE_PRIORITY           1
 #define TASK_SYSTEM_PRIORITY           1
-#define TASK_SYSTEM_STACK_SIZE         4096
 #define SYSTEM_TASK_CHECK_INTERVAL_MS  5000
 #define SYSTEM_TASK_NTP_RETRY_INTERVAL_MS 60000
 #define SYSTEM_TASK_TELEMETRY_INTERVAL_MS 30000
@@ -55,11 +80,22 @@
 
 #define UART_BUFFER_SIZE               1024
 #define UART_READ_TIMEOUT_MS           100
-#if ENABLE_MESSAGE_AUTHENTICATION
-#define EEPROM_SIZE                    (32 * 1024)
+
+#if PLATFORM_ESP8266
+  // ESP8266 has max 4KB SPI Flash EEPROM emulation by default
+  #if ENABLE_MESSAGE_AUTHENTICATION
+    #define EEPROM_SIZE                    (32 * 1024)
+  #else
+    #define EEPROM_SIZE                    (20 * 1024)
+  #endif
 #else
-#define EEPROM_SIZE                    (20 * 1024)
+  #if ENABLE_MESSAGE_AUTHENTICATION
+    #define EEPROM_SIZE                    (32 * 1024)
+  #else
+    #define EEPROM_SIZE                    (20 * 1024)
+  #endif
 #endif
+
 #define TLS_SSL_DATA_ADDRESS            1300
 #if ENABLE_MESSAGE_AUTHENTICATION
 #define TLS_SSL_DATA_MAX_LENGTH         (MESSAGE_AUTH_KEY_ID_ADDRESS - TLS_SSL_DATA_ADDRESS - 1)
@@ -110,21 +146,42 @@
 #define WIFI_PROV_POP                  "abcd1234"
 #define WIFI_PROV_SERVICE_NAME         "PROV_123"
 
-#define DHT_PIN                        12
-#define DHT_TYPE                       DHT11
-// Interval between low-rate sensor read steps; DHT/PMS reads are staggered by SENSOR_READ_STEP_COUNT.
-#define SENSOR_TASK_INTERVAL_MS        1000
-#define SENSOR_READ_STEP_COUNT         4
-#define SENSOR_SERIAL_BAUD_RATE        9600
-#define SENSOR_QUEUE_SEND_DELAY_MS     100
-#define SENSOR_MUTEX_WAIT_MS           10
+// =====================================================================
+// GPIO Pin mapping – adjusted for ESP8266 (NodeMCU / ESP-12E)
+// =====================================================================
+#if PLATFORM_ESP8266
+  // ESP8266 available GPIOs: 0,2,4,5,12,13,14,15,16
+  #define DHT_PIN                        2     // GPIO2 (D4)
+  #define DHT_TYPE                       DHT11
+  #define SENSOR_TASK_INTERVAL_MS        1000
+  #define SENSOR_READ_STEP_COUNT         4
+  #define SENSOR_SERIAL_BAUD_RATE        9600
+  #define SENSOR_QUEUE_SEND_DELAY_MS     100
+  #define SENSOR_MUTEX_WAIT_MS           10
 
-#define BUTTON_DEBOUNCE_MS             50
-#define BUTTON_LONG_PRESS_MS           3000
-#define DEVICE_BUTTON_PIN              14
-#define INPUT_PULLUP_PIN               13
-#define OUTPUT_PUMP_PIN                22
-#define OUTPUT_DEVICE_1_PIN            23
+  #define BUTTON_DEBOUNCE_MS             50
+  #define BUTTON_LONG_PRESS_MS           3000
+  #define DEVICE_BUTTON_PIN              0     // GPIO0 (D3/FLASH button)
+  #define INPUT_PULLUP_PIN               5     // GPIO5 (D1)
+  #define OUTPUT_PUMP_PIN                4     // GPIO4 (D2)
+  #define OUTPUT_DEVICE_1_PIN            14    // GPIO14 (D5)
+#else
+  // ESP32 pin assignments (original)
+  #define DHT_PIN                        12
+  #define DHT_TYPE                       DHT11
+  #define SENSOR_TASK_INTERVAL_MS        1000
+  #define SENSOR_READ_STEP_COUNT         4
+  #define SENSOR_SERIAL_BAUD_RATE        9600
+  #define SENSOR_QUEUE_SEND_DELAY_MS     100
+  #define SENSOR_MUTEX_WAIT_MS           10
+
+  #define BUTTON_DEBOUNCE_MS             50
+  #define BUTTON_LONG_PRESS_MS           3000
+  #define DEVICE_BUTTON_PIN              14
+  #define INPUT_PULLUP_PIN               13
+  #define OUTPUT_PUMP_PIN                22
+  #define OUTPUT_DEVICE_1_PIN            23
+#endif
 
 #define DEVICE_QUEUE_SEND_DELAY_MS     50
 #define DEVICE_TASK_PERIOD_MS          1000
@@ -146,18 +203,38 @@
 #define SENSOR_PAYLOAD_SIZE            256
 #define DEVICE_PAYLOAD_SIZE            256
 
-// High-speed capture defaults for ESP32-WROOM-32 DevKit V1.
-// Reassign these pins if they conflict with the project board wiring.
-#define HS_ADC_PIN                      34
-#define HS_ICM_SCK_PIN                  25
-#define HS_ICM_MISO_PIN                 26
-#define HS_ICM_MOSI_PIN                 27
-#define HS_ICM_CS_PIN                   33
-#define HS_ICM_SPI_HZ                   8000000
-#define HS_ADS_SCK_PIN                  18
-#define HS_ADS_MISO_PIN                 19
-#define HS_ADS_CNV_PIN                  21
-#define HS_ADS_SPI_HZ                   16000000
+// =====================================================================
+// High-speed capture – ESP32 only (disabled on ESP8266)
+// =====================================================================
+#if PLATFORM_ESP8266
+  // ESP8266 does not support high-speed multi-channel capture.
+  // These defines are kept for compilation compatibility but the
+  // HighSpeedSampler will be effectively disabled.
+  #define HS_ADC_PIN                      A0
+  #define HS_ICM_SCK_PIN                  14
+  #define HS_ICM_MISO_PIN                 12
+  #define HS_ICM_MOSI_PIN                 13
+  #define HS_ICM_CS_PIN                   15
+  #define HS_ICM_SPI_HZ                   1000000
+  #define HS_ADS_SCK_PIN                  14
+  #define HS_ADS_MISO_PIN                 12
+  #define HS_ADS_CNV_PIN                  16
+  #define HS_ADS_SPI_HZ                   1000000
+#else
+  // High-speed capture defaults for ESP32-WROOM-32 DevKit V1.
+  // Reassign these pins if they conflict with the project board wiring.
+  #define HS_ADC_PIN                      34
+  #define HS_ICM_SCK_PIN                  25
+  #define HS_ICM_MISO_PIN                 26
+  #define HS_ICM_MOSI_PIN                 27
+  #define HS_ICM_CS_PIN                   33
+  #define HS_ICM_SPI_HZ                   8000000
+  #define HS_ADS_SCK_PIN                  18
+  #define HS_ADS_MISO_PIN                 19
+  #define HS_ADS_CNV_PIN                  21
+  #define HS_ADS_SPI_HZ                   16000000
+#endif
+
 // High-speed sampling rates in samples per second (Hz).
 #define HS_AUDIO_ADC_SAMPLE_RATE_HZ     10000UL
 #define HS_ICM42688_SAMPLE_RATE_HZ      32000UL

@@ -9,11 +9,13 @@
 TaskNetWork task_NetWork;
 TaskSensor taskSensor;
 TaskDevice taskDevice;
-TaskHandle_t TaskSystem;
 
+#if SUPPORT_RTOS
+TaskHandle_t TaskSystem;
 TaskHandle_t Task1;
 TaskHandle_t Task2;
 TaskHandle_t Task3;
+#endif
 
 
 void setup() {
@@ -26,17 +28,17 @@ void setup() {
 
 
 #if SUPPORT_RTOS
-    // RTOS mode: create tasks pinned to cores (ESP32)
-    xTaskCreatePinnedToCore(taskDevice.taskRun, "TaskDevice", TASK_STACK_SIZE, NULL, TASK_DEVICE_PRIORITY, &Task1, 0);
+    // RTOS mode: create tasks (ESP8266 has single core, no PinnedToCore)
+    xTaskCreate(taskDevice.taskRun, "TaskDevice", TASK_STACK_SIZE, NULL, TASK_DEVICE_PRIORITY, &Task1);
     vTaskDelay(pdMS_TO_TICKS(TASK_CREATE_DELAY_MS));
-    xTaskCreatePinnedToCore(taskSensor.taskRun, "TaskSensor", TASK_STACK_SIZE, NULL, TASK_SENSOR_PRIORITY, &Task2, 1);
+    xTaskCreate(taskSensor.taskRun, "TaskSensor", TASK_STACK_SIZE, NULL, TASK_SENSOR_PRIORITY, &Task2);
     vTaskDelay(pdMS_TO_TICKS(TASK_CREATE_DELAY_MS));
-    xTaskCreatePinnedToCore(task_NetWork.taskRun, "TaskNetwork", 10000, NULL, TASK_NETWORK_PRIORITY, &Task3, 0);
+    xTaskCreate(task_NetWork.taskRun, "TaskNetwork", TASK_NETWORK_STACK_SIZE, NULL, TASK_NETWORK_PRIORITY, &Task3);
     vTaskDelay(pdMS_TO_TICKS(500));
     SystemTask::setup();
-    if (xTaskCreatePinnedToCore(SystemTask::taskRun, "SystemTask",
+    if (xTaskCreate(SystemTask::taskRun, "SystemTask",
             TASK_SYSTEM_STACK_SIZE, NULL, TASK_SYSTEM_PRIORITY,
-            &TaskSystem, 0) != pdPASS) {
+            &TaskSystem) != pdPASS) {
         DEVICE_LOG_INFO("[SystemTask] Failed to create monitoring task");
     }
 #else
