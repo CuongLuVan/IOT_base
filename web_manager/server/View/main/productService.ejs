@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+  <% include ./layout/header.ejs %>
+  <body>
+    <% include ./layout/menuSale.ejs %>
+    <main>
+        <% include ./layout/banner.ejs %>
+        <!--
+          - PRODUCT
+        -->
+  
+        <div class="product-container">
+  
+          <div class="container">
+  
+            <div class="product-box">
+              <!--
+                - PRODUCT GRID
+              -->
+  
+              <div class="product-main">
+                <h2 class="title"><%= __('service_suorce') %></h2>
+                <div class="product-grid" id="best-service-items">
+                  <div class="showcase">  
+                    
+  
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <% include ./layout/layout_pages_service.ejs %>
+    </main>     
+    
+
+    <script type="text/javascript">
+        var jsonItemElectricService=[];
+        var lstGroupElectricService={product_group:1,start:0,end:10};
+        loadAnotherElectricService();
+        
+        
+        postInfoData('/api/customers/lst_serice',{count_data:true,start:0,end:0,product_group:0},(data)=> {      
+            if(!data.error){
+                layout_pages_numberPagesService=data.data.result[0].number_store;
+                getSelectInfoService(data.data.result[0].number_store);
+            }            
+        }); 
+
+        function loadAnotherElectricService(){
+          postInfoData('/api/customers/lst_serice',lstGroupElectricService,(data)=>{
+            if(!data.error){
+              jsonItemElectricService = data.data.result;
+              setInfoCompanyToViewService(jsonItemElectricService,"#best-service-items"); 
+            }
+          });
+        }
+
+        const alphabet = "lWktSROD18QbIrXCY9A6n3xJ4Z5GgdKwoHh7yjE0NcMTpzaVBFUqLsvei2fPm";
+        const base = alphabet.length; // 62
+
+        function encode(num) {
+            if (typeof num !== "number" || num < 0 || !Number.isSafeInteger(num)) {
+            throw new Error("Input must be a non-negative safe integer");
+            }
+            if (num === 0) return alphabet[0].repeat(12);
+
+            let result = "";
+            while (num > 0) {
+            const remainder = num % base;
+            result = alphabet[remainder] + result;
+            num = Math.floor(num / base);
+            }
+            return result.padStart(12, alphabet[0]);
+        }
+    
+        function setInfoCompanyToViewService(items, itemHtml,type="product") {
+            var html='';
+           //id_created
+            items.forEach((element) => {
+                var id_service = encode(element.service_group_id);
+                var dataInfo = `<div class="showcase">
+                  <div class="showcase-banner">
+                    <a href="/suorce-detail/${id_service}" >
+                    <img src="${element.image}" alt="${element.title}" class="product-img default"
+                      width="300">
+                    <img src="${element.image}" alt="${element.title}" class="product-img hover"
+                      width="300">
+                    </a>
+                    <!--<p class="showcase-badge angle black">...</p> -->
+                
+                    <div class="showcase-actions">
+                      <!--<button class="btn-action">
+                        <ion-icon name="heart-outline"></ion-icon>
+                      </button>
+                
+                      <button class="btn-action">
+                        <ion-icon name="eye-outline"></ion-icon>
+                      </button>
+                
+                      <button class="btn-action">
+                        <ion-icon name="repeat-outline"></ion-icon>
+                      </button>
+                
+                      <button class="btn-action">
+                        <ion-icon name="bag-add-outline"></ion-icon>
+                      </button> -->
+                    </div>
+                  </div>
+                
+                  <div class="showcase-content">
+                    <a href="/suorce-detail/${id_service}" class="showcase-category">${element.title}</a>
+                    <!---
+                    <div class="showcase-rating">
+                      <ion-icon name="star"></ion-icon>
+                      <ion-icon name="star"></ion-icon>
+                      <ion-icon name="star"></ion-icon>
+                      <ion-icon name="star-outline"></ion-icon>
+                      <ion-icon name="star-outline"></ion-icon>
+                    </div> --->
+                  </div>
+                </div>`;
+                html+=dataInfo;
+            });
+            $(itemHtml).html(html);
+        }
+        function searchDataInfoLocationService(start,end){
+          lstGroupElectricService.start=start;
+          lstGroupElectricService.end=end;
+          loadAnotherElectricService();
+        }
+      </script>
+    
+    <% include ./layout/footer.ejs %>
+  </body>
+</html>

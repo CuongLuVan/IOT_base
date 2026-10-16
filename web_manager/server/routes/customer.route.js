@@ -15,6 +15,8 @@ const multer = require('multer');
 const files = require('../utils/files.js');
 const urlStaticLink=  require('../config/urlSetting.js');
 const { uploadLimiter } = require('../config/rateLimit.js');
+const servicePlanCtrl = require('../controllers/servicePlan.controller.js');
+const customerDocumentCtrl = require('../controllers/customerDocument.controller.js');
 
 
 let upload = multer({ storage: files.storage, limits: files.uploadLimits, fileFilter: files.excelFilter });
@@ -36,6 +38,7 @@ router.route('/report-page').post(isAuthenticatedCustomer,acessReadTable, custom
 router.route('/manager_add').post(isAuthenticatedCustomer,acessReadTable, customerCtrl.addDataToTable);
 router.route('/manager_delete').post(isAuthenticatedCustomer,acessReadTable, customerCtrl.deleteData);  
 router.route('/manager_update').post(isAuthenticatedCustomer,acessReadTable,customerCtrl.updateData);
+router.route('/manager_add_product').post(isAuthenticatedCustomer, servicePlanCtrl.addProductWithEntitlement);
 
 router.route('/register').post(customerCtrl.registerUser);
 router.route('/advertisement').get(customerCtrl.getAllAdvertisementContent);
@@ -45,11 +48,13 @@ router.route('/info_ads').get(customerCtrl.getAllInfoAdvertisementProduct)
 router.route('/info_ads_custom').post(customerCtrl.getAllInfoAdvertisementProductFromID);
 
 router.route('/lst_product').post(customerCtrl.getInfoProductStore);
+router.route('/lst_serice').post(servicePlanCtrl.listServiceCatalog);
 router.route('/info_product').get(customerCtrl.getAllInfoProduct)
                               .post(customerCtrl.getInfoProduct);
 router.route('/detail_product').get(customerCtrl.getDetailProduct)
                                 .post(customerCtrl.getDetailProduct);
 router.route('/detail_shop').get(customerCtrl.getDetailShop);
+router.route('/detail_service').get(servicePlanCtrl.getServiceDetail).post(servicePlanCtrl.getServiceDetail);
 
 function checkInfoValueToLock(req, res, next){
   if(req.body.hasOwnProperty("is_s_lock")||req.body.hasOwnProperty("phone_info_lock")){
@@ -83,6 +88,7 @@ router.route('/buy_status').post(isAuthenticatedCustomer,customerCtrl.getStatusO
 router.route('/search_location').post(customerCtrl.searchLocation);
 router.route('/search_product').post(customerCtrl.searchProduct);
 router.route('/get_shop').post(customerCtrl.getProductOfShop);
+router.route('/find_service').post(servicePlanCtrl.searchServices);
 router.route('/find_group_company').post(customerCtrl.searchGroupCompany);
 router.route('/get_group_company').post(customerCtrl.getGroupCompany);
 
@@ -101,5 +107,8 @@ router.route('/report_cus/buy_all').post(isAuthenticatedCustomer,customerCtrl.ge
 router.route('/set_status_product').post(isAuthenticatedCustomer,customerCtrl.setStatusProduct);
 router.route('/get_page_detail').post(customerCtrl.getPageDetail);
 router.route('/ads_product').post(customerCtrl.getAdsProduct);
+router.route('/detail_service_info').get(servicePlanCtrl.getPlans);
+router.route('/detail_service_all').get(isAuthenticatedCustomer, servicePlanCtrl.getCustomerPlans);
+router.route('/upload_document').post(isAuthenticatedCustomer, customerDocumentCtrl.uploadDocument);
 
 module.exports =  router;

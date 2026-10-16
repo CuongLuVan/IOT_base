@@ -1,0 +1,138 @@
+<!doctype html>
+<html class="no-js" lang="en">
+     <% include ./head.ejs %>
+    
+	
+	<body>
+		<!--[if lte IE 9]>
+            <p class="browserupgrade">You are using an <strong>outdated</strong> browser. Please <a href="https://browsehappy.com/">upgrade your browser</a> to improve your experience and security.</p>
+        <![endif]-->
+	
+		<!--welcome-hero start -->
+		<section id="home" class="welcome-hero">
+			<!-- top-area Start -->
+			<div class="top-area">
+				<div class="header-area">
+					<!-- Start Navigation -->
+				    <nav class="navbar navbar-default bootsnav  navbar-sticky navbar-scrollspy"  data-minus-value-desktop="70" data-minus-value-mobile="55" data-speed="1000">
+						 <% include ./menu.ejs %>
+				    </nav><!--/nav-->
+				    <!-- End Navigation -->
+				</div><!--/.header-area-->
+			    <div class="clearfix"></div>
+			</div><!-- /.top-area-->
+			<!-- top-area End -->
+
+			<% include ./child/search_main_tool.ejs %>
+
+		</section><!--/.welcome-hero-->
+        <% include ./child/fist_ads.ejs %>
+		<!--welcome-hero end -->
+		<!--featured-cars start -->
+
+
+		<section id="featured-cars" class="featured-cars">
+			<div class="container">
+								
+				<div class="row side-ad-sp" >
+						<!--colleft-->
+						<div class="col-md-12 col-sm-12">
+							
+							<!--list-news-cate-->
+							<div class="list-news-cate" id="child_group_content">
+								
+							</div>
+							<!--paging-->
+							
+
+						</div>
+
+					</div>
+			    </div>
+                <style>
+
+                    .paging {
+                        display: flex;
+                        justify-content: center;
+                        flex-wrap: wrap;         /* Cho phép xuống dòng khi thiếu chỗ */
+                        gap: 4px;                /* Khoảng cách giữa các nút */
+                        margin: 20px 0;
+                    }
+
+                    .paging a {
+                        display: inline-block;
+                        padding: 6px 12px;
+                        border: 1px solid #ddd;
+                        border-radius: 4px;
+                        text-decoration: none;
+                        color: #007bff;
+                        background-color: #fff;
+                        font-size: 14px;
+                        transition: background-color 0.2s, color 0.2s;
+                    }
+
+                    .paging a:hover {
+                        background-color: #e9ecef;
+                        border-color: #ccc;
+                        color: #0056b3;
+                    }
+
+                    .paging a.current,
+                    .paging a.active {
+                        background-color: #007bff;
+                        color: white;
+                        border-color: #007bff;
+                        cursor: default;
+                    }
+
+                .side-ad-sp { 
+                        
+                    margin-top: 0px;
+                    padding-right: 70px;
+                    padding-left: 70px;
+                
+                }
+
+                @media (max-width: 1079px) {
+                    .side-ad-sp { 
+                        
+                        margin-top: 22px;
+                        padding-right: 0px;
+                        padding-left: 0px;
+                    
+                    }
+                }
+
+                   
+                </style>
+                <div class="paging" id="location_padding_id"></div>
+		</section>
+		<section id="blog" class="blog"></section><!--/.blog-->
+		<!--blog end -->
+
+		<% include ./footer.ejs %>
+
+		
+    <script type="text/javascript">
+        
+        
+        var dataView = '<%= detail %>';
+        var routeGroup ='<%= route %>';
+        var numberDataDocument = 10;
+        $("#main_group_id").html(routeGroup);
+        console.log("dataView",dataView);
+       
+        postInfoData('/api/document/document_info_data',{data:dataView,counter:true,start:0,end:10},(dataJson)=>{
+            if(dataJson.error==false){
+                numberDataDocument = dataJson.data[0].number_document;
+               // infoDataGroup=dataJson;
+              //  $("#child_group_content").html(infoValueDataGroupTheNew(dataJson,0,9));
+               refehSelectPagesTool(0);
+                selectItemPagesTool(0);
+            }
+        });
+    </script>
+        
+    </body>
+	
+</html>

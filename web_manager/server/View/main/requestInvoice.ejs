@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+  <% include ./layout/header.ejs %>
+  <body>
+    <% include ./layout/menuSale.ejs %>
+    <main>
+      <% include ./layout/banner.ejs %>
+      <div class="product-container">
+        <div class="container">
+          <div class="product-box">
+            <div class="product-main">
+              <h2 class="title"><%= __('service_payment') %></h2>
+              <div id="service-plan"></div>
+              <button id="pay-button" type="button" disabled style="display:block;background:#0f70e6;color:white;width:100%;height:40px;border-radius:13px;">
+                Thanh toán
+              </button>
+              <p id="payment-message" role="status" aria-live="polite"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+    <script>
+      (function () {
+        const query = new URLSearchParams(window.location.search);
+        const planId = Number(query.get('status'));
+        const type = 1;
+        const planContainer = document.getElementById('service-plan');
+        const payButton = document.getElementById('pay-button');
+        const message = document.getElementById('payment-message');
+        let selectedPlan = null;
+
+        function setMessage(value) {
+          message.textContent = value;
+        }
+
+        function authHeaders() {
+          const token = localStorage.getItem('token');
+          return {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': token ? 'Bearer ' + token : ''
+          };
+        }
+
+        function renderPlan(plan) {
+          planContainer.replaceChildren();
+          const title = document.createElement('h3');
+          title.className = 'title-service-box-detail';
+          title.textContent = 'Dịch vụ: ' + plan.title;
+          const price = document.createElement('p');
+          price.textContent = 'Chi phí: ' + plan.cost + ' VND';
+          const description = document.createElement('p');
+          description.textContent = plan.content || '';
+          const detail = document.createElement('p');
+          detail.textContent = plan.detail || '';
+          planContainer.append(title, price, description, detail);
+        }
+
+        async function requestJson(url, options) {
+          const response = await fetch(url, options);
+          const body = await response.json().catch(function () { return {}; });
+          if (!response.ok) throw new Error((body.error && body.error.message) || 'Request failed');
+          return body;
+        }
+
+        async function refreshPaymentStatus(orderId, attempt) {
+          try {
+            const body = await requestJson('/api/invoice/check_invoice', {
+              method: 'POST',
+              headers: authHeaders(),
+              body: JSON.stringify({ orderId: orderId })
+            });
+            const status = body.result && body.result.status;
+            if (status === 'PAID') {
+              setMessage('Thanh toán thành công.');
+              return;
+            }
+            if (status === 'FAILED') {
+              setMessage('Thanh toán không thành công.');
+              return;
+            }
+            if (attempt < 30) {
+              setTimeout(function () { refreshPaymentStatus(orderId, attempt + 1); }, 5000);
+            } else {
+              setMessage('Đang chờ xác nhận thanh toán. Bạn có thể kiểm tra lại sau.');
+            }
+          } catch (error) {
+            setMessage('Không thể kiểm tra trạng thái thanh toán.');
+          }
+        }
+
+        payButton.addEventListener('click', async function () {
+          if (!selectedPlan) return;
+          payButton.disabled = true;
+          setMessage('Đang tạo yêu cầu thanh toán...');
+          try {
+            const response = await requestJson('/api/invoice/register_invoice', {
+              method: 'POST',
+              headers: authHeaders(),
+              body: JSON.stringify({ id_invoice: selectedPlan.service_product_cost_id, type: type })
+            });
+            const payment = response.result;
+            if (payment.status === 'PAID') {
+              setMessage('Gói miễn phí đã được kích hoạt.');
+              return;
+            }
+            if (!payment.paymentUrl) throw new Error('Payment link is unavailable');
+            window.open(payment.paymentUrl, '_blank', 'noopener');
+            setMessage('Cửa sổ thanh toán đã được mở. Đang chờ xác nhận...');
+            refreshPaymentStatus(payment.orderId, 0);
+          } catch (error) {
+            setMessage(error.message || 'Không thể tạo yêu cầu thanh toán.');
+            payButton.disabled = false;
+          }
+        });
+
+        if (!Number.isSafeInteger(planId) || planId < 1) {
+          setMessage('Gói dịch vụ không hợp lệ.');
+          return;
+        }
+
+        fetch('/api/customers/detail_service_info')
+          .then(function (response) { return response.json(); })
+          .then(function (body) {
+            const plans = Array.isArray(body.result) ? body.result : [];
+            selectedPlan = plans.find(function (plan) {
+              return Number(plan.service_product_cost_id) === planId && Number(plan.type) === type;
+            });
+            if (!selectedPlan) {
+              setMessage('Không tìm thấy gói dịch vụ.');
+              return;
+            }
+            renderPlan(selectedPlan);
+            payButton.disabled = false;
+          })
+          .catch(function () {
+            setMessage('Không thể tải gói dịch vụ.');
+          });
+      }());
+    </script>
+    <% include ./layout/footer.ejs %>
+  </body>
+</html>

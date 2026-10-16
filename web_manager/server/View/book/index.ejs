@@ -1,0 +1,45 @@
+<!doctype html>
+<html class="no-js" lang="en">
+     <% include ./head.ejs %>
+    
+	
+	<body>
+		<!--[if lte IE 9]>
+            <p class="browserupgrade">You are using an <strong>outdated</strong> browser. Please <a href="https://browsehappy.com/">upgrade your browser</a> to improve your experience and security.</p>
+        <![endif]-->
+	
+		<!--welcome-hero start -->
+		<section id="home" class="welcome-hero">
+			<!-- top-area Start -->
+			<div class="top-area">
+				<div class="header-area">
+					<!-- Start Navigation -->
+				    <nav class="navbar navbar-default bootsnav  navbar-sticky navbar-scrollspy"  data-minus-value-desktop="70" data-minus-value-mobile="55" data-speed="1000">
+						 <% include ./menu.ejs %>
+				    </nav><!--/nav-->
+				    <!-- End Navigation -->
+				</div><!--/.header-area-->
+			    <div class="clearfix"></div>
+			</div><!-- /.top-area-->
+			<!-- top-area End -->
+
+			<% include ./child/search_main.ejs %>
+
+		</section><!--/.welcome-hero-->
+		<% include ./child/fist_ads.ejs %>
+		<!--welcome-hero end -->
+		<!--featured-cars start -->
+		<% include ./child/library.ejs %>
+
+		
+		<!--brand strat -->
+
+		<!--blog start -->
+		<section id="blog" class="blog"></section><!--/.blog-->
+		<!--blog end -->
+
+		<% include ./footer.ejs %>
+        
+    </body>
+	
+</html>
