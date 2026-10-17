@@ -1,9 +1,25 @@
 ﻿<% include /layout/head/header.ejs %>
-    <div class="page">
+    <div class="page tech-news-page">
         <div class="container">
             <% include /layout/head/headerAds.ejs %>
             <!--menu-->
             <% include /layout/menu/pcMenu.ejs %>
+            <section class="tech-hero" aria-labelledby="tech-hero-title">
+                <div>
+                    <p class="eyebrow">THƯ VIỆN KỸ THUẬT</p>
+                    <h1 id="tech-hero-title">Học IoT và lập trình nhúng theo dự án thực tế</h1>
+                    <p>Khám phá ESP32, ESP8266, cảm biến, MQTT, bảo mật và các tài liệu kỹ thuật được chọn lọc để bạn bắt đầu nhanh hơn.</p>
+                    <a class="tech-button" href="/document/head">Khám phá tài liệu <i class="fa fa-arrow-right" aria-hidden="true"></i></a>
+                </div>
+                <div class="tech-hero-orbit" aria-hidden="true"><i class="fa fa-microchip"></i></div>
+            </section>
+            <section class="tech-topics" aria-label="Chủ đề nổi bật">
+                <a href="/tech/it"><i class="fa fa-code"></i><span>IoT &amp; Embedded</span></a>
+                <a href="/tech/electric"><i class="fa fa-bolt"></i><span>ESP32, ESP8266 &amp; cảm biến</span></a>
+                <a href="/tool/iot"><i class="fa fa-wifi"></i><span>MQTT, mạng &amp; bảo mật</span></a>
+                <a href="/document/head"><i class="fa fa-book"></i><span>Tài liệu kỹ thuật</span></a>
+                <a href="/tool/head"><i class="fa fa-wrench"></i><span>Công cụ &amp; dự án</span></a>
+            </section>
             <div class="row">
                 <!--colleft-->
                 <div class="col-md-8 col-sm-12">

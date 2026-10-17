@@ -13,7 +13,7 @@ const { configurePassport } = require('./passport.js');
 require('dotenv').config();
 
 i18n.configure({
-  locales: ['en', 'vi'],
+  locales: ['en', 'vi', 'cn'],
   directory: path.join(__dirname, '../locales/'),
   queryParameter: 'lang',
   defaultLocale: 'en',

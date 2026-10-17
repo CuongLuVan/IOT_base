@@ -9,6 +9,9 @@ const router = express.Router();
 router.get('/', (req, res) => {
   res.render('teznews/home', { route: 'home' });
 });
+router.get('/search', (req, res) => {
+  res.render('teznews/search', { query: req.query.q || '' });
+});
 router.get('/tech/:typePage', async (req, res) => {
   var data = req.params.typePage;
   var itemvalue =["head","news", "it","electric","phy","life","fake","recruitment"];

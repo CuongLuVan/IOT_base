@@ -26,11 +26,18 @@ app.get('/comment/product', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/tool/comment/index.html'));
 });
 
-app.listen(app.get('port'), app.get('host'), () => {
-  console.log('Server is running at http://' + app.get('host') + ':' + app.get('port'));
+app.use('/change-lang/:lang', (req, res) => {
+  const supportedLocales = new Set(['en', 'vi', 'cn']);
+  const locale = req.params.lang.toLowerCase();
+
+  if (!supportedLocales.has(locale)) {
+    return res.status(404).send('Unsupported language');
+  }
+
+  res.cookie('lang', locale, { maxAge: 9000000, sameSite: 'lax' });
+  res.redirect('back');
 });
 
-app.use('/change-lang/:lang', (req, res) => {
-  res.cookie('lang', req.params.lang, { maxAge: 9000000 });
-  res.redirect('back');
+app.listen(app.get('port'), app.get('host'), () => {
+  console.log('Server is running at http://' + app.get('host') + ':' + app.get('port'));
 });
