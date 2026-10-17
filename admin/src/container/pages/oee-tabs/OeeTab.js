@@ -1,0 +1,16 @@
+import React from 'react';
+import ArrowForwardIcon from '@material-ui/icons/ArrowForward';
+import SearchIcon from '@material-ui/icons/Search';
+import WarningIcon from '@material-ui/icons/Warning';
+
+const Heading = ({ title }) => <div className="oee-dashboard__card-heading"><div><strong>{title}</strong><small>1/20/20</small></div><SearchIcon fontSize="small" /></div>;
+const Metric = ({ title, value, alert, gauge }) => <article className={`oee-dashboard__metric-card ${alert ? 'oee-dashboard__metric-card--alert' : ''}`}><Heading title={title} />{gauge ? <div className="oee-dashboard__gauge"><div className="oee-tab__gauge-ring" /><strong>{value}</strong></div> : alert ? <><div className="oee-dashboard__availability"><WarningIcon /><strong>{value}</strong></div><div className="oee-dashboard__availability-scale"><span>8.66</span><span>0</span><span>100</span></div></> : <><div className="oee-dashboard__metric-value"><span className={title === 'Quality' ? 'oee-dashboard__quality-marker' : ''} />{value}</div><ArrowForwardIcon className="oee-dashboard__metric-arrow" /></>}</article>;
+
+class OeeTab extends React.Component {
+  render() {
+    const production = [{ label: 'Rectangles (Counter) - Nuremberg', color: '#147582' }, { label: 'Circles (Counter) - Nuremberg', color: '#4db3af' }];
+    return <section className="oee-tab"><section className="oee-dashboard__kpi-row"><Metric title="Quality rate" value="41.67" gauge /><Metric title="Quality" value="41.67" /><Metric title="Performance" value="55.38" /><Metric title="Availability" value="8.66" alert /></section><section className="oee-dashboard__status-card"><Heading title="Machine Status" /><div className="oee-dashboard__status-track"><span style={{ width: '36%', background: '#ff0b0b' }} /><span style={{ width: '1%', background: '#17b642' }} /><span style={{ width: '5%', background: '#1bae38' }} /><span style={{ width: '58%', background: '#fff' }} /></div><div className="oee-dashboard__time-scale">{['20. Jan', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00', '21. Jan'].map((time) => <span key={time}>{time}</span>)}</div></section><section className="oee-dashboard__charts-row"><article className="oee-dashboard__output-card"><Heading title="Production Output" /><div className="oee-tab__donut"><strong>72</strong><span>pieces</span></div><div className="oee-dashboard__legend oee-dashboard__legend--vertical">{production.map((item) => <span key={item.label}><i style={{ backgroundColor: item.color }} />{item.label}</span>)}</div></article><article className="oee-dashboard__temperature-card"><Heading title="Conveyor temperature" /><svg className="oee-tab__temperature" viewBox="0 0 700 160" preserveAspectRatio="none"><path d="M25 20H680M25 65H680M25 110H680M25 145H680" stroke="#e8eef1" /><path d="M25 85H300L350 75 380 18 415 84 680 85" fill="none" stroke="#097b88" strokeWidth="3" /><path d="M25 85H310L370 42 408 85 680 85" fill="none" stroke="#48afa8" strokeWidth="3" /></svg><div className="oee-dashboard__legend"><span><i style={{ background: '#097b88' }} />Conveyor 1</span><span><i style={{ background: '#48afa8' }} />Conveyor 2</span><span><i style={{ background: '#255d6c' }} />Conveyor 3</span></div></article></section></section>;
+  }
+}
+
+export default OeeTab;
