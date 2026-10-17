@@ -1,9 +1,5 @@
-#include <WiFi.h>
-#include <WiFiClient.h>
-#include <WiFiServer.h>
-#include <WiFiUdp.h>
-class TaskNetWork {
-    public:
-        void setup(void);
-        void taskRun(void);
-};
+#pragma once
+
+// Compatibility include for projects that previously included Task/TaskNetWork.h.
+// The active implementation is the runtime-neutral task at the sketch root.
+#include "../TaskNetWork.h"

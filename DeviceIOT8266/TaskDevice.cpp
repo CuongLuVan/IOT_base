@@ -64,6 +64,7 @@ void TaskDevice::readButton() {
             const uint32_t duration = now - pressedAtMs;
             pressedAtMs = 0;
             control.button_click++;
+            statusDirty = true;
             if (duration >= BUTTON_LONG_PRESS_MS) {
                 control.device_port ^= 0x01;
                 control.count_info++;
@@ -89,7 +90,7 @@ void TaskDevice::applyCommand(const DeviceCommand& command) {
         return;
     }
     if (control.device_port != command.commandValue) {
-        control.device_port = command.commandValue;
+        control.device_port = command.commandValue & DEVICE_OUTPUT_MASK;
         control.count_info++;
         statusDirty = true;
     }
@@ -100,7 +101,7 @@ void TaskDevice::publishStatus() {
     MemoryData::GetInstance().deviceStatus_ = &control;
 #if SUPPORT_RTOS
     if (deviceStatusQueue != nullptr) {
-        (void)xQueueSend(deviceStatusQueue, &control, 0);
+        (void)xQueueOverwrite(deviceStatusQueue, &control);
     }
 #endif
     statusDirty = false;

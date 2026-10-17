@@ -23,12 +23,24 @@ void Memory::initEEPROM(int size) {
         DEVICE_LOG_ERROR("[Memory] Invalid EEPROM size");
         return;
     }
-    if (!EEPROM.begin(size)) {
+    // ESP8266 Arduino EEPROM.begin() returns void and clamps storage to one
+    // flash sector.  Do not assume the requested size was actually granted.
+    EEPROM.begin(size);
+#if PLATFORM_ESP8266 && !SUPPORT_RTOS
+    size_ = static_cast<int>(EEPROM.length());
+#else
+    // The RTOS core has a distinct EEPROM wrapper. Its configured capacity is
+    // retained here; its board-specific limit is validated during deployment.
+    size_ = size;
+#endif
+    if (size_ <= 0) {
         DEVICE_LOG_ERROR("[Memory] EEPROM initialization failed");
-        size_ = 0;
         return;
     }
-    size_ = size;
+    if (size_ < size) {
+        DEVICE_LOG_WARNING(String("[Memory] EEPROM provides only ") + size_ +
+                           " bytes; large mTLS credentials need a filesystem backend");
+    }
     lastTimestampMs_ = millis();
 }
 

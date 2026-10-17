@@ -153,9 +153,18 @@ void mqttCallback(char* topic, byte* data, unsigned int length) {
         DEVICE_LOG_WARNING("[MQTT] Rejected unknown command");
         return;
     }
+    if (!document["value"].is<int>()) {
+        DEVICE_LOG_WARNING("[MQTT] Rejected command without an integer value");
+        return;
+    }
+    const int commandValue = document["value"].as<int>();
+    if (commandValue < 0 || commandValue > DEVICE_OUTPUT_MASK) {
+        DEVICE_LOG_WARNING("[MQTT] Rejected out-of-range control value");
+        return;
+    }
 
     pendingCommand.commandType = commandType;
-    pendingCommand.commandValue = document["value"] | 0;
+    pendingCommand.commandValue = static_cast<uint8_t>(commandValue);
     pendingCommand.reserved = COMMAND_RESERVED_CONTROL;
 #if SUPPORT_RTOS
     if (deviceCommandQueue == nullptr ||

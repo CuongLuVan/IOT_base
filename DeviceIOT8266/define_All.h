@@ -30,6 +30,12 @@
 #define ENABLE_ASCON_AEAD128 0
 #define MQTT_NO_TLS 0
 
+// The former authentication/Ascon implementation was tied to removed sensor
+// paths and is deliberately not silently enabled in this reduced firmware.
+#if ENABLE_MESSAGE_AUTHENTICATION || ENABLE_ASCON_AEAD128
+  #error "Message authentication/Ascon must be reimplemented and reviewed before enabling it."
+#endif
+
 #define MODE_WIFI_ADRESS 1
 #define SERIAL_BAUD_RATE 115200
 
@@ -37,6 +43,7 @@
 #define COMMAND_TYPE_OTHER 0x02
 #define COMMAND_RESERVED_NONE 0x00
 #define COMMAND_RESERVED_CONTROL 0x01
+#define DEVICE_OUTPUT_MASK 0x01
 
 // FreeRTOS stack-depth values are intentionally conservative for ESP8266 RAM.
 #define TASK_STACK_SIZE 2048

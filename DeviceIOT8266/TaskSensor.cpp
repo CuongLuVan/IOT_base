@@ -37,7 +37,7 @@ void publishLatest() {
     if (sensorDataQueue != nullptr) {
         // Telemetry is stateful; losing an old reading is preferable to blocking
         // the sensor task and starving Wi-Fi/FreeRTOS.
-        (void)xQueueSend(sensorDataQueue, &latestSensor, 0);
+        (void)xQueueOverwrite(sensorDataQueue, &latestSensor);
     }
 #endif
 }

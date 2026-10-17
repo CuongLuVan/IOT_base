@@ -1,6 +1,7 @@
 ﻿#include "NetWork_Wifi.h"
 
 #include <ArduinoJson.h>
+#include <stdlib.h>
 #include <time.h>
 
 #include "Common.h"
@@ -109,6 +110,20 @@ String escapeJson(const String& value) {
     }
     return escaped;
 }
+
+bool parseControlValue(const String& text, uint8_t& value) {
+    if (text.length() == 0) {
+        return false;
+    }
+    char* end = nullptr;
+    const long parsed = strtol(text.c_str(), &end, 10);
+    if (end == text.c_str() || *end != '\0' || parsed < 0 ||
+        parsed > DEVICE_OUTPUT_MASK) {
+        return false;
+    }
+    value = static_cast<uint8_t>(parsed);
+    return true;
+}
 } // namespace
 
 void NetWork_Wifi::setHeader() {
@@ -166,16 +181,18 @@ void NetWork_Wifi::handleControl() {
         return;
     }
 
-    DeviceCommand command = {};
-    command.commandType = static_cast<uint8_t>(webServer->arg("com").toInt());
-    command.commandValue = static_cast<uint8_t>(webServer->arg("value").toInt());
-    command.reserved = command.commandType == COMMAND_TYPE_CONTROL
-        ? COMMAND_RESERVED_CONTROL : COMMAND_RESERVED_NONE;
-
-    if (command.commandType != COMMAND_TYPE_CONTROL) {
-        sendJson(400, F("{\"error\":\"unsupported command\"}"));
+    uint8_t commandValue = 0;
+    if (webServer->arg("com") != String(COMMAND_TYPE_CONTROL) ||
+        !parseControlValue(webServer->arg("value"), commandValue)) {
+        sendJson(400, F("{\"error\":\"invalid control command\"}"));
         return;
     }
+
+    DeviceCommand command = {};
+    command.commandType = COMMAND_TYPE_CONTROL;
+    command.commandValue = commandValue;
+    command.reserved = command.commandType == COMMAND_TYPE_CONTROL
+        ? COMMAND_RESERVED_CONTROL : COMMAND_RESERVED_NONE;
 
 #if SUPPORT_RTOS
     if (deviceCommandQueue == nullptr ||
