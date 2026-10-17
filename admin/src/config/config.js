@@ -13,5 +13,6 @@ export const HOST_HTTP = ModeDevelop? `http://${APP_HOST}:${APP_PORT}/`: `https:
 export const HOST_IMG = "";// ModeDevelop? `http://${APP_HOST}:${APP_PORT}`:`https://${APP_HOST}`;
 export const API_URL =ModeDevelop? `http://${HOST}${apiPath}`:`https://${HOST}${apiPath}`;
 export const JWT_TOKEN = 'token';
+export const CUSTOMER_JWT_TOKEN = 'customer_access_token';
 export const HOST_HTTP_CHAT = 'http://103.1.238.175:5000/api/chat/';
 export const HOST_HTTP_HISTORY_CHAT = 'http://103.1.238.175:5000/api/history/';

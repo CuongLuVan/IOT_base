@@ -37,7 +37,7 @@ import DialogChat  from './container/message/DialogChat';
 //import './styles/index.js';
 import Dashboard from './container/manager/Dashboard';
 import authProvider from './api/authProvider';
-import {HOST_HTTP}  from './config/config.js';
+import {HOST_HTTP, JWT_TOKEN}  from './config/config.js';
 import TreeMenu from './compoment/ra-treemenu';
 import { connect } from 'react-redux';
 import { Provider } from 'react-redux';
@@ -62,14 +62,51 @@ import OeeDashboard from './container/pages/OeeDashboard';
 import LineOeeDashboard from './container/pages/LineOeeDashboard';
 import store from './store/index.jsx';
 import chatBoxData from './reducers/chat-box-acess';
+import CustomerApp from './customer/CustomerApp';
+import {
+    ADMIN_PORTAL,
+    CUSTOMER_PORTAL,
+    CUSTOMER_TOKEN_KEY,
+    CUSTOMER_USERNAME_KEY,
+    PORTAL_MODE_KEY
+} from './customer/session';
+import './customer/customer.css';
 
-const App = () => {
+const getPortalMode = () => {
+    const mode = sessionStorage.getItem(PORTAL_MODE_KEY);
+    return mode === ADMIN_PORTAL || mode === CUSTOMER_PORTAL ? mode : null;
+};
+
+const clearPortalSessions = () => {
+    // Admin and Customer sessions use different keys and must never be reused
+    // while changing portal mode.
+    [JWT_TOKEN, CUSTOMER_TOKEN_KEY, 'username', CUSTOMER_USERNAME_KEY].forEach((key) => {
+        sessionStorage.removeItem(key);
+        localStorage.removeItem(key);
+    });
+};
+
+const PortalChooser = ({ onChoose }) => (
+    <main className="customer-login-shell">
+        <section className="customer-login-card">
+            <p className="customer-login-eyebrow">IOT MANAGER</p>
+            <h1>Chọn cổng đăng nhập</h1>
+            <p className="customer-login-description">Admin và Customer được tách thành hai không gian làm việc độc lập.</p>
+            <button className="customer-primary-button" type="button" onClick={() => onChoose(CUSTOMER_PORTAL)}>Đăng nhập Customer</button>
+            <button className="customer-link-button" type="button" onClick={() => onChoose(ADMIN_PORTAL)}>Đăng nhập quản trị</button>
+        </section>
+    </main>
+);
+
+const AdminPortal = ({ onSwitchPortal }) => {
+    const AdminLoginPage = (props) => <LoginPage {...props} onSwitchPortal={onSwitchPortal} />;
+
     return (
     <div>
         <Admin
             dataProvider={jsonServerProvider(HOST_HTTP)}
             authProvider={authProvider}
-            loginPage = {LoginPage}
+            loginPage = {AdminLoginPage}
             dashboard={Dashboard}
             customReducers={{ chatBoxData }}
             layout={(props) => <Layout {...props} menu={TreeMenu}  appBar={MenuHeader}  />}
@@ -149,4 +186,20 @@ const App = () => {
     );
     
     };
+
+const App = () => {
+    const [portal, setPortal] = React.useState(getPortalMode);
+
+    const switchPortal = (mode) => {
+        clearPortalSessions();
+        sessionStorage.setItem(PORTAL_MODE_KEY, mode);
+        window.location.hash = '#/login';
+        setPortal(mode);
+    };
+
+    if (portal === CUSTOMER_PORTAL) return <CustomerApp onSwitchPortal={switchPortal} />;
+    if (portal === ADMIN_PORTAL) return <AdminPortal onSwitchPortal={switchPortal} />;
+    return <PortalChooser onChoose={switchPortal} />;
+};
+
 export default App;

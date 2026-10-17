@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { useLogin } from 'react-admin';
 import { MuiThemeProvider } from '@material-ui/core/styles';
 import './authen.css';
-const LoginPage = () => {
+const LoginPage = ({ onSwitchPortal }) => {
     const [userName, setUserName] = useState('');
     const [password, setPassword] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -63,6 +63,11 @@ const LoginPage = () => {
                       </div>
                       {error && <p role="alert" className="login-error">{error}</p>}
                       <button type='submit' className="login" disabled={isSubmitting}>{isSubmitting ? 'Đang đăng nhập…' : 'Đăng nhập'}</button>
+                      {onSwitchPortal && (
+                        <button type="button" className="portal-switch" onClick={() => onSwitchPortal('customer')}>
+                          Đăng nhập Customer
+                        </button>
+                      )}
                       <div className="other-regis">
                         <p className="other-login">Hoặc đăng nhập qua</p>
                         <img src="../../../public/image/facebook.svg" alt className="facebook" />
