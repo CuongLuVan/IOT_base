@@ -9,12 +9,8 @@ module.exports = {
   output: {
     path: path.resolve(__dirname, 'build'),
     publicPath: '/admin/',
-    filename: 'bundle.js'
-  },
-  devServer: {
-    contentBase: "./build",
-    compress: true,
-    port: 3030
+    filename: 'static/js/[name].[contenthash:8].js',
+    chunkFilename: 'static/js/[name].[contenthash:8].chunk.js'
   },
   module: {
     rules: [
@@ -65,14 +61,27 @@ module.exports = {
   performance: {
     hints: false,
   },
+  optimization: {
+    moduleIds: 'hashed',
+    runtimeChunk: 'single',
+    splitChunks: {
+      chunks: 'all'
+    }
+  },
   devServer: {
+    contentBase: './build',
+    compress: true,
+    port: 3030,
     historyApiFallback: true,
   },
   plugins: [
     new HtmlWebpackPlugin({
       template:  path.resolve('./index.html'),
     }),
-    new MiniCssExtractPlugin(),
+    new MiniCssExtractPlugin({
+      filename: 'static/css/[name].[contenthash:8].css',
+      chunkFilename: 'static/css/[name].[contenthash:8].chunk.css'
+    }),
     new OptimizeCssAssetsPlugin()
   ]
 };
