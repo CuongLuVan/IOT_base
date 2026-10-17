@@ -186,7 +186,7 @@ async function postInfoData(urlLink,dataInfo,callBack=null){
               'Content-Type': 'application/json',
               'Accept': 'application/json',
               'Content-Type': 'application/json',
-              'Authorization': 'Beard ' + localStorage.getItem('token'),
+              'Authorization': 'Bearer ' + localStorage.getItem('token'),
               // 'Content-Type': 'application/x-www-form-urlencoded',
           },
       });
@@ -225,7 +225,7 @@ async function getInfoData(urlLink,dataInfo,callBack){
                 'Content-Type': 'application/json',
                 'Accept': 'application/json',
                 'Content-Type': 'application/json',
-                'Authorization': 'Beard ' + localStorage.getItem('token'),
+                'Authorization': 'Bearer ' + localStorage.getItem('token'),
                 // 'Content-Type': 'application/x-www-form-urlencoded',
             },
         });
