@@ -1,84 +1,56 @@
+#pragma once
 
 #include <Arduino.h>
-#include <WiFiProv.h> // Nếu bạn dùng provisioning
-#define D_PROGRAMNAME          "Sonoff-Tasmota"
-#define D_AUTHOR               "Theo Arends"
-#define HOST_POST_INFO                "setup_now" 
-#define  WIFI_MODE    1
-#define  VERSION_OTA    2
+#include "PlatformCompat.h"
 
+#define HOST_POST_INFO "setup_now"
+#define WIFI_MODE 1
+#define VERSION_OTA 2
 
-
-#define  WIFI_START_CONNECT    1
-#define  WIFI_BLE_PROVISION    2
-#define  WIFI_SMART_CONFIG    3
-#define  WIFI_BLE_SMART_CONFIG    4
-#define  WIFI_START_OTA    5
-
-#define  MAX_TIME_WAIT_CONFIG 300000
-
-enum SmartConfigStatus {
-    DISABLE_SMARTCONFIG = 0,
-    START_SMARTCONFIG = 1,
-    WAIT_WIFI_SMARTCONFIG = 2,
-    WIFI_CONNECT_SMARTCONFIG=3,
-    FINISH_SMARTCONFIG=4
-};
-
-
-enum SmartProvisioningBle {
-    DISABLE_BLE = 0,
-    START_BLE = 1,
-    FINISH_BLE=4
-};
-
-
+#define WIFI_START_CONNECT 1
+#define WIFI_BLE_PROVISION 2
+#define WIFI_SMART_CONFIG 3
+#define WIFI_BLE_SMART_CONFIG 4
+#define WIFI_START_OTA 5
 
 class NetWork_Wifi {
-    public:
+public:
+    static void handleRoot();
+    static void handleSetUp();
+    static void handleSetUpWifi();
+    static void handleControl();
+    static void handleUpdate();
+    static void handleLoraGet();
+    static void handleLoraPost();
 
+    void setHeader();
+    void startWebServer();
+    void startWebserverRoot();
+    void setupHostPost();
+    void loopHostPost();
+    void startWebserverAP();
+    void setupAP();
+    void loopAP();
+    void setupOTA();
+    void loopOTA();
+    void connectWifi();
+    void maintainConnection();
+    void getWifiStatusIP();
+    void printWifiStatusIP();
+    unsigned char checkWifi();
+    uint32_t getNetworkTimestamp();
+    unsigned char pingNetWork();
+    void disconnetWifi();
+    void handerHospost();
+    void handerClient();
+    bool checkModeHostPost();
 
-        String linkOTA_ESP_32;
-        int Version_OTA; 
-
-        static void    handleRoot(void);
-        static void   handleSetUp(void);
-        static void   handleSetUpWifi(void);
-        static void   handleControl(void);
-        static void   handleUpdate(void);
-        static void   handleLoraGet(void);
-        static void   handleLoraPost(void);
-
-        void setHeader(void);
-        void startWebServer(void);
-        void startWebserverRoot(void);
-        void setupHostPost(void);
-        void loopHostPost(void);
-        void startWebserverAP(void);
-        void setupAP(void);
-        void loopAP(void);
-        void setupOTA(void);
-        void loopOTA(void);
-        void connectWifi(void);
-        void getWifiStatusIP(void);
-        void printWifiStatusIP(void);
-        unsigned char checkWifi();
-        uint32_t getNetworkTimestamp();
-        unsigned char pingNetWork();
-        void disconnetWifi();
-        void handerHospost();
-        void handerClient();
-        bool checkModeHostPost(void);
-
-        void startSmartConfig(void);
-        void setupSmartConfig(void);
-        void loopSmartConfig(void);
-        void setup();
-        static void sysProvEvent(arduino_event_t *sys_event);
-        void startProvisioning(void);
-        void setupProvisioning(void);
-        void loopProvisioning(void);
-
-        
-        
+    // ESP8266 has no BLE provisioning. These modes safely use the AP portal.
+    void startSmartConfig();
+    void setupSmartConfig();
+    void loopSmartConfig();
+    void setup();
+    void startProvisioning();
+    void setupProvisioning();
+    void loopProvisioning();
 };

@@ -1,11 +1,16 @@
+#pragma once
 
+#include "Common.h"
 
 class TaskDevice {
-    public:
-        static void setup(void);
-        static void readButton(void);
-        static void controlPump(void);
-        static void controlDevice(void);
-        static void updateMemoryStatus(void);
-        static void taskRun(void * parameter);
+public:
+    void setup();
+    static void taskRun(void* parameter);
+    static bool copyStatus(InfoDeviceControl& destination);
+
+private:
+    static void readButton();
+    static void controlOutputs();
+    static void applyCommand(const DeviceCommand& command);
+    static void publishStatus();
 };

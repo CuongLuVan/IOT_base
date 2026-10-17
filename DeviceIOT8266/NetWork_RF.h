@@ -1,39 +1,24 @@
-#ifndef NETWORK_RF_H
-#define NETWORK_RF_H
+#pragma once
 
-#include "Arduino.h"
+#include <Arduino.h>
 #include "define_All.h"
 
 class NetWork_RF {
 public:
     NetWork_RF();
 
-    // Initialize the LoRa radio; returns true on success.
-    bool begin(long frequency = 915E6L, int csPin = 5, int resetPin = 14, int irqPin = 2);
-
-    // Send raw bytes via LoRa.
-    bool sendData(const uint8_t* data, size_t len);
-
-    // Send a string payload via LoRa.
+    bool begin(long frequency = LORA_FREQUENCY_HZ,
+               int csPin = LORA_CS_PIN,
+               int resetPin = LORA_RESET_PIN,
+               int irqPin = LORA_IRQ_PIN);
+    bool sendData(const uint8_t* data, size_t length);
     bool sendData(const String& payload);
-
-    // Receive the next LoRa packet into buffer.
-    // receivedLen will contain the number of bytes read.
-    bool receiveData(uint8_t* buffer, size_t bufferSize, size_t& receivedLen);
-
-    // Return true when a packet is available for reading.
+    bool receiveData(uint8_t* buffer, size_t bufferSize, size_t& receivedLength);
     bool available();
-
-    // Get RSSI and SNR for the last received packet.
+    bool isInitialized() const;
     int packetRssi() const;
     float packetSnr() const;
 
 private:
-    bool initialized;
-    long frequency;
-    int csPin;
-    int resetPin;
-    int irqPin;
+    bool initialized_;
 };
-
-#endif // NETWORK_RF_H

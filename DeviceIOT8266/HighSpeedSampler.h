@@ -1,22 +1,11 @@
-#ifndef HIGHSPEEDSAMPLER_H
-#define HIGHSPEEDSAMPLER_H
+﻿#pragma once
 
 #include <Arduino.h>
-#include "define_All.h"
+#include <IPAddress.h>
 
-#if SUPPORT_RTOS
-  #if PLATFORM_ESP32
-    #include <freertos/FreeRTOS.h>
-    #include <freertos/queue.h>
-    #include <atomic>
-  #elif PLATFORM_ESP8266
-    #include <freertos/FreeRTOS.h>
-    #include <freertos/queue.h>
-  #endif
-#endif
-
-constexpr size_t HIGH_SPEED_UDP_MAX_DATAGRAM_SIZE = 28 + 1150;
-
+// High-speed capture and its IMU/ADS peripherals were removed from the ESP8266
+// build. This small compatibility surface keeps older callers linkable while
+// reporting the feature as unavailable.
 enum HighSpeedMode : uint8_t {
     HS_MODE_OFF = 0,
     HS_MODE_ADC_10KHZ = 1,
@@ -32,56 +21,31 @@ enum UdpPacketType : uint8_t {
 };
 
 struct HighSpeedConfig {
-    HighSpeedMode mode;
+    HighSpeedMode mode = HS_MODE_OFF;
     IPAddress udpTargetIP;
-    uint16_t udpTargetPort;
-    uint32_t durationMs;
+    uint16_t udpTargetPort = 0;
+    uint32_t durationMs = 0;
 };
 
 struct HighSpeedUdpPacket {
-    uint16_t length;
+    uint16_t length = 0;
     IPAddress targetIP;
-    uint16_t targetPort;
-    uint8_t bytes[HIGH_SPEED_UDP_MAX_DATAGRAM_SIZE];
+    uint16_t targetPort = 0;
+    uint8_t bytes[1] = {0};
 };
 
 class HighSpeedSampler {
 public:
     static HighSpeedSampler& GetInstance();
-
     bool setup();
     bool startSampling(const HighSpeedConfig& config);
     void stopSampling();
     bool isSamplingActive() const;
     bool isModeAvailable(HighSpeedMode mode) const;
-
-    // Called only by TaskSensor; performs no networking or blocking queue sends.
     bool processSensorTask();
-    // Called only by TaskNetWork.
     bool receivePacket(HighSpeedUdpPacket& packet);
     uint32_t packetQueueDepth() const;
 
 private:
-    HighSpeedSampler();
-    HighSpeedSampler(const HighSpeedSampler&) = delete;
-    HighSpeedSampler& operator=(const HighSpeedSampler&) = delete;
-
-    void initializeSensors();
-
-#if SUPPORT_RTOS
-    QueueHandle_t controlQueue;
-    QueueHandle_t packetQueue;
-#endif
-
-#if PLATFORM_ESP32
-    std::atomic<bool> samplingActive;
-    std::atomic<bool> stopRequested;
-#else
-    volatile bool samplingActive;
-    volatile bool stopRequested;
-#endif
-    bool initialized;
-    bool icmAvailable;
+    HighSpeedSampler() = default;
 };
-
-#endif

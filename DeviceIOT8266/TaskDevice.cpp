@@ -1,169 +1,168 @@
-
 #include "TaskDevice.h"
-#include <Arduino.h>
-#include "Common.h"
-#include "define_All.h"
-#include "MemoryData.h"
+
 #include "DebugInfo.h"
+#include "MemoryData.h"
+#include "PlatformCompat.h"
 
 #if SUPPORT_RTOS
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-#include <freertos/queue.h>
 extern QueueHandle_t deviceCommandQueue;
 extern QueueHandle_t deviceStatusQueue;
-#else
-
 #endif
 
-InfoDeviceControl control;
-void TaskDevice::setup(void)
-{
-    DEVICE_LOG_INFO("start TaskDevice::setup");
-    control.device_port = 0x00;
-    control.button_click = 0x00;
-    control.button_status = 0x00;
-    control.count_info = 0x00;
-    pinMode(DEVICE_BUTTON_PIN, INPUT);
-    pinMode(INPUT_PULLUP_PIN, INPUT);
+namespace {
+InfoDeviceControl control = {};
+bool statusDirty = true;
+
+#if SUPPORT_RTOS
+SemaphoreHandle_t deviceMutex = nullptr;
+
+TickType_t delayTicks(uint32_t milliseconds) {
+    const TickType_t ticks = pdMS_TO_TICKS(milliseconds);
+    return ticks == 0 ? 1 : ticks;
+}
+#endif
+} // namespace
+
+void TaskDevice::setup() {
+    control = {};
+    pinMode(DEVICE_BUTTON_PIN, INPUT_PULLUP);
+    pinMode(INPUT_PULLUP_PIN, INPUT_PULLUP);
     pinMode(OUTPUT_PUMP_PIN, OUTPUT);
+#if SUPPORT_DEVICE_OUTPUT_1
     pinMode(OUTPUT_DEVICE_1_PIN, OUTPUT);
-    DEVICE_LOG_INFO("end TaskDevice::setup");
-}
+#endif
+    controlOutputs();
 
-void TaskDevice::readButton(void)
-{
-    static int lastButtonReading = HIGH;
-    static int buttonState = HIGH;
-    static unsigned long lastDebounceTime = 0;
-    static unsigned long pressStart = 0;
-
-    const unsigned long debounceDelay = BUTTON_DEBOUNCE_MS;
-    const unsigned long longPressTime = BUTTON_LONG_PRESS_MS;
-
-    int reading = digitalRead(DEVICE_BUTTON_PIN);
-
-    if (reading != lastButtonReading) {
-        lastDebounceTime = millis();
-    }
-
-    if ((millis() - lastDebounceTime) > debounceDelay) {
-        if (reading != buttonState) {
-            buttonState = reading;
-
-            if (buttonState == LOW) { // nút được nhấn (INPUT_PULLUP)
-                pressStart = millis();
-            } else { // nút được nhả
-                if (pressStart > 0) {
-                    unsigned long pressDuration = millis() - pressStart;
-                    if (pressDuration >= longPressTime) {
-                        // long press (>= 3s) => toggle device_port
-                        if (control.device_port == 0) {
-                            control.device_port = 1;
-                        } else {
-                            control.device_port = 0;
-                        }
-                        control.count_info++;
-                        Serial.printf("[TaskDevice] Long press toggle device_port -> %d\n", control.device_port);
-                    }
-                    pressStart = 0;
-                }
-            }
+#if SUPPORT_RTOS
+    if (deviceMutex == nullptr) {
+        deviceMutex = xSemaphoreCreateMutex();
+        if (deviceMutex == nullptr) {
+            DEVICE_LOG_ERROR("[Device] Cannot create device mutex");
         }
     }
-
-    lastButtonReading = reading;
+#endif
+    MemoryData::GetInstance().deviceStatus_ = &control;
+    DEVICE_LOG_INFO("[Device] GPIO task initialized");
 }
 
-void TaskDevice::controlPump(void){
-    if((control.device_port|0x01) == 1) {
-        digitalWrite(OUTPUT_PUMP_PIN, HIGH); // Bật bơm
-    } else {
-        digitalWrite(OUTPUT_PUMP_PIN, LOW); // Tắt bơm
+void TaskDevice::readButton() {
+    static int lastReading = HIGH;
+    static int stableState = HIGH;
+    static uint32_t lastDebounceMs = 0;
+    static uint32_t pressedAtMs = 0;
+
+    const int reading = digitalRead(DEVICE_BUTTON_PIN);
+    const uint32_t now = millis();
+    if (reading != lastReading) {
+        lastDebounceMs = now;
     }
-}
-void TaskDevice::controlDevice(void){
-     if((control.device_port|0x02) == 0x02) {
-        digitalWrite(OUTPUT_DEVICE_1_PIN, HIGH); // Bật thiết bị 1
-    } else {
-        digitalWrite(OUTPUT_DEVICE_1_PIN, LOW); // Tắt thiết bị 1
-    }
-}
-
-void TaskDevice::updateMemoryStatus(void){
-    MemoryData::GetInstance().deviceStatus_->device_port = control.device_port;
-    MemoryData::GetInstance().deviceStatus_->button_click = control.button_click;  
-    MemoryData::GetInstance().deviceStatus_->button_status = control.button_status; 
-    MemoryData::GetInstance().deviceStatus_->device_port_last = control.device_port_last; 
-    MemoryData::GetInstance().deviceStatus_->count_info = control.count_info; 
-}
-
-void TaskDevice::taskRun(void * parameter) {
-    //DEVICE_LOG_INFO("start TaskDevice::taskRun");
-    #if SUPPORT_RTOS
-        for(;;)
-        { 
-            TaskDevice::readButton();
-            TaskDevice::controlPump();
-            TaskDevice::controlDevice();
-            vTaskDelay(DEVICE_TASK_PERIOD_MS / portTICK_PERIOD_MS);
-            if(control.device_port!=control.device_port_last){
-                control.device_port_last = control.device_port;
-                // Report current device status to network
-                if (deviceStatusQueue != NULL) {
-                    xQueueSend(deviceStatusQueue, &control, pdMS_TO_TICKS(DEVICE_QUEUE_SEND_DELAY_MS));
-                }
-
-                // Receive command from network if available
-                
-            }
-            if (deviceCommandQueue != NULL) {
-                DeviceCommand cmd_to_device;
-                if (xQueueReceive(deviceCommandQueue, &cmd_to_device, 0) == pdTRUE) {
-                    // apply command locally
-                    if(cmd_to_device.commandType == COMMAND_TYPE_CONTROL) {
-                        control.device_port = cmd_to_device.commandValue;
-                        cmd_to_device.reserved = 1; // Mark as processed
-                        control.count_info++;
-                    }
-                    
-                    Serial.printf("[TaskDevice] Exec command type=%d value=%d\n", cmd_to_device.commandType, cmd_to_device.commandValue);
-                }
-            }
-        }
-        
-    #else
-        TaskDevice::updateMemoryStatus();
-        TaskDevice::readButton();
-        TaskDevice::controlPump();
-        TaskDevice::controlDevice();
-        if(MemoryData::GetInstance().deviceCommand_ != NULL) {
-            
-            DeviceCommand* cmd_to_device = MemoryData::GetInstance().deviceCommand_;
-            DEVICE_LOG_INFO("start TaskDevice::DeviceCommand commandType "+ 
-                String(cmd_to_device->commandType) + " value=" + 
-                String(cmd_to_device->commandValue) + " reserved=" + 
-                String(cmd_to_device->reserved)  );
-            if(cmd_to_device->commandType== COMMAND_TYPE_CONTROL&&cmd_to_device->reserved) {
-                control.device_port = cmd_to_device->commandValue;
-                control.device_port_last = cmd_to_device->commandValue;
-                cmd_to_device->reserved = 0; // Mark as processed
+    if (now - lastDebounceMs >= BUTTON_DEBOUNCE_MS && reading != stableState) {
+        stableState = reading;
+        if (stableState == LOW) {
+            pressedAtMs = now;
+        } else if (pressedAtMs != 0) {
+            const uint32_t duration = now - pressedAtMs;
+            pressedAtMs = 0;
+            control.button_click++;
+            if (duration >= BUTTON_LONG_PRESS_MS) {
+                control.device_port ^= 0x01;
                 control.count_info++;
-            }
-        }       
-        if(control.device_port!=control.device_port_last){
-            control.device_port_last = control.device_port;
-            MemoryData::GetInstance().deviceStatus_ = &control;
-            if(MemoryData::GetInstance().deviceCommand_ != NULL) {
-                DeviceCommand* cmd_to_device = MemoryData::GetInstance().deviceCommand_;
-                if(cmd_to_device->commandType== COMMAND_TYPE_CONTROL) {
-                    control.device_port = cmd_to_device->commandValue;
-                    cmd_to_device->reserved = 0; // Mark as processed
-                    control.count_info++;
-                }
+                statusDirty = true;
             }
         }
-    #endif
+    }
+    lastReading = reading;
+}
 
+void TaskDevice::controlOutputs() {
+    digitalWrite(OUTPUT_PUMP_PIN,
+                 (control.device_port & 0x01) != 0 ? HIGH : LOW);
+#if SUPPORT_DEVICE_OUTPUT_1
+    digitalWrite(OUTPUT_DEVICE_1_PIN,
+                 (control.device_port & 0x02) != 0 ? HIGH : LOW);
+#endif
+}
 
+void TaskDevice::applyCommand(const DeviceCommand& command) {
+    if (command.commandType != COMMAND_TYPE_CONTROL ||
+        command.reserved != COMMAND_RESERVED_CONTROL) {
+        return;
+    }
+    if (control.device_port != command.commandValue) {
+        control.device_port = command.commandValue;
+        control.count_info++;
+        statusDirty = true;
+    }
+}
+
+void TaskDevice::publishStatus() {
+    control.device_port_last = control.device_port;
+    MemoryData::GetInstance().deviceStatus_ = &control;
+#if SUPPORT_RTOS
+    if (deviceStatusQueue != nullptr) {
+        (void)xQueueSend(deviceStatusQueue, &control, 0);
+    }
+#endif
+    statusDirty = false;
+}
+
+bool TaskDevice::copyStatus(InfoDeviceControl& destination) {
+#if SUPPORT_RTOS
+    if (deviceMutex != nullptr) {
+        if (xSemaphoreTake(deviceMutex, delayTicks(10)) != pdTRUE) {
+            return false;
+        }
+        destination = control;
+        xSemaphoreGive(deviceMutex);
+        return true;
+    }
+#endif
+    destination = control;
+    return true;
+}
+
+void TaskDevice::taskRun(void* parameter) {
+    (void)parameter;
+#if SUPPORT_RTOS
+    for (;;) {
+#else
+    {
+#endif
+#if SUPPORT_RTOS
+        const bool locked = deviceMutex == nullptr ||
+            xSemaphoreTake(deviceMutex, delayTicks(10)) == pdTRUE;
+        if (!locked) {
+            vTaskDelay(delayTicks(DEVICE_TASK_PERIOD_MS));
+            continue;
+        }
+#endif
+
+#if SUPPORT_RTOS
+        if (deviceCommandQueue != nullptr) {
+            DeviceCommand command = {};
+            while (xQueueReceive(deviceCommandQueue, &command, 0) == pdTRUE) {
+                applyCommand(command);
+            }
+        }
+#else
+        DeviceCommand* command = MemoryData::GetInstance().deviceCommand_;
+        if (command != nullptr && command->reserved == COMMAND_RESERVED_CONTROL) {
+            applyCommand(*command);
+            command->reserved = COMMAND_RESERVED_NONE;
+        }
+#endif
+
+        readButton();
+        controlOutputs();
+        if (statusDirty || control.device_port != control.device_port_last) {
+            publishStatus();
+        }
+
+#if SUPPORT_RTOS
+        if (deviceMutex != nullptr) {
+            xSemaphoreGive(deviceMutex);
+        }
+        vTaskDelay(delayTicks(DEVICE_TASK_PERIOD_MS));
+#endif
+    }
 }

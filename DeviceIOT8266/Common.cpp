@@ -1,25 +1,28 @@
 #include "Common.h"
-#include "NetWork_Mqtt.h"
-#include <ArduinoJson.h>
 #include "define_All.h"
+#include <ArduinoJson.h>
 
-
-
-StaticJsonDocument<JSON_BUFFER_SIZE> jsonBufferData;
-
-String getInfoDevice(InfoSensor sensorValue, InfoDeviceControl statusDevice)
+String getInfoDevice(const InfoSensor& sensorValue,
+                     const InfoDeviceControl& statusDevice)
 {
-    jsonBufferData.clear();
-    jsonBufferData["se"] = DEVICE_SERVICE_ID;
-    String vaString =  String(sensorValue.valueHumi) + "," + String(sensorValue.valueTemp) + "," + String(sensorValue.valueDust) + "," + String(sensorValue.valueDust_PM2_5) + "," + String(sensorValue.valueDust_PM10) + "," + String(sensorValue.valueDust_PM1) + "," + String(sensorValue.valueControl);
-    String coString =  String(statusDevice.device_port) + "," + String(statusDevice.button_click) + "," + String(statusDevice.button_status) + "," + String(statusDevice.count_info);
-    jsonBufferData["va"] = vaString;
-    jsonBufferData["co"] = coString;
+    StaticJsonDocument<JSON_BUFFER_SIZE> document;
+    document["se"] = DEVICE_SERVICE_ID;
+
+    // Keep the legacy va/co fields while publishing only the retained sensors:
+    // humidity (centi-%RH), temperature (centi-C), ADC raw value.
+    document["va"] = String(sensorValue.valueHumi) + "," +
+                     String(sensorValue.valueTemp) + "," +
+                     String(sensorValue.valueAdc);
+    document["co"] = String(statusDevice.device_port) + "," +
+                     String(statusDevice.button_click) + "," +
+                     String(statusDevice.button_status) + "," +
+                     String(statusDevice.count_info);
+    document["dht_valid"] = sensorValue.dhtValid;
+    document["sample"] = sensorValue.sampleSequence;
+
     String response;
-    serializeJson(jsonBufferData, response);
-#if ENABLE_ASCON_AEAD128
-    return getAsconEncryptedPayload(response);
-#else
+    if (serializeJson(document, response) == 0 || document.overflowed()) {
+        return String();
+    }
     return response;
-#endif
 }

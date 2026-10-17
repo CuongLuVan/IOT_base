@@ -1,11 +1,14 @@
+#pragma once
 
+#include "Common.h"
 
 class TaskSensor {
-    public:
-        void setup(void);
-        static void readSensor(void);
-        static void readSensorDust(void);
-        static void readSensorTemp(void);
-        static void readSensorHumi(void);
-        static void taskRun(void * parameter);
+public:
+    void setup();
+    static void taskRun(void* parameter);
+    static bool copyLatest(InfoSensor& destination);
+
+private:
+    static void sampleAdc();
+    static void sampleDht();
 };

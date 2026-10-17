@@ -1,15 +1,15 @@
 #pragma once
-#include <cstdint>
-#include <Arduino.h>
 
+#include <Arduino.h>
+#include <cstdint>
+
+// Temperature and humidity are stored in centi-units to avoid float payloads.
 struct InfoSensor {
-    int valueHumi;
-    int valueTemp;
-    int valueDust;
-    int valueDust_PM2_5;
-    int valueDust_PM10;
-    int valueDust_PM1;
-    int valueControl;
+    int16_t valueHumi;
+    int16_t valueTemp;
+    uint16_t valueAdc;
+    uint32_t sampleSequence;
+    bool dhtValid;
 };
 
 struct InfoDeviceControl {
@@ -26,17 +26,16 @@ struct DeviceCommand {
     uint16_t reserved;
 };
 
-struct ProcessTimeData
-{
+struct ProcessTimeData {
     unsigned long timeStart;
     unsigned long time_counter_start;
-    unsigned long time_counter_end;  
+    unsigned long time_counter_end;
     unsigned char numberCheck;
     unsigned long timestamp;
     unsigned char state;
     unsigned long countNetWorkWorng;
     unsigned long lastExternalPingTime;
-    /* data */
 };
 
-String getInfoDevice(InfoSensor sensorValue, InfoDeviceControl statusDevice);
+String getInfoDevice(const InfoSensor& sensorValue,
+                     const InfoDeviceControl& statusDevice);
