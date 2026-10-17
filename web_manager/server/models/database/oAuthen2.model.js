@@ -77,7 +77,7 @@ class Oauthen2 extends CommonModel {
                     expiresIn: '15m',
                     email: user.email
 */
-    responseLogin(res,user){
+    responseLoginLegacy(res,user){
         var dataTocken= getRamdomData(256);
         var permission_id=user.permission_id;
         var current_id=user.users_id;
@@ -150,6 +150,73 @@ class Oauthen2 extends CommonModel {
             }).catch(function(err) {
                 returnFalse(res,{success: false, message: 'Problem SQL.'},WarningInfo.ERROR_SERVER);
             });
+        }
+    }
+
+    async responseLogin(res, user) {
+        const permissionId = Number(user.permission_id);
+        const userId = Number(user.users_id);
+        if (!Number.isSafeInteger(permissionId) || !Number.isSafeInteger(userId)) {
+            return returnFalse(res, { success: false, message: 'Unable to create session.' }, WarningInfo.ERROR_SERVER);
+        }
+
+        try {
+            let valueManifest = String(userId);
+            let enterpriseId = '';
+
+            if (permissionId >= TableManifest.NEW_REGISTER) {
+                const memberIds = await knex('users')
+                    .where({ id_created: userId, deleteflag: 0 })
+                    .pluck('users_id');
+                if (permissionId < TableManifest.ADMIN) {
+                    const delegatedIds = await knex('decentralization_access')
+                        .where({ id_admin: userId, deleteflag: 0 })
+                        .whereNot('id_member', 0)
+                        .pluck('id_member');
+                    memberIds.push.apply(memberIds, delegatedIds);
+                }
+                valueManifest = [userId].concat(memberIds).filter((id, index, values) =>
+                    Number.isSafeInteger(Number(id)) && values.indexOf(id) === index
+                ).join(',');
+
+                const enterpriseOwnerColumn = permissionId < TableManifest.ADMIN ? 'id_admin' : 'id_member';
+                const enterpriseIds = await knex('decentralization_access')
+                    .where({ [enterpriseOwnerColumn]: userId, deleteflag: 0 })
+                    .pluck('enterprise_id');
+                enterpriseId = enterpriseIds
+                    .filter((id, index, values) => Number.isSafeInteger(Number(id)) && values.indexOf(id) === index)
+                    .join(',');
+            }
+
+            const session = await knex.transaction(async (trx) => {
+                const access = await createAccessSession({
+                    tokenType: 'admin',
+                    userId,
+                    permissionId,
+                    enterpriseId,
+                    valueManifest
+                }, trx);
+                const refresh = await createRefreshSession({
+                    tokenType: 'admin',
+                    userId,
+                    permissionId,
+                    enterpriseId,
+                    valueManifest,
+                    sessionId: access.sessionId
+                }, trx);
+                return { access, refresh };
+            });
+
+            return returnOKCustom(res, {
+                success: true,
+                token: session.access.accessToken,
+                accessToken: session.access.accessToken,
+                refreshToken: session.refresh.refreshToken,
+                expiresIn: '15m',
+                email: user.email
+            });
+        } catch (error) {
+            return returnFalse(res, { success: false, message: 'Unable to create session.' }, WarningInfo.ERROR_SERVER);
         }
     }
 
