@@ -3,7 +3,7 @@ import DeleteIcon from '@material-ui/icons/Delete';
 import React from 'react';
 import ManagerData from '../../actions/ManagerData.js'
 import {ActionControl ,TypeDialgueShow,SelectHTml} from '../../utils/commonUtil';
-const type_langue_data = ["Tiếng Việt","","English"];
+const type_langue_data = ["Tiếng Việt","","English","中国人"];
 
 
 class PagesContent  {
