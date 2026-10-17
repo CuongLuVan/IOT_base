@@ -86,7 +86,10 @@ const SelectPages = ({id, onChange,handleClose }) => {
                 </Button> 
                 vs
                 <Button variant="contained" 
-                    onClick={()=>{ window.open("./#/advertisementPages", '_blank').focus(); }}
+                    onClick={() => {
+                        const popup = window.open('./#/advertisementPages', '_blank', 'noopener,noreferrer');
+                        if (popup) popup.opener = null;
+                    }}
                     disableElevation color="primary">
                     {state.advertisement_id==0? "Tạo bài báo mới":" Sửa bài báo"}
                 </Button> 

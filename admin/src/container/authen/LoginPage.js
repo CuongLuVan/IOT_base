@@ -6,17 +6,29 @@ import './authen.css';
 const LoginPage = () => {
     const [userName, setUserName] = useState('');
     const [password, setPassword] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [error, setError] = useState('');
     const login = useLogin();
 
     const submit = (e) => {
         e.preventDefault();
+        if (isSubmitting) return;
+        const username = userName.trim();
+        if (!username || !password) {
+          setError('Vui lòng nhập tên đăng nhập và mật khẩu.');
+          return;
+        }
+        setError('');
+        setIsSubmitting(true);
         // gather your data/credentials here
         const credentials = { 
-          username: userName,
+          username,
           password: password
         };
         // Dispatch the userLogin action (injected by connect)
-        login(credentials);
+        login(credentials)
+          .catch(() => setError('Đăng nhập không thành công. Vui lòng kiểm tra lại thông tin.'))
+          .finally(() => setIsSubmitting(false));
     }
 
         return (
@@ -38,20 +50,19 @@ const LoginPage = () => {
                     <img src="../../../public/image/decor-point.svg" alt className="decor-point-4 pos-abs" />
                     <img src="../../../public/image/line.svg" alt className="line pos-abs" />
                     <img src="../../../public/image/circle.svg" alt className="circle pos-abs" />
-                    <button className="close pos-abs">X</button>  
+                    <button type="button" className="close pos-abs" aria-label="Đóng">X</button>
                     {/* Login */}
                     <form className="box-login" onSubmit={(e) => submit(e)}>
                       <p className="caption">Đăng nhập</p>
                       <p className="font-small">Điền tên đăng nhập</p>
-                      <input type="text" placeholder="Tên đăng nhập" className="username" value={userName} onChange={e =>setUserName(e.target.value)} />
+                      <input type="email" placeholder="Tên đăng nhập" className="username" autoComplete="username" required value={userName} onChange={e =>setUserName(e.target.value)} />
                       <p className="font-small">Mật khẩu</p>
-                      <input type="password" placeholder="Mật khẩu" className="password" value={password} onChange={e => setPassword(e.target.value)} />
+                      <input type="password" placeholder="Mật khẩu" className="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} />
                       <div className="check-pass">
-                        <input type="checkbox" />
-                        <label for="remember-check" className="remember-pass">Ghi nhớ mật khẩu</label>
                         <span className="forget-pass">Quên mật khẩu?</span>
                       </div>
-                      <button type='submit' className="login">Đăng nhập</button>
+                      {error && <p role="alert" className="login-error">{error}</p>}
+                      <button type='submit' className="login" disabled={isSubmitting}>{isSubmitting ? 'Đang đăng nhập…' : 'Đăng nhập'}</button>
                       <div className="other-regis">
                         <p className="other-login">Hoặc đăng nhập qua</p>
                         <img src="../../../public/image/facebook.svg" alt className="facebook" />

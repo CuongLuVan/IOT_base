@@ -1,14 +1,15 @@
 /**
- * Store string record in the storage
+ * Store a value for the current browser session. Access tokens must not
+ * survive a closed browser and therefore must not be kept in localStorage.
  *
  * @param {string} key
  * @param {string | array | object} value
  */
 export let setLocalStorage = (key, value) => {
   if (value && typeof value === 'string') {
-    localStorage.setItem(key, value);
+    sessionStorage.setItem(key, value);
   } else {
-    localStorage.setItem(key, JSON.stringify(value)); // convert arrays or objects into strings
+    sessionStorage.setItem(key, JSON.stringify(value)); // convert arrays or objects into strings
   }
 };
 
@@ -18,7 +19,10 @@ export let setLocalStorage = (key, value) => {
  * @param {string} key
  */
 export let getLocalStorage = (key) => {
-  const data = localStorage.getItem(key);
+  // Remove any access token written by older versions rather than silently
+  // reusing a token that persists across browser sessions.
+  localStorage.removeItem(key);
+  const data = sessionStorage.getItem(key);
   try {
     return JSON.parse(data); // converts a JSON string into a Javascript Object
   } catch (e) {
@@ -31,4 +35,7 @@ export let getLocalStorage = (key) => {
  *
  * @param {string} key
  */
-export let clearLocalStorage = (key) => localStorage.removeItem(key);
+export let clearLocalStorage = (key) => {
+  sessionStorage.removeItem(key);
+  localStorage.removeItem(key);
+};

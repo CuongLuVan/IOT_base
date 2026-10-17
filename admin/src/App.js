@@ -53,6 +53,7 @@ import ServicePagesContent from './container/manager/service/ServicePagesContent
 import BuyProductTable from './container/manager/product/BuyProductTable.js';
 import SaleCompany from './container/manager/report/SaleCompany.js';
 import CustomerApproval from './container/manager/CustomerApproval.js';
+import AdminDocumentReview from './container/manager/AdminDocumentReview.js';
 import DataAllCompany from './container/manager/report/DataAllCompany.js';
 import ReportSpecial from './container/manager/report/ReportSpecial.js';
 
@@ -131,6 +132,7 @@ const App = () => {
             <Resource name="group_company" options={{label:'Nhóm kinh doanh',"menuParent": "customers" }} icon={Accessibility} list={NomalTable} />
             <Resource name="group_company_detail" options={{label:'Chi tiết Nhóm kinh doanh',"menuParent": "customers" }} icon={Accessibility} list={NomalTable} />
             <Resource name="customer_check" options={{label:'Duyệt công ty',"menuParent": "customers" }} icon={Contacts}  list={CustomerApproval} />
+            <Resource name="customer_document_review" options={{label:'Duyệt giấy tờ',"menuParent": "customers" }} icon={Contacts} list={AdminDocumentReview} />
 
             {/* Khách hàng */}
             <Resource name="report" options={{label:'Báo cáo' ,"isMenuParent": true }} icon={Contacts}  list={LockScreen} />

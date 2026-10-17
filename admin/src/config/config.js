@@ -1,4 +1,7 @@
-const ModeDevelop=true; 
+// Select HTTP only for a local development browser.  A production bundle must
+// not accidentally keep calling localhost or downgrade API traffic to HTTP.
+const ModeDevelop = typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 export const apiPath = 'api/';
 
 export const APP_HOST = ModeDevelop? 'localhost':'trithuc.choxanh4mua.com';

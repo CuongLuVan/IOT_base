@@ -1,5 +1,6 @@
 import Swal from 'sweetalert2';
 import {JWT_TOKEN} from '../config/config.js';
+import { clearLocalStorage } from './storageUtil';
 
 export const TableView = {
   MAIN_ID: 0,
@@ -162,15 +163,32 @@ export const  validateDate=(timeDate)=> {
 
 
 export const checkErrorRetun=(error)=>{
-  if(!!!error.response){
+  if (!error.response) {
+    Swal.fire('Connection error', 'Please check the network connection.', 'error');
+    return;
+  }
+
+  if (error.response.status === 401 || error.response.status === 403) {
+    clearLocalStorage(JWT_TOKEN);
+    sessionStorage.removeItem('username');
+    Swal.fire('Session expired', 'Please sign in again.', 'warning').then(() => {
+      window.location.hash = '#/login';
+    });
+    return;
+  }
+
+  // Server responses can contain SQL or internal implementation details.
+  // Present a stable user-facing message instead of echoing them to the UI.
+  Swal.fire('Request failed', 'Unable to complete the request. Please try again.', 'error');
+  return;
+
+  /* Retained only temporarily below for source-history compatibility.
       Swal.fire('Kết nối mạng có vấn đề');
   }
   else
   {
       if(401 === error.response.status) {
         // redirect to login page
-        console.log("error ... error . ",error.response.request.response);
-        var jsonValue= JSON.parse(error.response.request.response);
           localStorage.removeItem(JWT_TOKEN);
           Swal.fire("Xin vui lòng đăng nhập lại !").then((value) => {
             localStorage.removeItem('username');
@@ -200,9 +218,8 @@ export const checkErrorRetun=(error)=>{
             dataAcess += "\r\n ||" +error.response.data.error.sqlMessage;
           }
       }
-      console.log("error ... error . ",error.response);
       Swal.fire( " Lỗi",dataAcess,"ok");
-  }
+  */
 }
 
 
