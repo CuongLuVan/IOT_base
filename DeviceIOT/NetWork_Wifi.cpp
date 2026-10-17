@@ -237,9 +237,7 @@ void NetWork_Wifi::loopAP(void){
 }
 
 void NetWork_Wifi::loopHostPost(void){
-    DEVICE_LOG_INFO("start NetWork_Wifi::loopHostPost");
     webServer->handleClient();
-    DEVICE_LOG_INFO("end NetWork_Wifi::loopHostPost");
 }
 
 bool NetWork_Wifi::checkModeHostPost(void){
@@ -624,5 +622,4 @@ void NetWork_Wifi::loopProvisioning(){
   }
   DEVICE_LOG_INFO("end NetWork_Wifi::loopProvisioning");
 }
-
 

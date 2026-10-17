@@ -58,11 +58,7 @@ void TaskDevice::readButton(void)
                     unsigned long pressDuration = millis() - pressStart;
                     if (pressDuration >= longPressTime) {
                         // long press (>= 3s) => toggle device_port
-                        if (control.device_port == 0) {
-                            control.device_port = 1;
-                        } else {
-                            control.device_port = 0;
-                        }
+                        control.device_port ^= SYSTEM_TASK_SCHEDULE_PORT_MASK;
                         control.count_info++;
                         Serial.printf("[TaskDevice] Long press toggle device_port -> %d\n", control.device_port);
                     }
@@ -76,14 +72,14 @@ void TaskDevice::readButton(void)
 }
 
 void TaskDevice::controlPump(void){
-    if((control.device_port|0x01) == 1) {
+    if((control.device_port & 0x01) != 0) {
         digitalWrite(OUTPUT_PUMP_PIN, HIGH); // Bật bơm
     } else {
         digitalWrite(OUTPUT_PUMP_PIN, LOW); // Tắt bơm
     }
 }
 void TaskDevice::controlDevice(void){
-     if((control.device_port|0x02) == 0x02) {
+     if((control.device_port & 0x02) != 0) {
         digitalWrite(OUTPUT_DEVICE_1_PIN, HIGH); // Bật thiết bị 1
     } else {
         digitalWrite(OUTPUT_DEVICE_1_PIN, LOW); // Tắt thiết bị 1
@@ -125,6 +121,15 @@ void TaskDevice::taskRun(void * parameter) {
                         control.device_port = cmd_to_device.commandValue;
                         cmd_to_device.reserved = 1; // Mark as processed
                         control.count_info++;
+                    } else if (cmd_to_device.commandType == COMMAND_TYPE_SCHEDULE_CONTROL &&
+                               cmd_to_device.reserved == COMMAND_RESERVED_CONTROL) {
+                        if (cmd_to_device.commandValue != 0) {
+                            control.device_port |= SYSTEM_TASK_SCHEDULE_PORT_MASK;
+                        } else {
+                            control.device_port &= ~SYSTEM_TASK_SCHEDULE_PORT_MASK;
+                        }
+                        cmd_to_device.reserved = COMMAND_RESERVED_NONE;
+                        control.count_info++;
                     }
                     
                     Serial.printf("[TaskDevice] Exec command type=%d value=%d\n", cmd_to_device.commandType, cmd_to_device.commandValue);
@@ -144,10 +149,19 @@ void TaskDevice::taskRun(void * parameter) {
                 String(cmd_to_device->commandType) + " value=" + 
                 String(cmd_to_device->commandValue) + " reserved=" + 
                 String(cmd_to_device->reserved)  );
-            if(cmd_to_device->commandType== COMMAND_TYPE_CONTROL&&cmd_to_device->reserved) {
+            if(cmd_to_device->commandType == COMMAND_TYPE_CONTROL && cmd_to_device->reserved) {
                 control.device_port = cmd_to_device->commandValue;
                 control.device_port_last = cmd_to_device->commandValue;
                 cmd_to_device->reserved = 0; // Mark as processed
+                control.count_info++;
+            } else if (cmd_to_device->commandType == COMMAND_TYPE_SCHEDULE_CONTROL &&
+                       cmd_to_device->reserved == COMMAND_RESERVED_CONTROL) {
+                if (cmd_to_device->commandValue != 0) {
+                    control.device_port |= SYSTEM_TASK_SCHEDULE_PORT_MASK;
+                } else {
+                    control.device_port &= ~SYSTEM_TASK_SCHEDULE_PORT_MASK;
+                }
+                cmd_to_device->reserved = COMMAND_RESERVED_NONE;
                 control.count_info++;
             }
         }       

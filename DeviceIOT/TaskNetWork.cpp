@@ -17,6 +17,10 @@
 #include "define_All.h"
 #include "DebugInfo.h"
 #include "MemoryData.h"
+#include "HighSpeedSampler.h"
+#include "SystemTask.h"
+#include <WiFi.h>
+#include <WiFiUdp.h>
 
 
 NetWork_Wifi netWork_Wifi;
@@ -62,9 +66,112 @@ QueueHandle_t deviceCommandQueue = NULL;
 #define BUTTON_VALUE_4           4
 #define BUTTON_VALUE_5           5
 #define LORA_BUFFER_SIZE         255
-#define MQTT_PAYLOAD_SIZE        512
+#define MQTT_PAYLOAD_SIZE        1024
 #define SENSOR_PAYLOAD_SIZE      256
 #define DEVICE_PAYLOAD_SIZE      256
+
+namespace {
+WiFiUDP highSpeedUdp;
+uint32_t networkDroppedSamples[4] = {0, 0, 0, 0};
+uint32_t networkDroppedSessionIds[4] = {0, 0, 0, 0};
+bool networkDroppedSessionValid[4] = {false, false, false, false};
+uint32_t networkSendFailures = 0;
+uint32_t lastNetworkErrorLogMs = 0;
+
+uint16_t packetSampleCount(const HighSpeedUdpPacket& packet) {
+  return (static_cast<uint16_t>(packet.bytes[20]) << 8) | packet.bytes[21];
+}
+
+void accountNetworkDrops(HighSpeedUdpPacket& packet) {
+  const uint8_t type = packet.bytes[3];
+  if (type >= (sizeof(networkDroppedSamples) / sizeof(networkDroppedSamples[0]))) {
+    return;
+  }
+
+  const uint32_t sessionId =
+      (static_cast<uint32_t>(packet.bytes[4]) << 24) |
+      (static_cast<uint32_t>(packet.bytes[5]) << 16) |
+      (static_cast<uint32_t>(packet.bytes[6]) << 8) |
+      static_cast<uint32_t>(packet.bytes[7]);
+  if (networkDroppedSessionValid[type] &&
+      networkDroppedSessionIds[type] != sessionId) {
+    networkDroppedSamples[type] = 0;
+    networkDroppedSessionValid[type] = false;
+  }
+
+  const uint32_t existing =
+      (static_cast<uint32_t>(packet.bytes[24]) << 24) |
+      (static_cast<uint32_t>(packet.bytes[25]) << 16) |
+      (static_cast<uint32_t>(packet.bytes[26]) << 8) |
+      static_cast<uint32_t>(packet.bytes[27]);
+  const uint32_t total = existing + networkDroppedSamples[type];
+  packet.bytes[24] = static_cast<uint8_t>(total >> 24);
+  packet.bytes[25] = static_cast<uint8_t>(total >> 16);
+  packet.bytes[26] = static_cast<uint8_t>(total >> 8);
+  packet.bytes[27] = static_cast<uint8_t>(total);
+  networkDroppedSamples[type] = 0;
+}
+
+void recordNetworkDrop(const HighSpeedUdpPacket& packet) {
+  const uint8_t type = packet.bytes[3];
+  if (type < (sizeof(networkDroppedSamples) / sizeof(networkDroppedSamples[0]))) {
+    const uint32_t sessionId =
+        (static_cast<uint32_t>(packet.bytes[4]) << 24) |
+        (static_cast<uint32_t>(packet.bytes[5]) << 16) |
+        (static_cast<uint32_t>(packet.bytes[6]) << 8) |
+        static_cast<uint32_t>(packet.bytes[7]);
+    if (!networkDroppedSessionValid[type] ||
+        networkDroppedSessionIds[type] != sessionId) {
+      networkDroppedSamples[type] = 0;
+      networkDroppedSessionIds[type] = sessionId;
+      networkDroppedSessionValid[type] = true;
+    }
+    const uint32_t packetReportedDrops =
+        (static_cast<uint32_t>(packet.bytes[24]) << 24) |
+        (static_cast<uint32_t>(packet.bytes[25]) << 16) |
+        (static_cast<uint32_t>(packet.bytes[26]) << 8) |
+        static_cast<uint32_t>(packet.bytes[27]);
+    networkDroppedSamples[type] += packetSampleCount(packet) + packetReportedDrops;
+    if (networkDroppedSamples[type] == 0) {
+        networkDroppedSessionValid[type] = false;
+    }
+  }
+  ++networkSendFailures;
+}
+
+void sendHighSpeedPackets() {
+  HighSpeedSampler& sampler = HighSpeedSampler::GetInstance();
+  HighSpeedUdpPacket packet;
+  for (size_t i = 0; i < HS_NETWORK_DRAIN_BATCH; ++i) {
+    if (!sampler.receivePacket(packet)) {
+      break;
+    }
+
+    bool sent = false;
+    if (WiFi.status() == WL_CONNECTED &&
+        highSpeedUdp.beginPacket(packet.targetIP, packet.targetPort)) {
+      accountNetworkDrops(packet);
+      const size_t written = highSpeedUdp.write(packet.bytes, packet.length);
+      const bool completed = highSpeedUdp.endPacket();
+      sent = written == packet.length && completed;
+    }
+
+    if (sent) {
+      SystemTask::recordUdpSent(static_cast<UdpPacketType>(packet.bytes[3]));
+    } else {
+      SystemTask::recordUdpFailure(
+          static_cast<UdpPacketType>(packet.bytes[3]), packetSampleCount(packet));
+      recordNetworkDrop(packet);
+      const uint32_t nowMs = millis();
+      if (nowMs - lastNetworkErrorLogMs >= 1000) {
+        lastNetworkErrorLogMs = nowMs;
+        DEVICE_LOG_INFO("[HighSpeed] UDP send failures=" +
+            String(networkSendFailures));
+      }
+    }
+  }
+}
+}
 
 
 unsigned char modeStatus = 0;
@@ -99,7 +206,7 @@ void setupUART(void){
 
 void updateStatusUART(void){
   uint8_t data[BUF_SIZE];
-  int len = uart_read_bytes(UART_NUM, data, BUF_SIZE, UART_READ_TIMEOUT_MS / portTICK_PERIOD_MS);
+  int len = uart_read_bytes(UART_NUM, data, sizeof(data) - 1, 0);
   if (len > 0) {
     data[len] = '\0';  // Null-terminate d? li?u nh?n du?c
     Serial.print("�� nh?n: ");
@@ -209,6 +316,9 @@ void TaskNetWork::setup(void){
     else{
         netWork_Wifi.setupHostPost();
         netWork_Wifi.startWebserverRoot();
+    }
+    if (!highSpeedUdp.begin(0)) {
+        DEVICE_LOG_INFO("[TaskNetWork] Failed to initialize high-speed UDP socket");
     }
     Serial.println("Setup done");
     DEVICE_LOG_INFO("end TaskNetWork::setup");
@@ -441,15 +551,14 @@ void sendMessageInfo(String data){
 
 
 void TaskNetWork::loopNetWork(void) {
-  DEVICE_LOG_INFO("start TaskNetWork::loopNetWork"+ String(modeStatus));
+  sendHighSpeedPackets();
   if(WIFI_START_CONNECT==modeStatus){
-      // check wifi netWor
-        DEVICE_LOG_INFO("check wifi netWork compaireTimeInfo(processTimeData.timeStart)"+ String(compaireTimeInfo(processTimeData.timeStart)));
-        DEVICE_LOG_INFO("check wifi netWork processTimeData.state"+ String(processTimeData.state));
-        
-        if(compaireTimeInfo(processTimeData.timeStart)>NETWORK_POLL_INTERVAL_MS){
+        static uint32_t lastNetworkPollMs = 0;
+        const uint32_t nowMs = millis();
+        if(!HighSpeedSampler::GetInstance().isSamplingActive() &&
+           nowMs - lastNetworkPollMs >= NETWORK_POLL_INTERVAL_MS){
           arrayNetworkFunction[processTimeData.state]();
-          processTimeData.timeStart = millis();
+          lastNetworkPollMs = nowMs;
         } 
         if(processTimeData.state==5){
           netWork_Wifi.handerClient();
@@ -522,24 +631,62 @@ void TaskNetWork::loopNetWork(void) {
     // Non-RTOS mode: use simple flags for latest data
    // MemoryData::GetInstance().sensorData_=(&dataSensor);
 #endif
-    DEVICE_LOG_INFO("end TaskNetWork::loopNetWork");
 }
 
 void TaskNetWork::taskRun(void * parameter) {
   //  DEVICE_LOG_INFO("start TaskNetWork::taskRun");
     #if SUPPORT_RTOS
-      Serial.print("Task2 is running on core ");
+      Serial.print("TaskNetwork is running on core ");
       Serial.println(xPortGetCoreID());
 
       for(;;) {
           loopNetWork();
-          getRTCInfo();
-          vTaskDelay(1000 / portTICK_PERIOD_MS);
+          static TickType_t lastRtcUpdate = xTaskGetTickCount();
+          const TickType_t now = xTaskGetTickCount();
+          if (now - lastRtcUpdate >= pdMS_TO_TICKS(1000)) {
+              getRTCInfo();
+              const bool wifi = WiFi.status() == WL_CONNECTED;
+              SystemTask::setNetworkState(
+                  wifi, netWork_Mqtt.checkStatusMqtt() != 0, wifi);
+              lastRtcUpdate = now;
+          }
+          static uint32_t lastSystemTelemetryMs = millis();
+          const uint32_t nowMs = millis();
+          if (nowMs - lastSystemTelemetryMs >=
+              SYSTEM_TASK_TELEMETRY_INTERVAL_MS) {
+              lastSystemTelemetryMs = nowMs;
+              if (netWork_Mqtt.checkStatusMqtt() != 0) {
+                  String telemetry = SystemTask::telemetryJson();
+                  char mqttBuffer[MQTT_PAYLOAD_SIZE];
+                  if (telemetry.length() > 0 &&
+                      telemetry.length() + 64 < sizeof(mqttBuffer)) {
+                      telemetry.toCharArray(mqttBuffer, sizeof(mqttBuffer));
+                      netWork_Mqtt.sendMessageInfo(mqttBuffer);
+                  } else if (telemetry.length() > 0) {
+                      DEVICE_LOG_INFO("[SystemTask] Telemetry payload exceeds MQTT buffer");
+                  }
+              }
+          }
+          vTaskDelay(1);
       }
     #else
       // In non-RTOS mode, this function is called from loop() and should not block.
       loopNetWork();
       getRTCInfo();
+      const bool wifi = WiFi.status() == WL_CONNECTED;
+      SystemTask::setNetworkState(wifi, netWork_Mqtt.checkStatusMqtt() != 0, wifi);
+      static uint32_t lastSystemTelemetryMs = 0;
+      const uint32_t nowMs = millis();
+      if (nowMs - lastSystemTelemetryMs >= SYSTEM_TASK_TELEMETRY_INTERVAL_MS &&
+          netWork_Mqtt.checkStatusMqtt() != 0) {
+          lastSystemTelemetryMs = nowMs;
+          const String telemetry = SystemTask::telemetryJson();
+          if (telemetry.length() > 0 && telemetry.length() + 64 < MQTT_PAYLOAD_SIZE) {
+              char mqttBuffer[MQTT_PAYLOAD_SIZE];
+              telemetry.toCharArray(mqttBuffer, sizeof(mqttBuffer));
+              netWork_Mqtt.sendMessageInfo(mqttBuffer);
+          }
+      }
     
     #endif
     //DEVICE_LOG_INFO("end TaskNetWork::taskRun");

@@ -1,6 +1,8 @@
 
 #include "TaskSensor.h"
 #include "MemoryData.h"
+#include "define_All.h"
+#include "HighSpeedSampler.h"
 
 #if SUPPORT_RTOS
 #include "freertos/FreeRTOS.h"
@@ -16,7 +18,6 @@
 #include "soc/uart_reg.h"
 #include "soc/uart_struct.h"
 #include "esp_task_wdt.h"
-#include "define_All.h"
 #include <DHT.h>
 #include "PMS.h"
 #include "Common.h"
@@ -44,6 +45,9 @@ void TaskSensor::setup(void){
     dataSensor.valueDust_PM1 =0;
 
     dataSensor.valueControl =0;
+    if (!HighSpeedSampler::GetInstance().setup()) {
+        DEVICE_LOG_INFO("[TaskSensor] High-speed sampler initialization failed");
+    }
     dht.begin();
     Serial1.begin(SENSOR_SERIAL_BAUD_RATE);   // GPIO1, GPIO3 (TX/RX pin on ESP-12E Development Board)
         //Configuro la porta Serial2 (tutti i parametri hanno anche un get per effettuare controlli)
@@ -125,51 +129,55 @@ void updateMemoryStatus(void){
 }
 
 void TaskSensor::taskRun(void * parameter) {
-    //DEVICE_LOG_INFO("start TaskSensor::taskRun");
-  
-    #if SUPPORT_RTOS
-        for(;;)
-        {
-            // Chu kỳ 1 giây / step: 0..3
+#if SUPPORT_RTOS
+    TickType_t lastSlowRead = xTaskGetTickCount();
+    TickType_t lastIdleYield = lastSlowRead;
+    for (;;) {
+        HighSpeedSampler& sampler = HighSpeedSampler::GetInstance();
+        if (sampler.processSensorTask()) {
+            const TickType_t now = xTaskGetTickCount();
+            if (now - lastIdleYield >= pdMS_TO_TICKS(1000)) {
+                lastIdleYield = now;
+                vTaskDelay(1);
+            }
+            continue;
+        }
+
+        const TickType_t now = xTaskGetTickCount();
+        if (now - lastSlowRead >= pdMS_TO_TICKS(SENSOR_TASK_INTERVAL_MS)) {
             if (sensorReadStep >= SENSOR_READ_STEP_COUNT) {
                 sensorReadStep = 0;
             }
             if (sensorDataMutex != NULL) {
-                if (xSemaphoreTake(sensorDataMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-                    readOps[sensorReadStep]();
-                    xSemaphoreGive(sensorDataMutex);
-                }
-            } else {
-                readOps[sensorReadStep]();
-            }
-
-            if (sensorDataQueue != NULL) {
-                // Luôn gửi bản ghi hiện tại mỗi lúc sau khi cập nhật ô cùng
-                xQueueSend(sensorDataQueue, &dataSensor, pdMS_TO_TICKS(SENSOR_QUEUE_SEND_DELAY_MS));
-            }
-            if (sensorDataMutex != NULL) {
-                // có thể dùng mutex nếu cần đọc dataSensor ở nơi khác, có thể for dữ liệu trên queue
                 if (xSemaphoreTake(sensorDataMutex, pdMS_TO_TICKS(SENSOR_MUTEX_WAIT_MS)) == pdTRUE) {
+                    readOps[sensorReadStep]();
                     MemoryData::GetInstance().sensorData_ = &dataSensor;
                     xSemaphoreGive(sensorDataMutex);
                 }
             } else {
+                readOps[sensorReadStep]();
                 MemoryData::GetInstance().sensorData_ = &dataSensor;
             }
-            vTaskDelay(SENSOR_TASK_INTERVAL_MS / portTICK_PERIOD_MS);
-            sensorReadStep++;
+
+            if (sensorDataQueue != NULL) {
+                xQueueSend(sensorDataQueue, &dataSensor, 0);
+            }
+            ++sensorReadStep;
+            lastSlowRead = now;
         }
-    #else
-        updateMemoryStatus();
-         // Chu kỳ 1 giây / step: 0..3
-        if (sensorReadStep >= 4) {
+
+        vTaskDelay(1);
+    }
+#else
+    HighSpeedSampler& sampler = HighSpeedSampler::GetInstance();
+    if (!sampler.processSensorTask()) {
+        if (sensorReadStep >= SENSOR_READ_STEP_COUNT) {
             sensorReadStep = 0;
         }
         readOps[sensorReadStep]();
-        
+        updateMemoryStatus();
+        ++sensorReadStep;
         delay(SENSOR_TASK_INTERVAL_MS);
-        sensorReadStep++;
-    #endif
-
-    
+    }
+#endif
 }
