@@ -38,6 +38,7 @@
             </ul>
         </div>
     </div>
+    <a class="tech-view-all" href="/document/head">Xem tất cả tài liệu <i class="fa fa-arrow-right" aria-hidden="true"></i></a>
 </section>
 
 <script type="text/javascript">
@@ -134,11 +135,11 @@
 
 */  
             if(dataJson!=false){
-                $("#tech_description1").html(infoValueDataTheNew(dataJson,0,9,1,5));
-                $("#tech_description2").html(infoValueDataTheNew(dataJson,0,9,5,9));
+                $("#tech_description1").html(infoValueDataTheNew(dataJson,0,9,1,9));
+                $("#tech_description2").empty();
                 $("#tech_description").html(infoValueDataTheNewFistCircum(dataJson,0,9));
-                $("#documnet_description1").html(infoValueDataTheNew(dataJson,20,29,1,5));
-                $("#documnet_description2").html(infoValueDataTheNew(dataJson,20,29,5,9));
+                $("#documnet_description1").html(infoValueDataTheNew(dataJson,20,29,1,9));
+                $("#documnet_description2").empty();
                 $("#documnet_description").html(infoValueDataTheNewFistCircum(dataJson,20,29));
             }
             
