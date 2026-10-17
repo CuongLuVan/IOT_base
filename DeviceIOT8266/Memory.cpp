@@ -142,6 +142,27 @@ char Memory::readChar(int address) {
     return validRange(address, 1) ? static_cast<char>(EEPROM.read(address)) : 0;
 }
 
+bool Memory::writeBytes(int address, const uint8_t* value, int length) {
+    if (value == nullptr || !validRange(address, length)) {
+        return false;
+    }
+    for (int index = 0; index < length; ++index) {
+        EEPROM.write(address + index, value[index]);
+    }
+    EEPROM.commit();
+    return true;
+}
+
+bool Memory::readBytes(int address, uint8_t* value, int length) {
+    if (value == nullptr || !validRange(address, length)) {
+        return false;
+    }
+    for (int index = 0; index < length; ++index) {
+        value[index] = EEPROM.read(address + index);
+    }
+    return true;
+}
+
 void Memory::saveWiFiCredentials(int ssidAddress, int passwordAddress,
                                  const char* ssid, const char* password) {
     writeString(ssidAddress, ssid);

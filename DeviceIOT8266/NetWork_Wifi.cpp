@@ -356,7 +356,8 @@ uint32_t NetWork_Wifi::getNetworkTimestamp() {
         return 0;
     }
     if (!ntpRequested) {
-        configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+        configTime(SYSTEM_TASK_TIMEZONE_OFFSET_SECONDS, 0,
+                   "pool.ntp.org", "time.nist.gov");
         ntpRequested = true;
     }
     const time_t now = time(nullptr);

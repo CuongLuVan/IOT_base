@@ -41,9 +41,19 @@
 
 #define COMMAND_TYPE_CONTROL 0x01
 #define COMMAND_TYPE_OTHER 0x02
+#define COMMAND_TYPE_SCHEDULE_CONTROL 0x03
 #define COMMAND_RESERVED_NONE 0x00
 #define COMMAND_RESERVED_CONTROL 0x01
 #define DEVICE_OUTPUT_MASK 0x01
+
+// Scheduler rules can only change the single pump output bit.
+#define SYSTEM_TASK_SCHEDULE_PORT_MASK 0x01
+#define SYSTEM_TASK_SCHEDULE_MAX_RULES 8
+#define SYSTEM_TASK_TIMEZONE_OFFSET_SECONDS 0
+#define SYSTEM_TASK_SCHEDULE_STORAGE_ADDRESS 700
+#if SYSTEM_TASK_SCHEDULE_PORT_MASK != 0x01
+  #error "Schedules must remain limited to the pump output bit (0x01)."
+#endif
 
 // FreeRTOS stack-depth values are intentionally conservative for ESP8266 RAM.
 #define TASK_STACK_SIZE 2048
@@ -120,7 +130,7 @@
 #define JSON_BUFFER_SIZE 512
 #define JSON_SMALL_BUFFER_SIZE 128
 #define MQTT_JSON_DOC_SIZE 512
-#define MQTT_COMMAND_DOC_SIZE 128
+#define MQTT_COMMAND_DOC_SIZE 256
 #define MQTT_PAYLOAD_SIZE 1024
 #define SENSOR_PAYLOAD_SIZE 256
 #define DEVICE_PAYLOAD_SIZE 256

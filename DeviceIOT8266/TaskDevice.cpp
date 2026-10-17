@@ -66,7 +66,7 @@ void TaskDevice::readButton() {
             control.button_click++;
             statusDirty = true;
             if (duration >= BUTTON_LONG_PRESS_MS) {
-                control.device_port ^= 0x01;
+                control.device_port ^= SYSTEM_TASK_SCHEDULE_PORT_MASK;
                 control.count_info++;
                 statusDirty = true;
             }
@@ -85,11 +85,23 @@ void TaskDevice::controlOutputs() {
 }
 
 void TaskDevice::applyCommand(const DeviceCommand& command) {
-    if (command.commandType != COMMAND_TYPE_CONTROL ||
-        command.reserved != COMMAND_RESERVED_CONTROL) {
+    if (command.reserved != COMMAND_RESERVED_CONTROL) {
         return;
     }
-    if (control.device_port != command.commandValue) {
+    if (command.commandType == COMMAND_TYPE_SCHEDULE_CONTROL) {
+        const uint8_t nextPort = command.commandValue != 0
+            ? static_cast<uint8_t>(control.device_port | SYSTEM_TASK_SCHEDULE_PORT_MASK)
+            : static_cast<uint8_t>(control.device_port & ~SYSTEM_TASK_SCHEDULE_PORT_MASK);
+        if (control.device_port == nextPort) {
+            return;
+        }
+        control.device_port = nextPort;
+        control.count_info++;
+        statusDirty = true;
+        return;
+    }
+    if (command.commandType == COMMAND_TYPE_CONTROL &&
+        control.device_port != command.commandValue) {
         control.device_port = command.commandValue & DEVICE_OUTPUT_MASK;
         control.count_info++;
         statusDirty = true;

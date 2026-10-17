@@ -36,6 +36,8 @@ public:
     String readLargeString(int address, int maxLength);
     void writeChar(int address, char value);
     char readChar(int address);
+    bool writeBytes(int address, const uint8_t* value, int length);
+    bool readBytes(int address, uint8_t* value, int length);
     void saveWiFiCredentials(int ssidAddress, int passwordAddress,
                              const char* ssid, const char* password);
     void getWiFiCredentials(int ssidAddress, int passwordAddress,

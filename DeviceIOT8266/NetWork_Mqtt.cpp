@@ -9,6 +9,7 @@
 #include "Memory.h"
 #include "MemoryData.h"
 #include "PlatformCompat.h"
+#include "SystemTask.h"
 
 #if MQTT_NO_TLS || ENABLE_TLS_SSL || ENABLE_mTLS
   #include <WiFiClientSecure.h>
@@ -59,7 +60,8 @@ bool ensureBrokerClockStarted() {
         return true;
     }
     if (!clockRequested && WiFi.status() == WL_CONNECTED) {
-        configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+        configTime(SYSTEM_TASK_TIMEZONE_OFFSET_SECONDS, 0,
+                   "pool.ntp.org", "time.nist.gov");
         clockRequested = true;
     }
     return false;
@@ -131,6 +133,88 @@ void sendCurrentStatus() {
     }
 }
 
+void sendScheduleReply(const char* event) {
+    const String payload = SystemTask::schedulerJson(event);
+    if (payload.length() > 0) {
+        (void)publishPayload(payload);
+    }
+}
+
+bool handleScheduleCommand(JsonDocument& document) {
+    const char* command = document["cmd"] | "";
+    if (strcmp(command, "schedule.status") == 0) {
+        sendScheduleReply("schedule.status");
+        return true;
+    }
+
+    const int slot = document["id"] | -1;
+    if (strcmp(command, "schedule.clear") == 0) {
+        sendScheduleReply(slot >= 0 && slot < SYSTEM_TASK_SCHEDULE_MAX_RULES &&
+                SystemTask::clearSchedule(static_cast<uint8_t>(slot))
+            ? "schedule.cleared" : "schedule.error");
+        return true;
+    }
+    if (strcmp(command, "schedule.set") != 0) {
+        return false;
+    }
+
+    // The schedule has no port/GPIO field: it is permanently bound to the pump.
+    if (document.containsKey("port") || slot < 0 ||
+        slot >= SYSTEM_TASK_SCHEDULE_MAX_RULES) {
+        sendScheduleReply("schedule.error");
+        return true;
+    }
+    const char* period = document["period"] | "";
+    const char* action = document["action"] | "";
+    const int hour = document["hour"] | -1;
+    const int minute = document["minute"] | -1;
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59 ||
+        (strcmp(action, "on") != 0 && strcmp(action, "off") != 0)) {
+        sendScheduleReply("schedule.error");
+        return true;
+    }
+
+    SystemControlSchedule rule = {};
+    rule.enabled = 1;
+    rule.hour = static_cast<uint8_t>(hour);
+    rule.minute = static_cast<uint8_t>(minute);
+    rule.turnOn = strcmp(action, "on") == 0 ? 1 : 0;
+    if (strcmp(period, "weekly") == 0) {
+        const int weekday = document["weekday"] | -1;
+        if (weekday < 0 || weekday > 6) {
+            sendScheduleReply("schedule.error");
+            return true;
+        }
+        rule.period = SYSTEM_SCHEDULE_WEEKLY;
+        rule.weekday = static_cast<uint8_t>(weekday);
+    } else if (strcmp(period, "monthly") == 0) {
+        const int day = document["day"] | -1;
+        if (day < 1 || day > 31) {
+            sendScheduleReply("schedule.error");
+            return true;
+        }
+        rule.period = SYSTEM_SCHEDULE_MONTHLY;
+        rule.day = static_cast<uint8_t>(day);
+    } else if (strcmp(period, "yearly") == 0) {
+        const int month = document["month"] | -1;
+        const int day = document["day"] | -1;
+        if (month < 1 || month > 12 || day < 1 || day > 31) {
+            sendScheduleReply("schedule.error");
+            return true;
+        }
+        rule.period = SYSTEM_SCHEDULE_YEARLY;
+        rule.month = static_cast<uint8_t>(month);
+        rule.day = static_cast<uint8_t>(day);
+    } else {
+        sendScheduleReply("schedule.error");
+        return true;
+    }
+
+    sendScheduleReply(SystemTask::configureSchedule(static_cast<uint8_t>(slot), rule)
+        ? "schedule.saved" : "schedule.error");
+    return true;
+}
+
 void mqttCallback(char* topic, byte* data, unsigned int length) {
     (void)topic;
     if (length == 0 || length >= MQTT_PAYLOAD_SIZE) {
@@ -141,6 +225,10 @@ void mqttCallback(char* topic, byte* data, unsigned int length) {
     StaticJsonDocument<MQTT_COMMAND_DOC_SIZE> document;
     if (deserializeJson(document, data, length)) {
         DEVICE_LOG_WARNING("[MQTT] Rejected invalid command JSON");
+        return;
+    }
+
+    if (handleScheduleCommand(document)) {
         return;
     }
 
