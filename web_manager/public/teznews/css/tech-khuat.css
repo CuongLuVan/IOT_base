@@ -70,7 +70,7 @@ a:hover { color: var(--tech-cyan); }
 .tech-news-page .spotlight-img .info-head-main-crop { height: 290px; }
 .tech-news-page .spotlight-thumbs { margin-top: 16px; }
 .tech-news-page .spotlight-item-thumb { min-height: 100%; padding: 0 0 15px; border: 1px solid var(--tech-line); border-radius: 10px; background: #fff; overflow: hidden; }
-.tech-news-page .spotlight-item-thumb-img { height: 150px; }
+.tech-news-page .spotlight-item-thumb-img { height: 250px; }
 .tech-news-page .spotlight-item-thumb h3, .tech-news-page .spotlight-item-thumb .meta-post { padding: 0 14px; }
 .tech-news-page .news-two-large { padding: 18px; }
 .tech-news-page .list-news-popular { margin-top: 14px; padding: 6px 16px; }

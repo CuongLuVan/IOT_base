@@ -31,25 +31,6 @@
     }
   });
 
-  document.addEventListener('click', function (event) {
-    if (!window.matchMedia('(min-width: 992px)').matches) return;
-    var link = event.target.closest('.tech-news-page .menu > ul > li > a');
-    if (!link) {
-      document.querySelectorAll('.tech-news-page .menu > ul > li.is-open').forEach(function (item) {
-        item.classList.remove('is-open');
-      });
-      return;
-    }
-    var item = link.parentElement;
-    if (!item.querySelector(':scope > .submenu')) return;
-    event.preventDefault();
-    event.stopPropagation();
-    document.querySelectorAll('.tech-news-page .menu > ul > li.is-open').forEach(function (other) {
-      if (other !== item) other.classList.remove('is-open');
-    });
-    item.classList.toggle('is-open');
-  });
-
   function enhanceCodeBlocks() {
     document.querySelectorAll('.post-detail pre').forEach(function (block) {
       if (block.dataset.copyReady) return;
