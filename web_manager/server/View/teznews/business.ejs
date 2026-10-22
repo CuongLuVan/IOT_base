@@ -116,22 +116,57 @@
             
         }
     
-    
         function selectItemPages(index){
+            
+           var infoData = {counter:false,start:index*10,end:index*10+10};
+            if(dataView==undefined||dataView.length<2){
+                var info_view =[];
+                for(var i =1;i<50;i++){
+                        info_view.push(i);
+                }
+                infoData = {data:info_view,counter:false,start:index*10,end:index*10+10};
+            }
+            else
+            {
+                infoData["data"] =dataView;
+            }
+
+            postInfoData('/api/document/document_info_data',infoData,(dataJson)=>{
+                if(dataJson.error==false){
+                    infoDataGroup=dataJson.data;
+                    $("#child_group_content").html(infoValueDataGroupTheNew(infoDataGroup));
+                    refehSelectPages(index);
+                }
+            });
+        }
+        function selectItemPages1(index){
             $("#child_group_content").html(infoValueDataGroupTheNew(infoDataGroup,index*10,index*10+9));
             refehSelectPages(index);
         }
         var dataView = '<%= detail %>';
         var routeGroup ='<%= route %>';
         $("#main_group_id").html(routeGroup);
+        var numberDataDocument = 10;
 
-        getInfoDataPublic('/api/document/document_detail/'+dataView,(dataJson)=>{
+        postInfoData('/api/document/document_info_data',{data:dataView,counter:true,start:0,end:10},(dataJson)=>{
+            if(dataJson.error==false){
+                numberDataDocument = dataJson.data[0].number_document;
+               // infoDataGroup=dataJson;
+              //  $("#child_group_content").html(infoValueDataGroupTheNew(dataJson,0,9));
+               refehSelectPages(0);
+                selectItemPages(0);
+            }
+        });
+
+
+
+        /*getInfoDataPublic('/api/document/document_detail/'+dataView,(dataJson)=>{
             if(dataJson!=false){
                 infoDataGroup=dataJson;
                 $("#child_group_content").html(infoValueDataGroupTheNew(dataJson,0,9));
                 refehSelectPages(0);
             }
-        });
+        }); */
     </script>
 <% include /layout/head/endhead.ejs %>
 

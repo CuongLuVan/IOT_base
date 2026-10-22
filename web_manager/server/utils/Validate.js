@@ -84,7 +84,7 @@ exports.getLanggue = function (req) {
     console.log(req.cookies["lang"]);
     let langgue = req.cookies["lang"];
     if(langgue==undefined) return 0;
-    let langgueDetail ={vi:0,en:2}
+    let langgueDetail ={vi:0,en:2,cn:3};
     if(langgueDetail[langgue]!=undefined) return langgueDetail[langgue];
     return 0;
 }

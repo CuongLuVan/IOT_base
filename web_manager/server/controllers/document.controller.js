@@ -396,6 +396,98 @@ documentCtrl.getAllContentLatestPage  = async function(req, res) {
                 returnOKCustom(res,await queryInfoSql(sql, [getLanggue(req), ...listArray]));
 }
 
+const DOCUMENT_PAGE_SIZE = 10;
+const MAX_DOCUMENT_PAGE_SIZE = 100;
+const MAX_DOCUMENT_OFFSET = 1000000;
+const MAX_DOCUMENT_GROUPS = 50;
+
+function parseDocumentGroupIds(value) {
+    const rawIds = Array.isArray(value)
+        ? value
+        : (typeof value === 'string' ? value.split(',') : []);
+
+    if (rawIds.length === 0 || rawIds.length > MAX_DOCUMENT_GROUPS) return null;
+
+    const groupIds = [];
+    const seen = new Set();
+    for (const rawId of rawIds) {
+        const normalizedId = typeof rawId === 'string' ? rawId.trim() : String(rawId);
+        if (!/^\d+$/.test(normalizedId)) return null;
+
+        const groupId = Number(normalizedId);
+        if (!Number.isSafeInteger(groupId) || groupId < 1) return null;
+        if (!seen.has(groupId)) {
+            seen.add(groupId);
+            groupIds.push(groupId);
+        }
+    }
+
+    return groupIds;
+}
+
+function parseDocumentPagination(body) {
+    const start = body.start === undefined ? 0 : Number(body.start);
+    if (!Number.isSafeInteger(start) || start < 0 || start > MAX_DOCUMENT_OFFSET) return null;
+
+    if (body.end === undefined || body.end === null || body.end === '') {
+        return { offset: start, limit: DOCUMENT_PAGE_SIZE };
+    }
+
+    const end = Number(body.end);
+    if (!Number.isSafeInteger(end) || end <= start) return null;
+
+    const limit = end - start;
+    if (limit > MAX_DOCUMENT_PAGE_SIZE) return null;
+    return { offset: start, limit: limit };
+}
+
+documentCtrl.getAllContentDocumentData  = async function(req, res) {
+    const body = req.body || {};
+    const groupIds = parseDocumentGroupIds(body.data);
+    const isCounterRequest = body.counter === true;
+
+    if (!groupIds || (body.counter !== undefined && typeof body.counter !== 'boolean')) {
+        return res.status(400).json({
+            error: { message: 'Invalid document query.' },
+            error_code: WarningInfo.VALIDATE_WORNG,
+            data: { message: 'BAD_REQUEST' }
+        });
+    }
+
+    const pagination = isCounterRequest ? null : parseDocumentPagination(body);
+    if (!isCounterRequest && !pagination) {
+        return res.status(400).json({
+            error: { message: 'Invalid pagination.' },
+            error_code: WarningInfo.VALIDATE_WORNG,
+            data: { message: 'BAD_REQUEST' }
+        });
+    }
+
+    const placeholders = groupIds.map(() => '?').join(', ');
+    const select = isCounterRequest
+        ? 'COUNT(gro_pages_content.pages_content_id) AS number_document'
+        : 'gro_pages_content.*';
+    let sql = `SELECT ${select} FROM gro_pages_content
+        WHERE gro_pages_content.deleteflag = 0
+          AND gro_pages_content.type_langue = ?
+          AND gro_pages_content.is_main_pages_id < 1
+          AND gro_pages_content.group_content_sub_id IN (${placeholders})`;
+    const params = [getLanggue(req), ...groupIds];
+
+    if (!isCounterRequest) {
+        sql += ' ORDER BY gro_pages_content.set_to_fist DESC, gro_pages_content.pages_content_id DESC LIMIT ? OFFSET ?';
+        params.push(pagination.limit, pagination.offset);
+    }
+
+    try {
+        const result = await knex.raw(sql, params);
+        return returnOKCustom(res, result[0] || []);
+    } catch (error) {
+        console.error('Unable to retrieve document content.', error);
+        return returnFalse(res, { message: 'Unable to retrieve document content.' }, WarningInfo.ERROR_SERVER);
+    }
+}
+
 documentCtrl.getAllContentStartPage  = async function(req,res) {
     var langgue = getLanggue(req);
     var sql=  "SELECT gro_pages_content.*,group_content_sub.group_content , n FROM ( SELECT @prev := '', @n := 0 ) init JOIN ( SELECT gro_pages_content.*, @n := if(group_content_sub_id != @prev, 1, @n + 1) AS n, @prev := group_content_sub_id FROM gro_pages_content WHERE gro_pages_content.deleteflag =0 AND gro_pages_content.type_langue= ? AND gro_pages_content.is_main_pages_id<1 ORDER BY group_content_sub_id,set_to_fist,pages_content_id DESC) gro_pages_content LEFT JOIN group_content_sub on group_content_sub.group_content_sub_id=gro_pages_content.group_content_sub_id WHERE n <= 2";
@@ -416,11 +508,14 @@ documentCtrl.getAllInfoHome = async function(req,res) {
 
 documentCtrl.getAllInGroupPage  = async function(req,res) {
     var is_main_pages_id = req.body['is_main_pages_id'];
-    var langgue = getLanggue(req);
-    var sqlraw = squel.select().from('gro_pages_content')
-        .where('deleteflag=0')
-        .where('type_langue = ?', langgue)
-        .where('is_main_pages_id = ? OR pages_content_id = ?', is_main_pages_id, is_main_pages_id);
+    var sqlraw = squel.select().from('gro_pages_content', 'g')
+                        .field('g.*')
+                        .field('COALESCE(u.username, c.username)', 'username_updated')
+                        .left_join('users', 'u', 'g.id_updated = u.users_id')
+                        .left_join('customer', 'c', 'g.id_updated = c.customer_id')
+                        .where('g.deleteflag = 0')
+                        .where('g.type_langue = ?', getLanggue(req))
+                        .where('(g.is_main_pages_id = ? OR g.pages_content_id = ?)', is_main_pages_id, is_main_pages_id);
     var p = sqlraw.toParam();
     var x= await knex.raw(p.text, p.values);
     var data=[];

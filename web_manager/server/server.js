@@ -17,7 +17,6 @@ if (process.env.APP_MODE === 'NEWS') {
   app.use('/', pagesRouterMarket);
 }
 app.use('/', oauthPages);
-
 app.get('/u', (req, res) => {
   res.send(JSON.stringify({ sample: false }));
 });
