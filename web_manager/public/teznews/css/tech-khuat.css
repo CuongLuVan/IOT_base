@@ -20,7 +20,7 @@ a:hover { color: var(--tech-cyan); }
 .tech-header { min-height: 94px; display: flex; align-items: center; justify-content: space-between; padding: 18px 2px; border-bottom: 1px solid var(--tech-line); }
 .tech-header .logo { display: flex; align-items: center; gap: 12px; margin: 0; }
 .tech-header .logo img { max-width: 130px; max-height: 54px; object-fit: contain; }
-.tech-header .logo::after { content: "TECH KHUẤT\A IoT · Embedded · Technical Library"; white-space: pre; color: var(--tech-navy); font: 700 17px/1.45 "Roboto Slab", Georgia, serif; letter-spacing: .02em; }
+.tech-header .logo::after { content: "TECH HUST\A IoT · Embedded · Technical Library"; white-space: pre; color: var(--tech-navy); font: 700 17px/1.45 "Roboto Slab", Georgia, serif; letter-spacing: .02em; }
 .tech-header .owl-special, .tech-header .text-right { display: none; }
 .tech-header::after { content: "Chia sẻ kiến thức IoT, lập trình nhúng và tài liệu kỹ thuật thực hành."; max-width: 390px; color: var(--tech-muted); font-size: 13px; text-align: right; }
 
