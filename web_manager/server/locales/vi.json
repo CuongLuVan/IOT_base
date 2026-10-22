@@ -39,9 +39,19 @@
 	"tool_design": "Công cụ thiết kế",
 	"tool_iot": "Công cụ IOT",
 	"intruduce": "Giới thiệu",
-
-	"bacl":"Nổi bật",
-	"infomaition":"Thông tin",
-	"content":"Nội dung"
-
+	"bacl": "Nổi bật",
+	"infomaition": "Thông tin",
+	"content": "Nội dung",
+	"curriculum": "curriculum",
+	"viewpoint": "viewpoint",
+	"langgueText": "langgueText",
+	"t_account": "t_account",
+	"t_register": "t_register",
+	"alert_logout": "alert_logout",
+	"info_account": "info_account",
+	"info_password": "info_password",
+	"info_alert_account": "info_alert_account",
+	"alert_check_account": "alert_check_account",
+	"json_menu_check": "json_menu_check",
+	"author_info": "author_info"
 }
