@@ -74,14 +74,14 @@
         function refehSelectPages(index){
             locationDataGroup=index;
             var sort =[-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1];
-            if(infoDataGroup.length<100){
-                for(var i=0;(i*10)<infoDataGroup.length;i++){
+            if(numberDataDocument<100){
+                for(var i=0;(i*10)<numberDataDocument;i++){
                     sort[i]=i;
                 }
             }
             else
             {
-                var endLocation = Math.floor(infoDataGroup.length/10);
+                var endLocation = Math.floor(numberDataDocument/10);
                 sort[5]=locationDataGroup;
                 for(var i=1;i<4;i++){
                     var cleft= locationDataGroup-i;
