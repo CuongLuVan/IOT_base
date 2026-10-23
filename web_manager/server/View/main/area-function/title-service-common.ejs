@@ -1,0 +1,115 @@
+<div class="detail-name-star border-bottom">
+    <h1 class="info-name" id="info_name_product"  ></h1>
+</div>
+<div class="mb-2 detail-price-method">
+    <div class="info-price">
+        <span class="info-price-discount" id="cost_value_calculator" ></span>
+        <span class="info-price-percent">
+                <del id="cost_value_delete"></del>
+        </span>
+    </div>
+
+    <div class="info-method border-bottom">
+        <div class="info-method-discount grid">
+            <span class="lh-2"><%= __('productPage') %>: </span>
+            <span id="value_product" style=" width: -webkit-fill-available;" ></span>
+        </div>
+        <div class="info-method-discount grid">
+            <span class="lh-2"><%= __('contactPage') %>: </span>
+            <span id="store_product_online" style=" width: -webkit-fill-available;" >Shopee</span>
+        </div>
+    </div>
+</div>
+
+
+<script type="text/javascript">  
+    var dataView = ('<%= detail %>').replaceAll('type=', '');
+    var dataInfo=null;
+    var numberSelect=0;
+    function onChangeCostService(value){ 
+               numberSelect=value;
+               $('#info_name_product').html(dataInfo[value].name);
+               $('#titlle_product').html(dataInfo[value].title);
+                $("#cost_value_delete").html("");
+                 $("#cost_value_promotion").html("");
+               if(dataInfo[value].cost<0){
+                    $("#cost_value_calculator").html("Giá : Liên hệ");
+                    $("#cost_value_delete").html("");
+                    $("#cost_value_promotion").html("");
+                    $("#store_product_location").html("");
+                    $("#cart_detiail_id_check").html("");
+                    
+                    
+                    
+               }
+               else
+               {
+                    $("#cost_value_calculator").html("Giá : " + setValueCost(dataInfo[value].cost,"VND") );
+                    
+               }
+              
+              
+               selectImageView(dataInfo[value]);
+           
+               for(var i=0;i<dataInfo.length;i++) $("#product_detail_cost"+i).attr('class', 'add_to_cart_button');
+
+            $("#product_detail_cost"+value).attr('class', 'cart_btn_select ');  
+    }
+
+    function gotoCheckInfoValueService(loadcofig){  
+        var infoProduct=``;
+        dataInfo = loadcofig;
+        setCarretImage(loadcofig);
+        for(var i=0;i<loadcofig.length;i++ ){
+            if(loadcofig[i].service_image!=null){
+                infoProduct +=`<button class="add_to_cart_button" id="product_detail_cost${i}"
+                                        onclick="onChangeCostService(${i})">  
+                                                <span class="tooltiptext">${loadcofig[i].service_content}</span>
+                                        ${loadcofig[i].name.length>10?
+                                        (loadcofig[i].name.substring(0, 10) +" ..")
+                                        :loadcofig[i].name}</button>`;    
+            }   
+        }
+        $('#value_product').html(infoProduct);
+        onChangeCostService(0);
+        getInfoServiceHtml(loadcofig[0]);      
+        getInfoHtml(('/api/customers/detail_shop?type='+loadcofig[0].company_id),(dataJson)=>{
+            if(dataJson==false) return; 
+                getShopOnline(dataJson.result);
+        });     
+    }
+
+
+
+    function clickNameInfoData(name,link){
+        var nameLink = link.length>50? link.substring(0,50) +" ..." :link;
+
+        Swal.fire({
+                      title: `<i>${name}</i>`, 
+                      html: `${nameLink} `,  
+                      allowOutsideClick: false,
+                      confirmButtonText: "<u>Truy cập</u>", 
+                      allowOutsideClick: false,
+                      showCloseButton: true
+                    }).then((result) => {
+                            /* Read more about isConfirmed, isDenied below */
+                            if (result.isConfirmed) {
+                                window.open(link,'_blank')
+                            } 
+                    });
+
+    }
+    
+    function getShopOnline(loadcofig){  
+        var value_promotion=` `;
+        for(var i=0;i<loadcofig.length;i++ ){  
+            value_promotion +=(`<button class="add_to_cart_button"`+
+                                ` onclick="clickNameInfoData('${loadcofig[i].name_shop}','${loadcofig[i].link}') "  >`
+                                    +loadcofig[i].name_shop+`</button>`);         
+        }
+        $('#store_product_online').html(value_promotion);             
+    }
+
+    
+    
+</script>

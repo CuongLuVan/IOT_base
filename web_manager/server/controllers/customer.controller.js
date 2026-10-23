@@ -914,6 +914,42 @@ customerCtrl.getInfoshortName  = async function(option,addLogic="",addLogicParam
   return x[0][0];
 }
 
+
+customerCtrl.getInfoshortNameAndDate = async function(option, lang = 0) {
+  var sql = `SELECT g1.*, COALESCE(u.username, c.username) AS username_updated
+             FROM gro_pages_content AS g1
+             LEFT JOIN users AS u ON g1.id_updated = u.users_id
+             LEFT JOIN customer AS c ON g1.id_updated = c.customer_id
+             WHERE g1.name_short = ? AND g1.deleteflag = 0 AND g1.type_langue = ?`;
+  var x = await knex.raw(sql, [option.name, lang]);
+  if ((x == null) || (x.length == 0) || (x[0] == null) || (x[0].length == 0)) {
+    sql = `SELECT g1.*, COALESCE(u.username, c.username) AS username_updated
+           FROM gro_pages_content AS g1
+           LEFT JOIN users AS u ON g1.id_updated = u.users_id
+           LEFT JOIN customer AS c ON g1.id_updated = c.customer_id
+           WHERE (
+             g1.detail_content_id IN (
+               SELECT g2.pages_content_id
+               FROM gro_pages_content AS g2
+               WHERE g2.name_short = ? AND g2.deleteflag = 0
+             )
+             OR g1.pages_content_id IN (
+               SELECT g3.detail_content_id
+               FROM gro_pages_content AS g3
+               WHERE g3.name_short = ? AND g3.deleteflag = 0
+             )
+           )
+           AND g1.deleteflag = 0 AND g1.type_langue = ?`;
+    x = await knex.raw(sql, [option.name, option.name, lang]);
+  }
+  if((x==null)||(x.length==0))  return -1;
+  if((x[0]==null)||(x[0].length==0))  return -1;
+  let data = x[0][0];
+  if(option.hasOwnProperty("colume")) return {data: data[option.colume],time:data["updated_at"], author: data["username_updated"] } ;
+  return x[0][0];
+}
+
+
 customerCtrl.getInfoOfCompany  = async function(req, res) {
   var sql=  ` SELECT company.*   FROM company Where 
                 company.company_id =  ? AND company.deleteflag =0`;
@@ -1130,8 +1166,12 @@ customerCtrl.setStatusProduct = async function(req, res) {
 }
 
 customerCtrl.getPageDetail = async function(req, res) {
-  let option ={name:req.body.data, type:"gro_pages_content",type_id:"name_short", colume:"filesave"};
-  var  id = await  customerCtrl.getInfoshortName(option,'AND gro_pages_content.type_langue= ?', [getLanggue(req)]);
+  var pageName = req.body && req.body.data;
+  if (typeof pageName !== "string" || pageName.trim().length === 0 || pageName.length > 255) {
+    return returnFalse(res, { message: "Invalid page name" }, WarningInfo.VALIDATE_WORNG);
+  }
+  let option = { name: pageName.trim(), colume: "filesave" };
+  var id = await customerCtrl.getInfoshortNameAndDate(option, getLanggue(req));
   return returnOK(res,id);
 }
 

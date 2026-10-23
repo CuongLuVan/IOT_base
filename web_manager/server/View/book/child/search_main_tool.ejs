@@ -1,0 +1,229 @@
+
+		<style>
+  .google-search-widget {
+    font-family: Arial, sans-serif;
+    width: 100%;
+    max-width: 500px;
+    margin: 0 auto;
+    position: relative;
+  }
+
+  .google-search-widget .search-box {
+    position: relative;
+    display: flex;
+  }
+
+  .google-search-widget .search-input {
+    flex: 1;
+    padding: 12px 20px;
+    font-size: 16px;
+    border: 1px solid #dfe1e5;
+    border-radius: 24px 0 0 24px;
+    box-shadow: 0 1px 6px rgba(32,33,36,.28);
+    outline: none;
+    border-right: none;
+  }
+
+  .google-search-widget .search-button {
+    padding: 0 16px;
+    font-size: 18px;
+    background: #f8f9fa;
+    border: 1px solid #dfe1e5;
+    border-left: none;
+    border-radius: 0 24px 24px 0;
+    cursor: pointer;
+    box-shadow: 0 1px 6px rgba(32,33,36,.28);
+  }
+
+  .google-search-widget .suggestions {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 1px solid #dfe1e5;
+    border-top: none;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 9999;
+    border-radius: 0 0 10px 10px;
+  }
+
+  .google-search-widget .suggestions div {
+    padding: 10px;
+    cursor: pointer;
+  }
+
+  .google-search-widget .suggestions div:hover {
+    background-color: #f1f1f1;
+  }
+</style>
+
+
+			<div class="container">
+				<div class="row">
+					<div class="col-md-12">
+						<div class="model-search-content">
+							<div class="google-search-widget">
+								<div class="search-box">
+									<input type="text" class="search-input" placeholder="Tìm kiếm...">
+									 <button class="search-button" > 🔍</button>
+									 <div class="suggestions"></div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+			<script>
+        function infoValueDataGroupTheNew(item){
+            var html="";
+            for(var i=0;i<item.length;i++){
+                var linkInfo='/'+item[i].filesave;
+                let itemInfo = item[i];
+                var thefist= "news-cate-item-first";
+                var stringInfo = itemInfo.content.length >260 ?itemInfo.content.substring(0, 260) + "...":itemInfo.content; 
+                var contentSub=getDetailContent(itemInfo.group_content_sub_id);
+				html = html +
+				`<div class="col-lg-3 col-md-4 col-sm-6" style="height:450px">
+							<div class="single-featured-cars">
+								<div class="featured-img-box">
+									<div class="featured-cars-img">
+										<img src="${itemInfo.content_img}" alt="cars">
+									</div>
+									
+								</div>
+								<div class="featured-cars-txt">
+									<h2><a href="${linkInfo}">${item[i].title}</a></h2>
+									<h3>${contentSub}</h3>
+									<p>
+										${item[i].content.length>150?item[i].content.slice(0, 150) + '...':item[i].content }
+									</p>
+								</div>
+							</div>
+						</div>`
+                        ;
+
+                
+            }
+            return html;
+        }
+    
+        var infoDataGroup=[];
+        var lengthDataPages = 1;
+        var locationDataGroup=0;
+        function refehSelectPagesTool(index){
+            locationDataGroup=index;
+            var sort =[-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1];
+            if(numberDataDocument<100){
+                for(var i=0;(i*10)<numberDataDocument;i++){
+                    sort[i]=i;
+                }
+            }
+            else
+            {
+                var endLocation = Math.floor(numberDataDocument/10);
+                sort[5]=locationDataGroup;
+                for(var i=1;i<4;i++){
+                    var cleft= locationDataGroup-i;
+                    var cright= locationDataGroup+i;
+                    if(cleft>0)  sort[5-i]=cleft;
+                    if(cleft<endLocation)  sort[5+i]=cright;
+                }
+                for(var i=0;i<9;i++){
+                    if((sort[i]==-1)&&(sort[i+1]>-1)){
+                        sort[i]=-2;
+                    }else if((sort[i]>-1)&&(sort[i+1]==-1)){
+                        sort[i]=-2;
+                    }
+                }
+            }
+            var html= `  <a onClick="selectItemPagesTool(0)"  >Prev</a>`;
+            if(locationDataGroup>0) html=`  <a onClick="selectItemPagesTool(`+(locationDataGroup-1)+`)"  >Prev</a>`;
+
+            for(var i=0;i<10;i++){
+                if(sort[i]!=-1){
+                    if(sort[i]==-2){
+                        html= html+ `  <a >...</a>`;
+                    }
+                    else if(sort[i]>-1){
+                        if(sort[i]==locationDataGroup)  html= html+ `  <a class="current" onClick="selectItemPagesTool(`+sort[i]+`)" >`+(sort[i]+1)+`</a>`;
+                            else  html= html+ `  <a onClick="selectItemPagesTool(`+sort[i]+`)" >`+(sort[i]+1)+`</a>`;
+                    }
+                }
+            }
+            html= html+ `  <a onClick="selectItemPagesTool(`+(locationDataGroup+1)+`)" >Next</a>`;
+            $("#location_padding_id").html(html);
+            
+        }
+    
+    
+        function selectItemPagesTool(index){
+            
+           var infoData = {counter:false,start:index*10,end:index*10+10};
+            if(dataView==undefined||dataView.length<2){
+                var info_view =[];
+                for(var i =1;i<50;i++){
+                        info_view.push(i);
+                }
+                infoData = {data:info_view,counter:false,start:index*10,end:index*10+10};
+            }
+            else
+            {
+                infoData["data"] =dataView;
+            }
+
+            postInfoData('/api/document/document_info_data',infoData,(dataJson)=>{
+                if(dataJson.error==false){
+                    infoDataGroup=dataJson.data;
+                    $("#child_group_content").html(infoValueDataGroupTheNew(infoDataGroup));
+                    refehSelectPagesTool(index);
+                }
+            });
+        }
+
+
+				function infoValueDataTheSearch(itemCurent){
+            var html="";
+            var item =itemCurent;
+            for(var i=0;i<item.length;i++){
+                var linkInfo=getInfoLinkSP(item[i]);
+                var contentSub=getDetailContent(item[i].group_content_sub_id);
+                var stringInfo = item[i].title.length >98 ?item[i].title.substring(0, 98) + "...":item[i].title; 
+                html = html +
+				`<div class="col-lg-3 col-md-4 col-sm-6" style="height:450px">
+							<div class="single-featured-cars">
+								<div class="featured-img-box">
+									<div class="featured-cars-img">
+										<img src="${item[i].content_img}" alt="cars">
+									</div>
+									
+								</div>
+								<div class="featured-cars-txt">
+									<h2><a href="${linkInfo}">${item[i].title}</a></h2>
+									<h3>${contentSub}</h3>
+									<p>
+										${item[i].content.length>150?item[i].content.slice(0, 150) + '...':item[i].content }
+									</p>
+								</div>
+							</div>
+						</div>`
+                        ;
+            }
+            return html;
+        }
+				const input = document.querySelector('.search-input');
+        const button = document.querySelector('.search-button');	
+				button.addEventListener('click', function() {
+          postInfoData('/api/document/search_content',{data:input.value.trim()},(dataJson)=>{
+                if(!dataJson.error){
+                    
+                    // $("#child_group_content").html(infoValueDataTheSearch(dataJson.data));
+                     infoDataGroup=dataJson.data;
+                    $("#child_group_content").html(infoValueDataGroupTheNew(dataJson.data));
+                    refehSelectPagesTool(0);
+                }
+          });
+
+				});
+			</script>

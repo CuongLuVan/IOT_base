@@ -14,6 +14,10 @@ const WarningInfo = require("../config/warningInfo.js");
 const { authLimiter } = require('../config/rateLimit.js');
 const authSessionCtrl = require('../controllers/authSession.controller.js');
 const authenticateMutile = require('../middlewares/authenticateMutile.js');
+const crypto = require('crypto');
+const knex = require('../config/knex.js');
+const passport = require('passport');
+const { isProviderEnabled } = require('../config/passport.js');
 
 
 
@@ -148,5 +152,76 @@ Customer.query().where({ customer_id: req.currentUser.users_id },)
 })
   
 
+
+function safeReturnUrl(value) {
+  if (typeof value !== 'string' || !/^\/(?!\/)/.test(value) || value.includes('\\')) return '/';
+  return value;
+}
+
+function rememberReturnUrl(req, res, next) {
+  req.session.returnUrl = safeReturnUrl(req.query.returnUrl);
+  next();
+}
+
+function requireSocialProvider(provider) {
+  return (req, res, next) => {
+    if (!isProviderEnabled(provider)) {
+      return res.status(503).json({ error: { message: provider + ' sign-in is not configured' }, error_code: WarningInfo.ERROR_SERVER });
+    }
+    return next();
+  };
+}
+
+function completeSocialLogin(req, res) {
+  if (!req.user) return res.redirect('/login-google?error=oauth-failed');
+  if (!req.user.password) return res.redirect('/set-password-authen');
+  return res.redirect(safeReturnUrl(req.session.returnUrl));
+}
+
+function validCsrfToken(expected, actual) {
+  if (typeof expected !== 'string' || typeof actual !== 'string') return false;
+  const expectedBuffer = Buffer.from(expected);
+  const actualBuffer = Buffer.from(actual);
+  return expectedBuffer.length === actualBuffer.length && crypto.timingSafeEqual(expectedBuffer, actualBuffer);
+}
+
+router.get('/google', authLimiter, rememberReturnUrl, requireSocialProvider('google'),
+  passport.authenticate('google', { scope: ['email', 'profile'], state: true })
+);
+router.get('/google/callback', authLimiter, requireSocialProvider('google'),
+  passport.authenticate('google', { failureRedirect: '/login-google?error=oauth-failed' }),
+  completeSocialLogin
+);
+router.get('/facebook', authLimiter, rememberReturnUrl, requireSocialProvider('facebook'),
+  passport.authenticate('facebook', { scope: ['email'], state: true })
+);
+router.get('/facebook/callback', authLimiter, requireSocialProvider('facebook'),
+  passport.authenticate('facebook', { failureRedirect: '/login-google?error=oauth-failed' }),
+  completeSocialLogin
+);
+
+router.post('/set-password', authLimiter, async (req, res) => {
+  if (!req.user) return returnNotAuthen(res, { error: 'Social sign-in is required' });
+  if (!validCsrfToken(req.session.socialPasswordCsrf, req.body && req.body.csrfToken)) {
+    return res.status(403).json({ error: { message: 'Invalid form token' }, error_code: WarningInfo.VALIDATE_WORNG });
+  }
+  const password = req.body && req.body.password;
+  if (typeof password !== 'string' || password.length < 8 || password.length > 128) {
+    return res.status(400).json({ error: { message: 'Password must be 8-128 characters' }, error_code: WarningInfo.VALIDATE_WORNG });
+  }
+  try {
+    const hash = await bcrypt.hash(password, 12);
+    await knex('customer').where('customer_id', req.user.customer_id).update({
+      password: hash,
+      id_updated: req.user.customer_id,
+      updated_at: knex.fn.now()
+    });
+    req.user.password = hash;
+    delete req.session.socialPasswordCsrf;
+    return res.redirect(safeReturnUrl(req.session.returnUrl));
+  } catch (error) {
+    return res.status(500).json({ error: { message: 'Unable to set password' }, error_code: WarningInfo.ERROR_SERVER });
+  }
+});
 
 module.exports =  router;

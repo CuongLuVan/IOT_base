@@ -19,6 +19,7 @@ import { fillterDataInfo ,fillterDataSearch } from '../../utils/commonUtil.js';
 import Pagination from '../pagination/index.js';
 
 import {ActionControl} from '../../utils/commonUtil';
+import { MODE_PAPER_LIBRARRY } from '../../config/config.js';
 
 
 
@@ -47,19 +48,24 @@ class TableDataViewPages extends Component {
             location:0
         }
     }
+    getPageFilter = () => {
+        const dataFind = {is_main_pages_id:[-1,0],type_langue:0};
+        if (MODE_PAPER_LIBRARRY) dataFind.detail_content_id = 0;
+        return dataFind;
+    }
     componentDidMount(){
         const columns = exportColumeData(this.state.table,this.callBackEdit);
         const lstInfoFind = getLstInfoToSearch(this.state.table);
         this.setState({columns: columns,lstInfoFind:lstInfoFind,hiddenfind:true });
         ManagerData.initdialogueCustomization(this.state.table);
-        ManagerData.getLstDataPromise(this.state.table,{dataFind: {is_main_pages_id:[-1,0],type_langue:0},startPage:0,endPage:10}) 
+        ManagerData.getLstDataPromise(this.state.table,{dataFind: this.getPageFilter(),startPage:0,endPage:10})
         .then((data)=>{
             setTimeout(()=>{
                 this.setState({ data:data,columns: columns,lstInfoFind:lstInfoFind ,hiddenfind:false  });
             },200);
         });
         var numberData =1;
-        ManagerData.getNumberDataTableDetail(this.state.table,{dataFind: {is_main_pages_id:[-1,0],type_langue:0}})
+        ManagerData.getNumberDataTableDetail(this.state.table,{dataFind: this.getPageFilter()})
         .then((data)=>{
             numberData = numberData + ManagerData.lstData[this.state.table]['numberPage'];
             var listArray = [];
@@ -74,7 +80,7 @@ class TableDataViewPages extends Component {
 
     handleSelectPages = (location) => {
         ManagerData.getLstDataPromise(this.state.table,{dataFind: 
-            {is_main_pages_id:[-1,0],type_langue:0},startPage:location*10,endPage:10}) 
+            this.getPageFilter(),startPage:location*10,endPage:10})
         .then((data)=>{
             setTimeout(()=>{
                 this.setState({ data:data,location:location});

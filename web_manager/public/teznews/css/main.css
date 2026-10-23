@@ -1719,7 +1719,7 @@ ul, li {/*
 }
 
 .info-head-thump-crop{
-  max-height: 150px;
+  max-height: 250px;
   background-position: center center;
   background-repeat: no-repeat;
   overflow: hidden;

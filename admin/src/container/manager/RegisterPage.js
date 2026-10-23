@@ -48,10 +48,11 @@ class RegisterPage extends Component {
                 type_langue:this.props.data.type_langue ,
                 detail_content_id:this.props.data.detail_content_id ,
                 image_head:this.props.data.content_img ,
-                title:this.props.data.title ,
+                title:this.props.data.title || '',
                 content:this.props.data.content ,
                 is_main:this.props.data.is_main_pages_id ,
-                content_html:this.props.content 
+                content_html:this.props.content,
+                old_title:this.props.data.title || ''
             };
         }
         else
@@ -64,10 +65,11 @@ class RegisterPage extends Component {
                     type_langue:this.props.data.type_langue ,
                     detail_content_id:this.props.data.detail_content_id ,
                     image_head:this.props.data.content_img ,
-                    title:this.props.data.title ,
+                    title:this.props.data.title || '',
                     content:this.props.data.content ,
                     is_main:this.props.data.is_main_pages_id ,
-                    content_html:this.props.content 
+                    content_html:this.props.content,
+                    old_title:this.props.data.title || ''
                 };
             }
             else
@@ -82,7 +84,8 @@ class RegisterPage extends Component {
                     title:"",
                     content:"",
                     is_main:0,
-                    content_html:"<p>a</p>"
+                    content_html:"<p>a</p>",
+                    old_title:""
                 }
             }
             
@@ -136,6 +139,11 @@ class RegisterPage extends Component {
         formData.content_html= this.state.content_html;
         formData.pages_content_id= this.state.pages_content_id;
         formData.is_postPages=true;
+        formData.old_title = this.props.data && this.props.data.title ? this.props.data.title : '';
+        if(this.state.content_html.length < 4 || this.state.title.trim().length < 4) {
+            Swal.fire('Kiểm tra lại nội dung bài viết');
+            return;
+        }
         if(this.props.is_update)
         {
             updatePageToWriter(formData).then((response)=>{
@@ -217,7 +225,7 @@ class RegisterPage extends Component {
                         <SelectLanggue
                                 style={{width:120}}
                                 typePermision={this.state.type_langue}
-                                onChange={(event) => {  this.setState({ title:event.target.type_langue}); }}
+                                onChange={(event) => { this.setState({ type_langue:event.target.value }); }}
                             />
                         
                     </div>

@@ -6,14 +6,10 @@ import { JWT_TOKEN } from '../config/config';
 export let isTokenExpired = (token) => {
   try {
     const decoded = jwtDecode(token);
-    if (decoded.exp < Date.now() / 1000) {
-      // Checking if token is expired.
-      return true;
-    }
-
-    return false;
+    // A malformed token or one without an expiry must not pass the UI guard.
+    return typeof decoded.exp !== 'number' || decoded.exp <= Date.now() / 1000;
   } catch (e) {
-    return false;
+    return true;
   }
 };
 

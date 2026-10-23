@@ -1,0 +1,162 @@
+<!doctype html>
+<html class="no-js" lang="en">
+     <% include ./head.ejs %>
+    
+	
+	<body>
+		<!--[if lte IE 9]>
+            <p class="browserupgrade">You are using an <strong>outdated</strong> browser. Please <a href="https://browsehappy.com/">upgrade your browser</a> to improve your experience and security.</p>
+        <![endif]-->
+	
+		<!--welcome-hero start -->
+		<section id="home" class="welcome-hero">
+			<!-- top-area Start -->
+			<div class="top-area">
+				<div class="header-area">
+					<!-- Start Navigation -->
+				    <nav class="navbar navbar-default bootsnav  navbar-sticky navbar-scrollspy"  data-minus-value-desktop="70" data-minus-value-mobile="55" data-speed="1000">
+						 <% include ./menu.ejs %>
+				    </nav><!--/nav-->
+				    <!-- End Navigation -->
+				</div><!--/.header-area-->
+			    <div class="clearfix"></div>
+			</div><!-- /.top-area-->
+			<!-- top-area End -->
+
+		</section><!--/.welcome-hero-->
+		<% include ./child/fist_ads.ejs %>
+		<!--welcome-hero end -->
+		<!--featured-cars start -->
+		<section id="featured-cars" class="featured-cars">
+			<div class="container">
+				<div class="featured-cars-content">
+					<div class="row">
+						<!--colleft-->
+							<div class="col-md-9 col-sm-12">
+								<!--post-detail-->
+								<style>
+									#htmlToView,
+									#htmlToView *:not(style):not(link):not(script) {
+										all: revert;
+										font-family: initial;
+										max-width: 100%;
+    									box-sizing: border-box;
+									}
+
+									
+
+								</style>
+								<article class="post-detail" > 
+									<div id="time_description" class="info-time-description"> 
+										
+									</div>
+									
+								</article>
+								<article class="post-detail" id="htmlToView">
+									
+
+								</article>
+
+								<article class="post-detail" > 
+									<div id="author_description" class="info-time-description"> 
+									</div>
+									
+								</article>
+								
+							<!-- include /layout/compoment/tip/nearRealease.ejs
+								include /layout/compoment/tip/comment.ejs -->
+							</div>
+
+							<!--colright-->
+							<div class="col-md-3 col-sm-12">
+								<!--tab popular-->
+								<ul role="tablist" class="tab-popular set-nomal-font">
+									<li class="active">
+										<a href="#tab1" role="tab" data-toggle="tab">
+											Nội dung bài viết
+										</a>
+									</li>
+								</ul>
+								<div class="tab-content set-nomal-font" style="font-size: 12px;">
+									<div role="tabpanel" class="tab-pane active" id="tab1">
+										<ul class="list-news-popular" id="tool_description1">
+										</ul>
+									</div>
+									
+							</div>
+
+
+
+						</div>
+					</div>
+				</div>
+			</div><!--/.container-->
+
+		</section><!--/.featured-cars-->
+
+		
+		<script type="text/javascript">
+    var dataView = '<%= detail %>';
+    var linkAcess = "";
+    var linkAcessDetail = '/api/document/group_page';
+    var onselectIndex = 0;
+    function getContentHtml(linkData){
+      getInfoHtml(linkData,(data)=>{
+            if(data==false) return; 
+            $('#htmlToView').html(data); //.replaceAll("</p>","<br/>").replaceAll("<p>","<br/>")
+            $('html, body').animate({ scrollTop: 0 }, 'fast');
+      });
+    }
+
+    var dataViewLstLink=[];
+    function infoGroupPagesToShow(item){
+        var html="";
+       
+        for(var i=0;i<item.length;i++){
+            var linkInfo=getInfoLink(item[i],"/detail/");
+            
+            if(i==onselectIndex){
+                //loadDataPage(i);
+                html=  html+    `
+                                <div style="color: blueviolet;margin-left: 20px;" onclick="loadDataPage(`+i+`)"><label>`+item[i].title+`</label></div>
+                            `;
+            } 
+            else
+            {
+                html=  html+    `
+                                <div style="color: #406ee4;margin-left: 20px;" onclick="loadDataPage(`+i+`)"><label>`+item[i].title+`</label></div>
+                            `;
+            }
+        }
+        return html;
+    }
+
+    function loadDataPage(int){
+        onselectIndex=int;
+		let valueData = dataViewLstLink[int];
+		if(valueData.updated_at)
+            $('#time_description').html(formatFullDateTimeLocal(valueData.updated_at)); 
+        if(valueData.username_updated)
+            $('#author_description').html(author_text+ valueData.username_updated); 
+		getContentHtml("/"+ valueData.filesave);
+		var curentHtml = infoGroupPagesToShow(dataViewLstLink);
+			$("#tool_description1").html(curentHtml);
+    }
+    postInfoData(linkAcessDetail,{is_main_pages_id:dataView},(dataJson)=>{
+        if(!dataJson.error){
+            dataViewLstLink= dataJson.data;
+            loadDataPage(0);
+        }
+        
+    });
+
+  </script>
+		<!--blog start -->
+		<section id="blog" class="blog"></section><!--/.blog-->
+		<!--blog end -->
+
+		<% include ./footer.ejs %>
+        
+    </body>
+	
+</html>

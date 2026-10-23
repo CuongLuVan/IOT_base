@@ -3,7 +3,6 @@ const knex = require('../../config/knex.js');
 const CommonModel= require('../middlewareDatabase/CommonModel.js');
 var squel = require("squel");
 const CustomerAcess= require('../middlewareDatabase/CustomerAcess.js');
-const  {getRamdomData}  = require('../../utils/utilsString.js');
 const {returnNotAuthen,returnOKCustom } = require('../../utils/returnResponse.js');
 const WarningInfo = require("../../config/warningInfo.js");
 const { createAccessSession, createRefreshSession } = require('../../services/authToken.service.js');
@@ -20,40 +19,32 @@ class oAuthen2Customer extends CommonModel {
   /**
    * Table has timestamps.
    */
-    checkInvalUserExistingTocken(tocken){
-        var authen = squel.select().from("oauthen2customer")
-                        .where("tocken = ?", tocken)
-                        .where("deleteflag = 0")
-                        .where("time_relase > NOW()");
-        return new Promise( ( resolve, reject ) => {
-            var p = authen.toParam();
-            knex.raw(p.text, p.values).then(function(result) {
-                resolve( result[0] );
-            }).catch(function(err){
-                return reject(err);
-            } )
-        } );
-    }
-
     async responseLogin(res,user){
-/*
         try {
-            const permission_id = user.permission_id;
-            const current_id = user.customer_id;
+            const permissionId = Number(user.permission_id);
+            const userId = Number(user.customer_id);
+            if (!Number.isSafeInteger(permissionId) || !Number.isSafeInteger(userId)) {
+                return returnNotAuthen(res, { success: false, message: 'Unable to create session.' }, WarningInfo.EXPRIED_LOGIN);
+            }
+
             let valueManifest = '';
-            if (permission_id === 2) {
+            if (permissionId === 2) {
                 const companies = await knex('company')
                     .select('company_id')
-                    .where({ id_created: current_id, deleteflag: 0 });
-                valueManifest = companies.map((company) => company.company_id).join(',');
+                    .where({ id_created: userId, deleteflag: 0 });
+                valueManifest = companies
+                    .map((company) => company.company_id)
+                    .filter((id, index, values) => Number.isSafeInteger(Number(id)) && values.indexOf(id) === index)
+                    .join(',');
             }
+
             const session = await knex.transaction(async (trx) => {
                 const access = await createAccessSession({
-                    tokenType: 'customer', userId: current_id, permissionId: permission_id,
+                    tokenType: 'customer', userId, permissionId,
                     valueManifest
                 }, trx);
                 const refresh = await createRefreshSession({
-                    tokenType: 'customer', userId: current_id, permissionId: permission_id,
+                    tokenType: 'customer', userId, permissionId,
                     valueManifest, sessionId: access.sessionId
                 }, trx);
                 return { access, refresh };
@@ -67,47 +58,8 @@ class oAuthen2Customer extends CommonModel {
                 email: user.email,
                 avatar: user.avatar
             });
-        } catch (ie) {
-*/
-        try
-        {
-            var dataTocken= getRamdomData(256);
-            var permission_id=user.permission_id;
-            var current_id=user.customer_id;
-            var listDataContain="";
-            var authen2 = squel.insert().into("oauthen2customer")
-                    .set("permission_id",permission_id)
-                    .set("customeid",current_id)
-                    .set("tocken",dataTocken)
-                    .set("id_updated",current_id)
-                    .set("id_created",current_id)
-                    .set("deleteflag",0)
-                    .set("created_at",'NOW()',{dontQuote: true})
-                    .set("updated_at",'NOW()',{dontQuote: true})
-                    .set("deleteflag",0)
-                    .set("time_relase",'NOW() + INTERVAL 7 DAY',{dontQuote: true});
-    
-            if(user.permission_id==2){
-                var dataCompany = squel.select().from("company")
-                .where("id_created = ?", current_id)
-                .where("deleteflag = 0");
-                var p = dataCompany.toParam();
-                var infoCompany = await knex.raw(p.text, p.values);
-                if ((infoCompany!=null)&&(infoCompany.length>0)) {
-                    for(var i=0;i<infoCompany[0].length;i++)
-                    {
-                        listDataContain+=infoCompany[0][i].company_id;
-                        if(i!==(infoCompany[0].length-1))  listDataContain+=",";
-                    }
-                }  
-            }
-            authen2.set("value_manifest",listDataContain);
-            var p = authen2.toParam();
-            var x = await knex.raw(p.text, p.values);
-            return returnOKCustom(res,{success: true,token:dataTocken,email: user.email,avatar:user.avatar});
-        }
-        catch(ie){
-            return returnNotAuthen(res,ie,WarningInfo.EXPRIED_LOGIN);
+        } catch (error) {
+            return returnNotAuthen(res, { success: false, message: 'Unable to create session.' }, WarningInfo.EXPRIED_LOGIN);
         }
     }
 
@@ -139,17 +91,7 @@ class oAuthen2Customer extends CommonModel {
        // return 'SELECT oauthen2customer.*, db.username As namecreate ,dc.username As nameupdate ,dg.content as contentauthen,dn.username as userauthen FROM oauthen2 LEFT JOIN users db ON db.users_id=oauthen2.id_created LEFT JOIN users dc ON dc.users_id=oauthen2.id_updated LEFT JOIN permission dg ON dg.permission_id=oauthen2.permission_id LEFT JOIN users dn ON dn.users_id=oauthen2.userid';
     }
 
-    getTockenHeader(req){
-        const authorizationHeader = req.headers['authorization'];
-        let token;
-        var newUser =true;
-        if (authorizationHeader) {
-            token = authorizationHeader.split(' ')[1];
-            newUser=false;
-        }
-        return {newUser:newUser,token:token};
-    }
-    checkInvalUserExistingTocken=(tocken)=>{
+    checkInvalUserExistingTocken(tocken){
         var authen = squel.select().from("oauthen2customer")
                         .where("tocken = ?", tocken)
                         .where("deleteflag = 0")
@@ -162,19 +104,6 @@ class oAuthen2Customer extends CommonModel {
                 return reject(err);
             } )
         });
-    }
-
-    async checkUserInval(tocken){
-            var authen = squel.select().from("oauthen2customer")
-                        .where("tocken = ?", tocken)
-                        .where("deleteflag = 0")
-                        .where("time_relase > NOW()");
-            var p = authen.toParam();
-            var infoUser= await knex.raw(p.text, p.values);
-            if ((infoUser!=null)&&(infoUser.length>0)) {
-                return infoUser[0];
-            }
-            return false;
     }
     
     

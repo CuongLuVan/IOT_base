@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tạo MQTT certificate</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0f1923;--card:#16222e;--panel:#101b26;--border:#263746;--text:#dbe7f1;--muted:#8aa2b8;--accent:#00d4aa;--danger:#ff6b81;--ok:#45d483}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 "Segoe UI",Arial,sans-serif}
+    header{padding:15px max(20px,calc((100% - 960px)/2));background:#0b131c;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px}
+    h1{font-size:20px;margin:0}
+    main{max-width:960px;margin:28px auto;padding:0 18px}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:18px;overflow:hidden}
+    .title{background:var(--panel);padding:12px 18px;border-bottom:1px solid var(--border);font-weight:650}
+    .body{padding:20px}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+    .full{grid-column:1/-1}
+    label{display:block;color:var(--muted);font-size:13px;margin-bottom:6px}
+    input,textarea{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:7px;background:#0c151e;color:var(--text);font:inherit}
+    input:focus,textarea:focus{outline:2px solid #00d4aa55;border-color:var(--accent)}
+    small,.hint{color:var(--muted);font-size:12px}
+    .actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+    button,.link{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:7px;padding:9px 15px;background:var(--accent);color:#06231c;font:600 14px "Segoe UI",Arial,sans-serif;text-decoration:none;cursor:pointer}
+    button:disabled{opacity:.6;cursor:wait}
+    .link{background:transparent;border:1px solid var(--border);color:var(--text)}
+    #notice{display:none;padding:12px 14px;border-radius:7px;margin-top:16px;background:#152c24;color:var(--ok);white-space:pre-wrap;overflow-wrap:anywhere}
+    #notice.error{background:#351b25;color:var(--danger)}
+    #result{display:none}
+    .result-item{margin-top:14px}
+    textarea{min-height:130px;resize:vertical;font:12px/1.45 Consolas,monospace}
+    .warning{padding:12px;border:1px solid #75572a;border-radius:7px;color:#ffd68a;background:#2c2518;margin-bottom:16px}
+    @media(max-width:650px){.grid{grid-template-columns:1fr}.full{grid-column:auto}header{padding:14px 18px}}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Tạo MQTT client &amp; certificate</h1>
+    <a class="link" href="/mqtt">MQTT Control Panel</a>
+  </header>
+  <main>
+    <section class="card">
+      <div class="title">Thông tin client</div>
+      <div class="body">
+        <div class="warning">Trang này tạo private key mới và lưu thông tin MQTT vào hệ thống. Hãy lưu private key an toàn; không chia sẻ hoặc gửi qua kênh không bảo mật. Sau khi tạo, cần khởi động lại broker để nạp cấu hình.</div>
+        <form id="createForm">
+          <div class="grid">
+            <div><label for="mqtt_id">MQTT Client ID</label><input id="mqtt_id" name="mqtt_id" maxlength="40" pattern="[A-Za-z0-9_.-]{1,40}" required autocomplete="off"><small>1–40 ký tự: chữ, số, dấu chấm, gạch dưới hoặc gạch ngang.</small></div>
+            <div><label for="content">Tên / mô tả</label><input id="content" name="content" maxlength="40" required></div>
+            <div><label for="mqtt_user">MQTT username</label><input id="mqtt_user" name="mqtt_user" maxlength="40" required autocomplete="username"></div>
+            <div><label for="mqtt_pass">MQTT password</label><input id="mqtt_pass" name="mqtt_pass" type="password" maxlength="40" required autocomplete="new-password"></div>
+            <div><label for="mqtt_pub">Topic được publish</label><input id="mqtt_pub" name="mqtt_pub" maxlength="40" placeholder="devices/device1/data"></div>
+            <div><label for="mqtt_sub">Topic được subscribe</label><input id="mqtt_sub" name="mqtt_sub" maxlength="40" placeholder="devices/device1/commands/#"></div>
+          </div>
+          <div class="actions">
+            <button id="submitBtn" type="submit">Tạo và lưu certificate</button>
+            <a class="link" href="/mqtt/certificate/get">Lấy certificate đã tạo</a>
+          </div>
+        </form>
+        <div id="notice" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+    <section class="card" id="result">
+      <div class="title">Thông tin certificate mới</div>
+      <div class="body">
+        <p class="hint">Lưu certificate, private key và message authentication key ở nơi an toàn. Private key chỉ hiển thị trong phiên trình duyệt này.</p>
+        <div class="result-item"><label>MQTT Client ID</label><input id="resultId" readonly></div>
+        <div class="result-item"><label>SHA-256 fingerprint</label><input id="fingerprint" readonly></div>
+        <div class="result-item"><label>Message authentication key (HMAC)</label><textarea id="messageKey" readonly></textarea></div>
+        <div class="result-item"><label>Client certificate (PEM)</label><textarea id="certificate" readonly></textarea></div>
+        <div class="result-item"><label>Private key (PEM)</label><textarea id="privateKey" readonly></textarea></div>
+        <div class="actions"><button type="button" class="copy" data-target="certificate">Sao chép certificate</button><button type="button" class="copy" data-target="privateKey">Sao chép private key</button><button type="button" class="copy" data-target="messageKey">Sao chép HMAC key</button></div>
+      </div>
+    </section>
+  </main>
+  <script>
+    const form = document.getElementById('createForm');
+    const notice = document.getElementById('notice');
+    const submitBtn = document.getElementById('submitBtn');
+
+    function authToken() {
+      return localStorage.getItem('token');
+    }
+
+    function showNotice(message, isError) {
+      notice.textContent = message;
+      notice.className = isError ? 'error' : '';
+      notice.style.display = 'block';
+    }
+
+    form.addEventListener('submit', async function(event) {
+      event.preventDefault();
+      const token = authToken();
+      if (!token) {
+        showNotice('Không tìm thấy token đăng nhập trong localStorage (key: token). Vui lòng đăng nhập lại.', true);
+        return;
+      }
+      submitBtn.disabled = true;
+      document.getElementById('result').style.display = 'none';
+      notice.style.display = 'none';
+      try {
+        const payload = Object.fromEntries(new FormData(form).entries());
+        const response = await fetch('/api/document/saveCertificateMqtt', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token},
+          body: JSON.stringify(payload)
+        });
+        const data = await response.json().catch(function() { return {}; });
+        if (!response.ok) {
+          const errorMessage = typeof data.error === 'string' ? data.error :
+            data.error && (data.error.message || data.error.error);
+          throw new Error(errorMessage || data.message || 'Yêu cầu thất bại (HTTP ' + response.status + ').');
+        }
+        document.getElementById('resultId').value = data.mqtt_id || payload.mqtt_id;
+        document.getElementById('fingerprint').value = data.fingerprint256 || '';
+        document.getElementById('messageKey').value = data.mqtt_message_key || '';
+        document.getElementById('certificate').value = data.certificate || data.client_dir || '';
+        document.getElementById('privateKey').value = data.privateKey || '';
+        document.getElementById('result').style.display = 'block';
+        showNotice('Đã tạo certificate và lưu cấu hình. ' + (data.requiresBrokerRestart ? 'Cần khởi động lại MQTT broker để áp dụng.' : ''), false);
+      } catch (error) {
+        showNotice(error.message || 'Không thể tạo certificate.', true);
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+
+    document.querySelectorAll('.copy').forEach(function(button) {
+      button.addEventListener('click', async function() {
+        const value = document.getElementById(button.dataset.target).value;
+        try {
+          await navigator.clipboard.writeText(value);
+          showNotice('Đã sao chép vào clipboard.', false);
+        } catch (error) {
+          showNotice('Không thể truy cập clipboard. Hãy chọn và sao chép nội dung thủ công.', true);
+        }
+      });
+    });
+  </script>
+</body>
+</html>

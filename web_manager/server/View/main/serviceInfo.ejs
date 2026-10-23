@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+  <% include ./layout/header.ejs %>
+  <body>
+    <% include ./layout/menuSale.ejs %>
+    <main>
+        <% include ./layout/banner.ejs %>
+        <!--
+          - PRODUCT
+        -->
+  
+        <div class="product-container">
+  
+          <div class="container">
+  
+            <div class="product-box">
+              <!--
+                - PRODUCT GRID
+              -->
+  
+              <div class="product-main">
+                <h2 class="title"><%= __('service_info') %></h2>
+                <div class="product-grid" id="best-service-items">
+                  <div class="showcase">  
+                    
+  
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <% include ./layout/layout_pages_service.ejs %>
+    </main>     
+
+    <style>
+        .title-service-box{
+            background-color: rgb(113 191 211 / 64%);
+        }
+        .title-service-box-detail{
+            padding: 15px;
+            font-family: initial;
+            font-size: 20px;
+        }
+        .cost-service-box{
+            padding-top: 40px;
+            padding-bottom: 40px;
+            font-size: 20px;
+            font-style: italic;
+            font-weight: bolder;
+        }
+        
+        .button-service-box-detail{
+            padding-bottom: 40px;
+            font-family: initial;
+            font-size: 26px;
+        }
+        .info-service-box{
+            background-color: rgb(113 191 211 / 64%);
+        }
+
+
+
+    </style>
+    <script type="text/javascript">
+        var jsonItemElectricService=[];
+        var lstGroupElectricService={product_group:1,start:0,end:10};
+        var json_service = [];
+        getInfoHtml(('/api/customers/detail_service_info'),(dataJson)=>{
+                if(dataJson==false) {
+
+                }
+                else
+                {
+                  json_service = dataJson.result;
+                  setInfoCompanyToViewService(json_service,"#best-service-items")
+                }
+                
+          });
+    
+        function setInfoCompanyToViewService(items, itemHtml,type="product") {
+            var html='';
+           //id_created
+            items.forEach((element) => {
+                var dataInfo = `<div class="showcase" style="  border: 2px solid #f37634;">
+                  <div class="showcase-content title-service-box">
+                    <h3 class="title-service-box-detail" > ${element.title} </h3>
+                  </div>
+                  
+                  <div class="showcase-content ">
+                    <div class="plan cost-service-box">
+                        <label>
+                          ${element.cost} VND/Tháng
+                        </label>
+                    </div>
+                  </div>
+                  <div class="showcase-content">
+                    <div class="plan button-service-box-detail">
+                        <a href = "/service_detail?status=${element.service_product_cost_id}">
+                        <button  style="
+                              display: block;
+                              background: #0f70e6;
+                              color: white;
+                              width: 100%;
+                              height: 40px;
+                              border-radius: 6px;
+                          "> Đăng ký </button> </a>
+                    </div>
+                  </div>
+
+                  <div class="showcase-content">
+                    <div class="plan">
+                        <div><span style="color:#00a651;">&#10004;</span> ${element.content}</div>
+                    </div>
+                  </div>
+                  <div class="showcase-content" style="padding: 15px;">
+                    <div class="plan">
+                        <div>${element.detail}</div>
+                    </div>
+                  </div>
+
+                </div>`;
+
+                if(element.cost==0){
+                  dataInfo = `<div class="showcase" style="  border: 2px solid #f37634;">
+                    <div class="showcase-content title-service-box">
+                      <h3 class="title-service-box-detail" > ${element.title} </h3>
+                    </div>
+                    
+                    <div class="showcase-content ">
+                      <div class="plan cost-service-box">
+                          <label>
+                            ${element.cost} VND/Tháng
+                          </label>
+                      </div>
+                    </div>
+                    <div class="showcase-content">
+                      <div class="plan button-service-box-detail">
+                         
+                          <label  style="
+                                display: block;
+                                color: #4d3a3a;
+                                width: 100%;
+                                height: 40px;
+                                text-align: center;
+                                border-radius: 6px;
+                            "> Miễn Phí </label> 
+                      </div>
+                    </div>
+
+                    <div class="showcase-content">
+                      <div class="plan">
+                          <div><span style="color:#00a651;">&#10004;</span> ${element.content}</div>
+                      </div>
+                    </div>
+                    <div class="showcase-content" style="padding: 15px;">
+                      <div class="plan">
+                          <div>${element.detail}</div>
+                      </div>
+                    </div>
+
+                  </div>`;
+                }
+
+                html+=dataInfo;
+            });
+            $(itemHtml).html(html);
+        }
+        function searchDataInfoLocationService(start,end){
+          lstGroupElectricService.start=start;
+          lstGroupElectricService.end=end;
+          loadAnotherElectricService();
+        }
+      </script>
+    
+    <% include ./layout/footer.ejs %>
+  </body>
+</html>

@@ -15,12 +15,17 @@ import {HOST_IMG}  from '../../config/config.js';
 
 const UploadImage = ({ urlImage, uploadfileDataLink }) => {
         const [state, setState] = useState({link:urlImage});
-        console.log("urlImage: " + urlImage);
         const uploadImageData=(event)=>{
-            console.log("Content: " + event);
             event.preventDefault();
+            const file = event.target.files && event.target.files[0];
+            const allowedTypes = ['image/jpeg', 'image/png'];
+            if (!file || !allowedTypes.includes(file.type) || file.size > 10 * 1024 * 1024) {
+                Swal.fire('File is invalid', 'Only JPG/PNG images up to 10 MB are allowed.', 'error');
+                event.target.value = '';
+                return;
+            }
             const data = new FormData() 
-            data.append('file', event.target.files[0]);    
+            data.append('file', file);
             uploadfileDataImageAdmin(data).then((response)=>{
                 Swal.fire("Cập nhật thông tin thành công");
                 setState({ link:response.url});
@@ -38,7 +43,7 @@ const UploadImage = ({ urlImage, uploadfileDataLink }) => {
                         accept=".png,.jpg,.jpeg"
                         onChange={(event)=> {uploadImageData(event)}}
                         hidden />
-                <img  src={HOST_IMG+state.link}  height="60px" />
+                <img src={HOST_IMG + state.link} alt="Uploaded" height="60" />
             </Button>
         );
 }

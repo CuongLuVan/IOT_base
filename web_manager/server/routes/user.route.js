@@ -5,6 +5,7 @@ const authenticateCustomer = require('../middlewares/authenticateCustomer.js')
 const acessReadTable = require('../middlewares/acessReadTable.js');
 const validate = require('../config/joi.validate.js');
 const schema = require('../utils/validator.js');
+const customerDocumentCtrl = require('../controllers/customerDocument.controller.js');
 
 const router = express.Router();
 
@@ -33,5 +34,7 @@ const router = express.Router();
 
   router.route('/report-detail').post(isAuthenticated,acessReadTable,userCtrl.getTableDetailInfo);
   router.route('/report-special').post(isAuthenticated,userCtrl.getReportSpecial);
+  router.get('/report-cus-documment', isAuthenticated, customerDocumentCtrl.listPendingDocuments);
+  router.post('/report-cus-documment/:id', isAuthenticated, customerDocumentCtrl.reviewDocument);
   
 module.exports =  router;

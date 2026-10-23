@@ -43,8 +43,6 @@ const ReportSaleCommon = ({ table,title_table }) => {
       if(!showChart){
         setShowChart(true);
         httpPostDataAPI("users/report-special",{info:table.table,select:"every_year"}).then((response)=>{
-          console.log({info:table.table,select:"every_year"},response);
-
           const formattedDataAll = response.data.result.map((item) => ({
             label: item[table.report.every_year.name], // Nhãn trục X (yyyy-mm)
             y: item[table.report.every_year.value], // Giá trị trục Y
@@ -61,7 +59,6 @@ const ReportSaleCommon = ({ table,title_table }) => {
 
         });
         httpPostDataAPI("users/report-special",{info:table.table,select:"every_month"}).then((response)=>{
-          console.log({info:table.table,select:"every_month"},response);
           const formattedDataAll = response.data.result.map((item) => ({
             label: item[table.report.every_month.name], // Nhãn trục X (yyyy-mm)
             y: item[table.report.every_month.value], // Giá trị trục Y
@@ -77,7 +74,6 @@ const ReportSaleCommon = ({ table,title_table }) => {
           
         });
         httpPostDataAPI("users/report-special",{info:table.table,select:"a_week"}).then((response)=>{
-          console.log({info:table.table,select:"a_week"},response);
           setoption7day(response.data.result);
           setShowOption7day(response.data.result.length>0);
         });

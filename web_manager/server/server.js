@@ -1,43 +1,42 @@
 const path = require('path');
 const app = require('./config/express.js');
 const routes = require('./routes/index.route.js');
-const pagesRouters = require('./routes/pages.route.js');
-const pagesRoutersMarket = require('./routes/page.market.router.js');
-//const swagger = require('./config/swagger.js');
+const pagesRouterNews = require('./routes/pages.route.js');
+const pagesRouterMarket = require('./routes/page.market.router.js');
+const pagesLibrary = require('./routes/pages_library.route.js');
+const oauthPages = require('./routes/Oauthen.router.js');
 
-// Swagger API documentation
-/*app.get('/swagger.json', (req, res) => {
-  res.json(swagger);
-});*/
-// Router
 app.use('/api', routes);
-console.log("process.env.APP_MODE",process.env.APP_MODE);
-if(process.env.APP_MODE=="NEWS"){
-  app.use('/', pagesRouters);
-}
-else
-{
-  app.use('/', pagesRoutersMarket);
-}
 
-
+console.log('process.env.APP_MODE', process.env.APP_MODE);
+if (process.env.APP_MODE === 'NEWS') {
+  app.use('/', pagesRouterNews);
+} else if (process.env.APP_MODE === 'SHARE_LIBRARY') {
+  app.use('/', pagesLibrary);
+} else {
+  app.use('/', pagesRouterMarket);
+}
+app.use('/', oauthPages);
 app.get('/u', (req, res) => {
-  res.send(JSON.stringify({sample:false}));
-  // res.sendFile(path.join(__dirname, '../public/dist/index.html'));
+  res.send(JSON.stringify({ sample: false }));
 });
 
 app.get('/comment/product', (req, res) => {
-  //res.send(JSON.stringify({sample:false}));
-   res.sendFile(path.join(__dirname, '../public/tool/comment/index.html'));
+  res.sendFile(path.join(__dirname, '../public/tool/comment/index.html'));
+});
+
+app.use('/change-lang/:lang', (req, res) => {
+  const supportedLocales = new Set(['en', 'vi', 'cn']);
+  const locale = req.params.lang.toLowerCase();
+
+  if (!supportedLocales.has(locale)) {
+    return res.status(404).send('Unsupported language');
+  }
+
+  res.cookie('lang', locale, { maxAge: 9000000, sameSite: 'lax' });
+  res.redirect('back');
 });
 
 app.listen(app.get('port'), app.get('host'), () => {
-  console.log(`Server is running at http://${app.get('host')}:${app.get('port')}`);
+  console.log('Server is running at http://' + app.get('host') + ':' + app.get('port'));
 });
-
-app.use('/change-lang/:lang', (req, res) => { 
-  console.log('/change-lang/:lang', req.params.lang);
-  res.cookie('lang', req.params.lang, { maxAge: 9000000 });
-  res.redirect('back');
-});
-//module.exports =  app;

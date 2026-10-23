@@ -1,0 +1,9 @@
+﻿DeviceIOT8266
+
+Main sketch: DeviceIOT8266.ino
+
+Select the runtime in define_All.h:
+  #define SUPPORT_RTOS 0  -> official ESP8266 Arduino core, cooperative NON-OS execution.
+  #define SUPPORT_RTOS 1  -> alexCajas/esp8266RTOSArduCore, FreeRTOS task execution.
+
+The firmware retains only DHT11, A0 ADC, and LoRa. It uses a non-blocking Wi-Fi reconnect strategy and a configuration AP fallback. See docs/BUILD_MODES.md for dependencies, pin assignments, and RTOS installation notes.

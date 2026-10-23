@@ -5,13 +5,11 @@
 #define SUPPORT_LORA 0
 #define SUPPORT_MQTT 1
 
-// false = giữ nguyên luồng MQTT hiện tại.
-// true  = xác thực chứng chỉ TLS/SSL bằng CA certificate lưu trong ROM/EEPROM.
-#define ENABLE_TLS_SSL false
+// Broker MqttBroker1885.js yêu cầu TLS; CA certificate được provision vào EEPROM.
+#define ENABLE_TLS_SSL true
 
-// false = giữ nguyên luồng MQTT/TLS hiện tại.
-// true  = bật mutual TLS: broker xác thực thiết bị bằng client certificate và private key.
-#define ENABLE_mTLS false
+// Broker yêu cầu mTLS; client certificate/private key phải được provision vào EEPROM.
+#define ENABLE_mTLS true
 
 // false = giữ nguyên payload MQTT hiện tại.
 // true  = ký và kiểm tra JSON MQTT bằng HMAC-SHA256.
@@ -30,19 +28,39 @@
 #define ASCON_HANDSHAKE_DIGITS_MAX_LENGTH 8
 #define ASCON_KEY_ROTATION_TIME_ADDRESS 18350
 
-// 0 = use standard WiFiClient
-// 1 = use WiFiClientSecure for TLS-capable MQTT connections
-#define MQTT_NO_TLS 1
+// TLS/mTLS MQTT connection; never fall back to an insecure client.
+#define MQTT_NO_TLS 0
 
 #define COMMAND_TYPE_CONTROL      0x01
 #define COMMAND_TYPE_OTHER        0x02
+#define COMMAND_TYPE_SCHEDULE_CONTROL 0x03
 
 #define COMMAND_RESERVED_NONE     0x00
 #define COMMAND_RESERVED_CONTROL  0x01
 
+// Scheduler ownership is intentionally limited to the pump output bit.  It
+// cannot address the other device outputs.
+#define SYSTEM_TASK_SCHEDULE_PORT_MASK 0x01
+#define SYSTEM_TASK_SCHEDULE_MAX_RULES 8
+#define SYSTEM_TASK_TIMEZONE_OFFSET_SECONDS 0
+
+#if SYSTEM_TASK_SCHEDULE_PORT_MASK != 0x01
+  #error "SystemTask schedules are restricted to the fixed pump output bit (0x01)."
+#endif
+
 #define SERIAL_BAUD_RATE               115200
 #define TASK_STACK_SIZE                10000
 #define TASK_CREATE_DELAY_MS           500
+#define TASK_SENSOR_PRIORITY           3
+#define TASK_NETWORK_PRIORITY          2
+#define TASK_DEVICE_PRIORITY           1
+#define TASK_SYSTEM_PRIORITY           1
+#define TASK_SYSTEM_STACK_SIZE         4096
+#define SYSTEM_TASK_CHECK_INTERVAL_MS  5000
+#define SYSTEM_TASK_NTP_RETRY_INTERVAL_MS 60000
+#define SYSTEM_TASK_TELEMETRY_INTERVAL_MS 30000
+#define SYSTEM_TASK_DEBUG_LOG          0
+#define SYSTEM_TASK_DEBUG_LOG_INTERVAL_MS 60000
 #define COOP_LOOP_DELAY_MS             10
 #define RTOS_IDLE_LOOP_DELAY_MS        1000
 
@@ -105,6 +123,7 @@
 
 #define DHT_PIN                        12
 #define DHT_TYPE                       DHT11
+// Interval between low-rate sensor read steps; DHT/PMS reads are staggered by SENSOR_READ_STEP_COUNT.
 #define SENSOR_TASK_INTERVAL_MS        1000
 #define SENSOR_READ_STEP_COUNT         4
 #define SENSOR_SERIAL_BAUD_RATE        9600
@@ -134,7 +153,25 @@
 #define NETWORK_POLL_INTERVAL_MS       500
 
 #define LORA_BUFFER_SIZE               255
-#define MQTT_PAYLOAD_SIZE              512
+#define MQTT_PAYLOAD_SIZE              1024
 #define SENSOR_PAYLOAD_SIZE            256
 #define DEVICE_PAYLOAD_SIZE            256
 
+// High-speed capture defaults for ESP32-WROOM-32 DevKit V1.
+// Reassign these pins if they conflict with the project board wiring.
+#define HS_ADC_PIN                      34
+#define HS_ICM_SCK_PIN                  25
+#define HS_ICM_MISO_PIN                 26
+#define HS_ICM_MOSI_PIN                 27
+#define HS_ICM_CS_PIN                   33
+#define HS_ICM_SPI_HZ                   8000000
+#define HS_ADS_SCK_PIN                  18
+#define HS_ADS_MISO_PIN                 19
+#define HS_ADS_CNV_PIN                  21
+#define HS_ADS_SPI_HZ                   16000000
+// High-speed sampling rates in samples per second (Hz).
+#define HS_AUDIO_ADC_SAMPLE_RATE_HZ     10000UL
+#define HS_ICM42688_SAMPLE_RATE_HZ      32000UL
+#define HS_ADS8866_SAMPLE_RATE_HZ       100000UL
+#define HS_CAPTURE_MAX_DURATION_MS      60000
+#define HS_NETWORK_DRAIN_BATCH          8

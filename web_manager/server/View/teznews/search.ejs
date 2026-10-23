@@ -1,0 +1,53 @@
+<% include /layout/head/header.ejs %>
+<div class="page tech-news-page">
+  <div class="container">
+    <% include /layout/head/headerAds.ejs %>
+    <% include /layout/menu/pcMenu.ejs %>
+    <main class="tech-search-page">
+      <p class="eyebrow">TÌM KIẾM</p>
+      <h1>Kết quả bài viết</h1>
+      <form class="tech-search-form" action="/search" method="get" role="search">
+        <label class="sr-only" for="news-search-query">Từ khóa tìm kiếm</label>
+        <input id="news-search-query" name="q" value="<%= query %>" placeholder="Tìm theo tên bài viết hoặc chủ đề..." autocomplete="off" />
+        <button type="submit"><i class="fa fa-search" aria-hidden="true"></i> Tìm kiếm</button>
+      </form>
+      <p id="search-result-summary" class="tech-search-summary" aria-live="polite"></p>
+      <div id="search-results" class="tech-search-results"></div>
+    </main>
+  </div>
+  <% include /layout/menu/footer.ejs %>
+</div>
+<% include /layout/head/endhead.ejs %>
+<script>
+  (function () {
+    var query = '<%= query.replace(/'/g, "\\'") %>'.trim().toLocaleLowerCase();
+    var results = document.getElementById('search-results');
+    var summary = document.getElementById('search-result-summary');
+    function escapeHtml(value) {
+      return String(value || '').replace(/[&<>'"]/g, function (character) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character];
+      });
+    }
+    function render(items) {
+      if (!query) {
+        summary.textContent = 'Nhập từ khóa để tìm bài viết hoặc chủ đề.';
+        return;
+      }
+      var matches = items.filter(function (item) {
+        return (item.title + ' ' + item.content).toLocaleLowerCase().indexOf(query) !== -1;
+      });
+      summary.textContent = matches.length ? 'Tìm thấy ' + matches.length + ' bài viết phù hợp.' : 'Chưa tìm thấy bài viết phù hợp.';
+      results.innerHTML = matches.map(function (item) {
+        var link = getInfoLink(item);
+        return '<article class="tech-search-card">' +
+          '<a class="tech-search-image" href="' + link + '"><img src="' + escapeHtml(item.content_img) + '" alt="" /></a>' +
+          '<div><p class="tech-card-topic">' + escapeHtml(getDetailContent(item.group_content_sub_id)) + '</p>' +
+          '<h2><a href="' + link + '">' + escapeHtml(item.title) + '</a></h2>' +
+          '<p>' + escapeHtml(String(item.content || '').replace(/<[^>]*>/g, '').slice(0, 180)) + '</p></div></article>';
+      }).join('');
+    }
+    $.getJSON('/api/document/get_new').done(render).fail(function () {
+      summary.textContent = 'Không thể tải dữ liệu tìm kiếm. Vui lòng thử lại sau.';
+    });
+  }());
+</script>

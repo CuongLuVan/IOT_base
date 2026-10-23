@@ -1,0 +1,180 @@
+<!doctype html>
+<html class="no-js" lang="en">
+     <% include ./head.ejs %>
+    
+	
+	<body>
+		<!--[if lte IE 9]>
+            <p class="browserupgrade">You are using an <strong>outdated</strong> browser. Please <a href="https://browsehappy.com/">upgrade your browser</a> to improve your experience and security.</p>
+        <![endif]-->
+	
+		<!--welcome-hero start -->
+		<section id="home" class="welcome-hero">
+			<!-- top-area Start -->
+			<div class="top-area">
+				<div class="header-area">
+					<!-- Start Navigation -->
+				    <nav class="navbar navbar-default bootsnav  navbar-sticky navbar-scrollspy"  data-minus-value-desktop="70" data-minus-value-mobile="55" data-speed="1000">
+						 <% include ./menu.ejs %>
+				    </nav><!--/nav-->
+				    <!-- End Navigation -->
+				</div><!--/.header-area-->
+			    <div class="clearfix"></div>
+			</div><!-- /.top-area-->
+			<!-- top-area End -->
+
+			
+		</section><!--/.welcome-hero-->
+		<% include ./child/fist_ads.ejs %>
+		<!--welcome-hero end -->
+		<!--featured-cars start -->
+		<section id="featured-cars" class="featured-cars">
+			<div class="container">
+				<div class="row">
+                <!--colleft-->
+					<div class="col-md-2 col-sm-12">
+						<!--tab popular
+						<% include ../teznews/layout/compoment/tip/pagesRandom.ejs %> 
+						<% include ../teznews/layout/compoment/tip/ads.ejs %>-->
+					</div>
+					<div class="col-md-8 col-sm-12">
+						<!--post-detail-->
+						<style>
+
+							#tech_description,
+							#tech_description *:not(style):not(link):not(script) {
+								all: revert;
+								font-family: initial;
+							}
+
+							/* Style riêng cho ảnh sau reset */
+							#tech_description img {
+								all: unset;          /* bỏ reset cho ảnh */
+								display: block;
+								width: 90% !important;   /* chiếm 80% chiều rộng div */
+								max-width: 90% !important;
+								height: auto !important;
+								object-fit: contain;
+								margin: 0 auto;
+							}
+							#tech_description figure {
+								all: unset!important;          /* bỏ reset cho ảnh */
+								display: block;
+								width: 90% !important;   /* chiếm 80% chiều rộng div */
+								max-width: 90% !important;
+								height: auto !important;
+								object-fit: contain;
+								margin: 0 auto;
+							}
+
+							#tech_description table,
+							#tech_description table th,
+							#tech_description table td {
+								border: 1px solid #000 !important;
+								border-collapse: collapse !important;
+								padding: 8px;
+							}
+							.info-time-description{
+								text-align: right;
+							}
+					</style>
+						<article class="post-detail" > 
+							<div id="time_description" class="info-time-description"> 
+								
+							</div>
+							
+						</article>
+						<article class="post-detail" id="tech_description"> 
+							
+
+						</article>
+
+						<article class="post-detail" > 
+							<div id="author_description" class="info-time-description"> 
+								
+							</div>
+							
+						</article>
+						
+					</div>
+
+					<!--colright-->
+					<div class="col-md-2 col-sm-12">
+						<!--tab popular
+						<% include ../teznews/layout/compoment/tip/pagesRandom.ejs %> 
+						<% include ../teznews/layout/compoment/tip/ads.ejs %>-->
+					</div>
+				</div>
+				
+			</div><!--/.container-->
+
+		</section><!--/.featured-cars-->
+
+<script type="text/javascript">
+    var dataView =  "/"+ '<%= detail %>';
+	
+    const queryString = window.location.search;
+    const urlParams = new URLSearchParams(queryString);
+    var linkAcess = urlParams.get('file'); //checkGetQuerryForm(); // + dataView.replaceAll('+', '/');
+
+	
+
+    if(urlParams.has('file')){
+        linkAcess = "/"+linkAcess;
+        getInfoHtml(linkAcess,(data)=>{
+            if(data==false) return; 
+            $('#tech_description').html(data); //.replaceAll("</p>","<br/>").replaceAll("<p>","<br/>")
+            $('html, body').animate({ scrollTop: 0 }, 'fast');
+        });
+        
+    }
+    else
+    {
+       // linkAcess = dataView;
+       var dataView =  '<%= type %>';
+       setTimeout(()=>{
+
+            postInfoData('/api/customers/get_page_detail',{data:dataView},(dataJson)=>{
+                if(!dataJson.error){
+                    if(dataJson.data.result==-1){
+                        $('#tech_description').html(`<h1> The pages not support this langgue </h1>`); //.replaceAll("</p>","<br/>").replaceAll("<p>","<br/>")
+                        $('html, body').animate({ scrollTop: 0 }, 'fast');
+                    }
+                    else
+                    {
+                        getInfoHtml( "/"+ dataJson.data.result.data,(data)=>{
+                            if(data==false) return; 
+                            $('#tech_description').html(data); //.replaceAll("</p>","<br/>").replaceAll("<p>","<br/>")
+							if(dataJson.data.result.time)
+								$('#time_description').html(formatFullDateTimeLocal(dataJson.data.result.time)); 
+							if(dataJson.data.result.author)
+								$('#author_description').html(author_text+ dataJson.data.result.author); 
+								
+                            $('html, body').animate({ scrollTop: 0 }, 'fast');
+                        });
+                    }
+                    
+                }
+            });
+       },1000);
+      
+
+    }
+   
+   // document.getElementById("htmlToView").src = linkAcess;
+    
+
+   
+
+ </script>
+
+	
+		<!--blog start -->
+		<section id="blog" class="blog"></section><!--/.blog-->
+		<!--blog end -->
+
+		<% include ./footer.ejs %>
+        
+    </body>
+	
+</html>

@@ -9,6 +9,9 @@ const router = express.Router();
 router.get('/', (req, res) => {
   res.render('teznews/home', { route: 'home' });
 });
+router.get('/search', (req, res) => {
+  res.render('teznews/search', { query: req.query.q || '' });
+});
 router.get('/tech/:typePage', async (req, res) => {
   var data = req.params.typePage;
   var itemvalue =["head","news", "it","electric","phy","life","fake","recruitment"];
@@ -122,6 +125,12 @@ router.get('/mqtt', (req, res) => {
     },
   });
 });
+router.get('/mqtt/certificate/create', (req, res) => {
+  res.render('mqtt/certificate-save');
+});
+router.get('/mqtt/certificate/get', (req, res) => {
+  res.render('mqtt/certificate-get');
+});
 
 router.get('/abouttest', (req, res) => {
   let options = {
@@ -157,4 +166,3 @@ router.get('/sample_pages/:typePage/:detailPages', (req, res) => {
 });
 
 module.exports = router;
-

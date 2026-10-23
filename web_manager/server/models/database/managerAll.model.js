@@ -43,6 +43,10 @@ const SocialType = require('./socialType.model');
 const GroupCompany = require('./groupCompany.model');
 const GroupCompanyDetail = require('./groupCompanyDetail.model');
 const SocialShop = require('./socialShop.model');
+const CustomerDocuments = require('./customerDocuments.model.js');
+const ServiceProductBill = require('./serviceProduct_bill.model.js');
+const ServiceProductLimit = require('./ServiceProductLimit.model.js');
+const ServiceProductCost = require('./ServiceProductCost.model.js');
 
 
 
@@ -55,7 +59,7 @@ const classesFactory = {User,Permission ,Adress,DecentralizationAccess,GroupCont
                         StockSale,StockBuy,ProductPages,ServicePages,ProductGroup,CompanyOfCustomer,
                         CostTransport,PaymentType,PaymentInternal,PaymentTransport,
                         AdvertisementProduct,SocialUser,SocialType,GroupCompany,GroupCompanyDetail,
-                        SocialShop };
+                        SocialShop,CustomerDocuments,ServiceProductBill,ServiceProductLimit,ServiceProductCost };
 const classesFactorryMapping = {  users:"User" , permission:"Permission",adress:"Adress" ,
                             decentralization_access:"DecentralizationAccess",group_content:"GroupContent" 
                             , mqtt_microservice:"MqttMicroservice", 
@@ -75,7 +79,7 @@ const classesFactorryMapping = {  users:"User" , permission:"Permission",adress:
                             payment_internal:"PaymentInternal",payment_transport:"PaymentTransport",
                             advertisement_product:"AdvertisementProduct" , social_user:"SocialUser",
                             social_type:"SocialType",group_company:"GroupCompany",
-                            group_company_detail:"GroupCompanyDetail",social_shop:"SocialShop"
+                            group_company_detail:"GroupCompanyDetail",social_shop:"SocialShop",customer_documents:"CustomerDocuments",service_product_bill:"ServiceProductBill",service_product_limit:"ServiceProductLimit",service_product_cost:"ServiceProductCost"
                         };
                         
 const classesFactorryMappingCustomer = {  adress:"Adress" ,
@@ -92,7 +96,7 @@ const classesFactorryMappingCustomer = {  adress:"Adress" ,
                         stock_sale:"StockSale",stock_buy:"StockBuy",company_of_customer:"CompanyOfCustomer",
                         social_user:"SocialUser",social_type:"SocialType",group_company:"GroupCompany",
                         group_company_detail:"GroupCompanyDetail",product_pages:"ProductPages"
-                        ,social_shop:"SocialShop",product_group:"ProductGroup"
+                        ,social_shop:"SocialShop",product_group:"ProductGroup",customer_documents:"CustomerDocuments",service_product_bill:"ServiceProductBill",service_product_limit:"ServiceProductLimit",service_product_cost:"ServiceProductCost"
                     };      
 
 

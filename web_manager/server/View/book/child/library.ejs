@@ -1,0 +1,109 @@
+<section id="featured-cars" class="featured-cars">
+			<div class="container" >
+				<div class="featured-cars-content">
+					<div class="row"  id = "child_group_content" >
+						
+					</div>
+					<style>
+
+                    .paging {
+                        display: flex;
+                        justify-content: center;
+                        flex-wrap: wrap;         /* Cho phép xuống dòng khi thiếu chỗ */
+                        gap: 4px;                /* Khoảng cách giữa các nút */
+                        margin: 20px 0;
+                    }
+
+                    .paging a {
+                        display: inline-block;
+                        padding: 6px 12px;
+                        border: 1px solid #ddd;
+                        border-radius: 4px;
+                        text-decoration: none;
+                        color: #007bff;
+                        background-color: #fff;
+                        font-size: 14px;
+                        transition: background-color 0.2s, color 0.2s;
+                    }
+
+                    .paging a:hover {
+                        background-color: #e9ecef;
+                        border-color: #ccc;
+                        color: #0056b3;
+                    }
+
+                    .paging a.current,
+                    .paging a.active {
+                        background-color: #007bff;
+                        color: white;
+                        border-color: #007bff;
+                        cursor: default;
+                    }
+                </style>
+                <div class="paging" id="location_padding_id"></div>
+				</div>
+				
+			</div><!--/.container-->
+			
+		</section><!--/.featured-cars-->
+		<!--featured-cars end -->
+
+        
+<script type="text/javascript">
+        
+        function infoValueDataTheNew(itemCurent){
+            var html="";
+            var item =itemCurent;
+            for(var i=0;i<item.length;i++){
+                var linkInfo=getInfoLinkSP(item[i]);
+                var contentSub=getDetailContent(item[i].group_content_sub_id);
+                var stringInfo = item[i].title.length >98 ?item[i].title.substring(0, 98) + "...":item[i].title; 
+                html = html +
+				`<div class="col-lg-4 col-md-6 col-sm-12" style="height:450px">
+							<div class="single-featured-cars">
+								<div class="featured-img-box">
+									<div class="featured-cars-img">
+										<img src="${item[i].content_img}" alt="cars">
+									</div>
+									
+								</div>
+								<div class="featured-cars-txt">
+									<h2><a href="${linkInfo}">${item[i].title}</a></h2>
+									<h3>${contentSub}</h3>
+									<p>
+										${item[i].content.length>150?item[i].content.slice(0, 150) + '...':item[i].content }
+									</p>
+								</div>
+							</div>
+						</div>`
+                        ;
+            }
+            return html;
+        }
+
+
+       /*getInfoDataPublic('/api/document/get_new',(dataJson)=>{
+            if(dataJson!=false){
+                $("#child_group_content").html(infoValueDataTheNew(dataJson));
+            }
+        });*/
+		var numberDataDocument = 20;
+		var dataView="";
+		postInfoData('/api/document/get_new',{counter:true,start:0,end:10},(dataJson)=>{
+			console.log("dataJson",dataJson);
+            if(dataJson.error==false){
+                numberDataDocument = dataJson.data[0].number_document;
+				 refehSelectPages(0);
+                selectItemPages(0);
+            }
+        });
+		postInfoData('/api/document/get_new',{counter:false,start:0,end:10},(dataJson)=>{
+			console.log("dataJson",dataJson);
+            if(dataJson.error==false){
+				$("#child_group_content").html(infoValueDataTheNew(dataJson.data));
+                
+              
+            }
+        });
+		
+</script>

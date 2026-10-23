@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+
+<html lang="en">
+  <% include ./layout/header.ejs %>
+  <body>
+    <% include ./layout/menuSale.ejs %>
+    <main>
+      <% include ./layout/banner.ejs %>
+    
+      <!--
+        - PRODUCT
+      -->
+
+      <div class="product-container">
+
+        <div class="container">
+
+          <div class="product-box">
+            <!--
+              - PRODUCT GRID
+            -->
+
+            <div class="product-main">
+
+              <h2 class="title"> <%= __('productPage') %></h2>
+
+              <div class="product-grid" id="best-seller-items">
+
+                
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <% include ./layout/layout_pages.ejs %>
+
+
+
+      <div class="product-container">
+  
+          <div class="container">
+            <a href="/api/auth/google?returnUrl=/dashboard">Login Google</a>
+            <a href="/api/auth/facebook?returnUrl=/dashboard">Login Facebook</a>
+            
+          </div>
+        </div>
+        <% include ./layout/layout_pages_service.ejs %>
+
+    </main>
+    <% include ./layout/footer.ejs %>
+  </body>
+</html>

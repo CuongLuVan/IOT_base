@@ -1,0 +1,195 @@
+:root {
+  --tech-navy: #102a43;
+  --tech-navy-deep: #071a2c;
+  --tech-cyan: #00a8c6;
+  --tech-cyan-soft: #e8f8fb;
+  --tech-ink: #1f2937;
+  --tech-muted: #64748b;
+  --tech-line: #dce6ee;
+  --tech-surface: #ffffff;
+  --tech-page: #f5f8fb;
+}
+
+body { background: var(--tech-page); color: var(--tech-ink); font-family: "Open Sans", Arial, sans-serif; font-size: 14px; }
+body, html { min-height: 100%; height: auto; }
+a { transition: color .18s ease, background-color .18s ease, border-color .18s ease; }
+a:hover { color: var(--tech-cyan); }
+.tech-news-page { padding-bottom: 36px; }
+.tech-news-page > .container { max-width: 1180px; }
+
+.tech-header { min-height: 94px; display: flex; align-items: center; justify-content: space-between; padding: 18px 2px; border-bottom: 1px solid var(--tech-line); }
+.tech-header .logo { display: flex; align-items: center; gap: 12px; margin: 0; }
+.tech-header .logo img { max-width: 130px; max-height: 54px; object-fit: contain; }
+.tech-header .logo::after { content: "TECH HUST\A IoT · Embedded · Technical Library"; white-space: pre; color: var(--tech-navy); font: 700 17px/1.45 "Roboto Slab", Georgia, serif; letter-spacing: .02em; }
+.tech-header .owl-special, .tech-header .text-right { display: none; }
+.tech-header::after { content: "Chia sẻ kiến thức IoT, lập trình nhúng và tài liệu kỹ thuật thực hành."; max-width: 390px; color: var(--tech-muted); font-size: 13px; text-align: right; }
+
+.tech-news-page .menu { z-index: 30; height: 58px; margin: 18px 0 26px; background: var(--tech-navy); border-radius: 10px; box-shadow: 0 8px 20px rgba(16, 42, 67, .12); }
+.tech-news-page .menu > ul { height: 58px; }
+.tech-news-page .menu ul li > a { height: 58px; line-height: 58px; padding: 0 17px; font-family: "Open Sans", Arial, sans-serif; font-size: 13px; font-weight: 700; letter-spacing: .02em; text-transform: none; }
+.tech-news-page .menu ul li:hover > a, .tech-news-page .menu ul li.active > a { color: #fff; background: rgba(0, 168, 198, .22); }
+.tech-news-page .menu ul .submenu { height: auto; background: #fff; border: 1px solid var(--tech-line); border-radius: 8px; box-shadow: 0 12px 24px rgba(16, 42, 67, .14); overflow: hidden; }
+.tech-news-page .menu ul li.is-open > .submenu { visibility: visible; margin-top: 0; opacity: 1; }
+.tech-news-page .menu ul .submenu li a { color: var(--tech-ink); background: #fff; font-size: 13px; line-height: 40px; height: 40px; }
+.tech-news-page .menu ul .submenu li a:hover { color: var(--tech-cyan); background: var(--tech-cyan-soft); }
+.tech-news-page .search-icon { width: 58px; height: 58px; line-height: 58px; border-radius: 0 10px 10px 0; background: var(--tech-cyan); }
+.tech-news-page .search-icon i { line-height: 58px; }
+.tech-news-page .search-icon .search-box { width: 340px; height: 58px; background: var(--tech-navy); padding: 9px; border-radius: 0 0 8px 8px; box-shadow: 0 12px 24px rgba(16, 42, 67, .18); }
+.tech-news-page .search-icon .search-box input { height: 40px; border-radius: 6px; padding-right: 86px; }
+.tech-news-page .search-icon .search-box button { top: 14px; right: 14px; height: 30px; border-radius: 5px; background: var(--tech-cyan); font-size: 11px; }
+
+.tech-hero { position: relative; overflow: hidden; display: flex; justify-content: space-between; gap: 30px; min-height: 270px; margin: 0 0 18px; padding: 44px 52px; border-radius: 16px; color: #fff; background: linear-gradient(125deg, var(--tech-navy-deep), var(--tech-navy) 65%, #0c7791); box-shadow: 0 18px 36px rgba(16, 42, 67, .18); }
+.tech-hero::before { content: ""; position: absolute; right: -80px; bottom: -140px; width: 410px; height: 410px; border: 52px solid rgba(0, 168, 198, .22); border-radius: 50%; }
+.tech-hero > div { position: relative; z-index: 1; max-width: 720px; }
+.eyebrow { margin: 0 0 8px; color: var(--tech-cyan); font-size: 11px; font-weight: 800; letter-spacing: .16em; }
+.tech-hero h1 { max-width: 680px; margin: 0; color: #fff; font: 700 34px/1.25 "Roboto Slab", Georgia, serif; }
+.tech-hero p:not(.eyebrow) { max-width: 650px; margin: 14px 0 24px; color: #d9edf3; font-size: 15px; line-height: 1.7; }
+.tech-button { display: inline-flex; align-items: center; gap: 9px; padding: 11px 16px; border-radius: 7px; color: var(--tech-navy); background: #fff; font-size: 13px; font-weight: 800; }
+.tech-button:hover { color: var(--tech-navy); background: #dff8fd; }
+.tech-hero-orbit { align-self: center; flex: 0 0 150px; width: 150px; height: 150px; border: 1px solid rgba(255,255,255,.38); border-radius: 50%; text-align: center; }
+.tech-hero-orbit i { color: #7be5f4; font-size: 56px; line-height: 148px; }
+.tech-topics { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 28px; }
+.tech-topics a { display: flex; min-height: 83px; align-items: center; gap: 9px; padding: 14px; border: 1px solid var(--tech-line); border-radius: 10px; color: var(--tech-navy); background: #fff; box-shadow: 0 3px 10px rgba(16, 42, 67, .04); font-size: 12px; font-weight: 700; line-height: 1.4; }
+.tech-topics a:hover { border-color: var(--tech-cyan); color: var(--tech-cyan); transform: translateY(-2px); }
+.tech-topics i { color: var(--tech-cyan); font-size: 20px; }
+
+.tech-news-page .box-caption { margin: 28px 0 15px; padding: 0; border-bottom: 2px solid var(--tech-line); }
+.tech-news-page .box-caption span { display: inline-block; padding: 0 0 9px; border-bottom: 2px solid var(--tech-cyan); color: var(--tech-navy); background: transparent; font: 700 20px/1.2 "Roboto Slab", Georgia, serif; text-transform: none; }
+.tech-news-page .spotlight-item, .tech-news-page .news-two-large, .tech-news-page .list-news-popular, .tech-news-page .tab-content, .tech-news-page .post-detail, .tech-news-page .list-news-cate { border: 1px solid var(--tech-line); border-radius: 12px; background: var(--tech-surface); box-shadow: 0 5px 18px rgba(16, 42, 67, .05); }
+.tech-news-page .spotlight-item { overflow: hidden; }
+.tech-news-page .spotlight-item-caption { padding: 20px; }
+.tech-news-page .spotlight-item-caption h2 { font-size: 24px; line-height: 1.35; }
+.tech-news-page #owl_spotlight_id .spotlight-item { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); min-height: 300px; }
+.tech-news-page #owl_spotlight_id .spotlight-img { min-height: 300px; }
+.tech-news-page #owl_spotlight_id .spotlight-img .info-head-main-crop { height: 100%; }
+.tech-news-page #owl_spotlight_id .spotlight-img img { width: 100%; height: 100%; object-fit: cover; }
+.tech-news-page #owl_spotlight_id .spotlight-item-caption { display: flex; flex-direction: column; justify-content: center; padding: 30px; }
+.tech-news-page .spotlight-item img, .tech-news-page .news-two-large .info-head-fist-pages-crop img, .tech-news-page .news-cate-item .info-head-thump-crop img, .tech-search-image img { width: 100%; height: 100%; object-fit: cover; }
+.tech-news-page .spotlight-item-thumb img { height: auto; }
+.tech-news-page .list-news-popular li img { width: 70px; height: 60px; object-fit: cover; }
+.tech-news-page .spotlight-img .info-head-main-crop { height: 290px; }
+.tech-news-page .spotlight-thumbs { margin-top: 16px; }
+.tech-news-page .spotlight-item-thumb { min-height: 100%; padding: 0 0 15px; border: 1px solid var(--tech-line); border-radius: 10px; background: #fff; overflow: hidden; }
+.tech-news-page .spotlight-item-thumb-img { height: 250px; }
+.tech-news-page .spotlight-item-thumb h3, .tech-news-page .spotlight-item-thumb .meta-post { padding: 0 14px; }
+.tech-news-page .news-two-large { padding: 18px; }
+.tech-news-page .list-news-popular { margin-top: 14px; padding: 6px 16px; }
+.tech-news-page .list-news-popular:empty { display: none; }
+.tech-news-page .list-news-popular li { padding: 12px 0; }
+.tech-news-page .box-news { margin-top: 32px; }
+.tech-news-page .tech-home-feed-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.tech-news-page .tech-home-feed-card { display: grid; grid-template-columns: minmax(110px, 25%) minmax(0, 1fr); gap: 14px; min-height: 156px; padding: 14px; border: 1px solid var(--tech-line); border-radius: 10px; background: #fff; box-shadow: 0 4px 12px rgba(16,42,67,.04); }
+.tech-news-page .tech-home-feed-image { min-height: 126px; overflow: hidden; border-radius: 7px; background: var(--tech-cyan-soft); }
+.tech-news-page .tech-home-feed-image img { width: 100%; height: 100%; object-fit: cover; }
+.tech-news-page .tech-home-feed-content { min-width: 0; }
+.tech-news-page .tech-home-feed-content h3 { margin: 3px 0 5px; font: 700 16px/1.35 "Roboto Slab", Georgia, serif; }
+.tech-news-page .tech-home-feed-content h3 a { color: var(--tech-navy); }
+.tech-news-page .tech-home-feed-content > p:last-child { margin: 8px 0 0; color: var(--tech-muted); font-size: 13px; line-height: 1.55; }
+.tech-news-page .tech-home-feed-content .meta-post { margin: 0; }
+.tech-news-page .box-news .news-two-large > .row { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); align-items: center; gap: 24px; margin: 0; }
+.tech-news-page .box-news .news-two-large > .row > [class*="col-"] { float: none; width: auto; padding: 0; }
+.tech-news-page .box-news .news-two-large .info-head-fist-pages-crop { height: 235px; max-height: none; border-radius: 8px; }
+.tech-news-page .box-news > .row { display: block; margin: 16px 0 0; }
+.tech-news-page .box-news > .row > [class*="col-"] { float: none; width: 100%; padding: 0; }
+.tech-news-page #tech_description2, .tech-news-page #documnet_description2 { display: none; }
+.tech-news-page #tech_description1, .tech-news-page #documnet_description1 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; padding: 0; border: 0; background: transparent; box-shadow: none; }
+.tech-news-page #tech_description1 li, .tech-news-page #documnet_description1 li { min-height: 108px; margin: 0; padding: 14px 14px 14px 108px; border: 1px solid var(--tech-line); border-radius: 10px; background: #fff; box-shadow: 0 4px 12px rgba(16,42,67,.04); }
+.tech-news-page #tech_description1 li img, .tech-news-page #documnet_description1 li img { width: 78px; height: 78px; margin-left: -94px; border-radius: 6px; }
+.tech-news-page #tech_description1 li h3, .tech-news-page #documnet_description1 li h3 { line-height: 1.35; }
+.tech-news-page #tech_description1 li h3 a, .tech-news-page #documnet_description1 li h3 a { font-size: 14px; }
+.tech-news-page .tech-view-all { display: inline-flex; align-items: center; gap: 7px; margin-top: 16px; color: var(--tech-cyan); font-size: 13px; font-weight: 800; }
+.tech-news-page .footer { margin-top: 44px; }
+
+/* Shared article-list pattern: thumbnail at left (one quarter), text at right. */
+.tech-news-page .list-news-popular { padding: 0; border: 0; background: transparent; box-shadow: none; }
+.tech-news-page .list-news-popular li { display: grid; grid-template-columns: minmax(76px, 25%) minmax(0, 1fr); grid-template-rows: auto 1fr; column-gap: 14px; min-height: 104px; margin: 0 0 12px; padding: 12px; border: 1px solid var(--tech-line); border-radius: 10px; background: #fff; box-shadow: 0 4px 12px rgba(16,42,67,.04); }
+.tech-news-page .list-news-popular li > a:first-child { grid-row: 1 / span 2; display: block; min-height: 78px; overflow: hidden; border-radius: 6px; background: var(--tech-cyan-soft); }
+.tech-news-page .list-news-popular li img, .tech-news-page #tech_description1 li img, .tech-news-page #documnet_description1 li img { width: 100%; height: 100%; margin: 0; float: none; border-radius: 0; object-fit: cover; }
+.tech-news-page .list-news-popular li h3, .tech-news-page #tech_description1 li h3, .tech-news-page #documnet_description1 li h3 { align-self: end; margin: 0; padding: 0; line-height: 1.35; }
+.tech-news-page .list-news-popular li h3 a, .tech-news-page #tech_description1 li h3 a, .tech-news-page #documnet_description1 li h3 a { font-size: 14px; }
+.tech-news-page .list-news-popular li .meta-post { align-self: start; margin: 4px 0 0; }
+.tech-news-page #tech_description1 li, .tech-news-page #documnet_description1 li { display: grid; grid-template-columns: minmax(76px, 25%) minmax(0, 1fr); grid-template-rows: auto 1fr; column-gap: 14px; min-height: 124px; padding: 12px; }
+
+.tech-news-page .news-cate-item { margin-bottom: 14px; padding: 16px; border: 1px solid var(--tech-line); border-radius: 10px; background: #fff; box-shadow: 0 4px 12px rgba(16,42,67,.04); }
+.tech-news-page .news-cate-item .row { display: grid; grid-template-columns: minmax(130px, 25%) minmax(0, 1fr); align-items: start; column-gap: 18px; margin: 0; }
+.tech-news-page .news-cate-item .row > [class*="col-"] { float: none; width: auto; padding: 0; }
+.tech-news-page .news-cate-item .row > .info-head-thump-crop { grid-column: 1; grid-row: 1; order: 1; }
+.tech-news-page .news-cate-item .row > .info-head-thump-crop + div { grid-column: 2; grid-row: 1; order: 2; }
+.tech-news-page .news-cate-item .info-head-thump-crop { height: 126px; max-height: none; border-radius: 7px; }
+.tech-news-page .news-cate-item .info-head-thump-crop img { width: 100%; height: 100%; object-fit: cover; }
+.tech-news-page .news-cate-item h3 { margin-top: 0; }
+.tech-news-page #child_group_content { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.tech-news-page #child_group_content .news-cate-item { height: 100%; margin: 0; }
+.tech-news-page #child_group_content .news-cate-item .info-head-thump-crop { height: 126px; }
+.tech-search-card { grid-template-columns: minmax(150px, 25%) minmax(0, 1fr); }
+.tech-search-image { height: 100%; min-height: 112px; }
+.tech-tool-lists, .tech-sidebar-list { margin-top: 28px; }
+.tech-tool-lists > h2, .tech-sidebar-list > h2 { margin: 0 0 12px; color: var(--tech-navy); font: 700 20px/1.2 "Roboto Slab", Georgia, serif; }
+.tech-tool-group { margin-top: 18px; }
+.tech-tool-group h3 { margin: 0 0 8px; color: var(--tech-muted); font-size: 12px; font-weight: 800; text-transform: uppercase; }
+.tech-tool-group .list-news-popular, .tech-sidebar-list .list-news-popular { margin: 0; }
+.tech-news-page .ads { display: none !important; }
+.tech-news-page .news-cate-item { margin: 0; padding: 18px; border-color: var(--tech-line); }
+.tech-news-page .news-cate-item:first-child { border-radius: 12px 12px 0 0; }
+.tech-news-page .news-cate-item:last-child { border-radius: 0 0 12px 12px; }
+.tech-news-page .post-detail { padding: 30px; line-height: 1.8; }
+.tech-news-page .post-detail h1, .tech-news-page .post-detail h2, .tech-news-page .post-detail h3 { color: var(--tech-navy); }
+.tech-news-page .post-detail img { display: block; max-width: 100%; height: auto; margin: 18px auto; border-radius: 8px; }
+.tech-news-page .post-detail pre { position: relative; padding: 18px; border-radius: 8px; color: #e7f5f8; background: var(--tech-navy-deep); overflow: auto; }
+.tech-copy-code { float: right; margin: -8px -8px 8px 12px; padding: 5px 9px; border: 1px solid #51809a; border-radius: 4px; color: #dff8fd; background: transparent; font-size: 12px; }
+.tech-copy-code:hover { background: #16435d; }
+
+.tech-search-page { max-width: 900px; margin: 0 auto; padding: 14px 0 35px; }
+.tech-search-page h1 { margin: 0 0 20px; color: var(--tech-navy); font: 700 30px/1.25 "Roboto Slab", Georgia, serif; }
+.tech-search-form { display: flex; gap: 10px; padding: 10px; border: 1px solid var(--tech-line); border-radius: 10px; background: #fff; box-shadow: 0 5px 18px rgba(16,42,67,.05); }
+.tech-search-form input { flex: 1; min-width: 0; padding: 11px 13px; border: 1px solid var(--tech-line); border-radius: 6px; outline-color: var(--tech-cyan); }
+.tech-search-form button { padding: 0 17px; border: 0; border-radius: 6px; color: #fff; background: var(--tech-cyan); font-weight: 800; }
+.tech-search-summary { margin: 18px 0; color: var(--tech-muted); }
+.tech-search-results { display: grid; gap: 14px; }
+.tech-search-card { display: grid; grid-template-columns: 190px 1fr; gap: 18px; min-height: 142px; padding: 14px; border: 1px solid var(--tech-line); border-radius: 10px; background: #fff; }
+.tech-search-image { height: 112px; overflow: hidden; border-radius: 7px; background: var(--tech-cyan-soft); }
+.tech-card-topic { margin: 2px 0 6px; color: var(--tech-cyan); font-size: 11px; font-weight: 800; text-transform: uppercase; }
+.tech-search-card h2 { margin: 0 0 7px; color: var(--tech-navy); font: 700 18px/1.35 "Roboto Slab", Georgia, serif; }
+.tech-search-card p:last-child { margin: 0; color: var(--tech-muted); font-size: 13px; }
+
+@media (max-width: 991px) {
+  .tech-topics { grid-template-columns: repeat(3, 1fr); }
+  .tech-news-page .menu ul li > a { padding: 0 12px; font-size: 12px; }
+}
+@media (max-width: 767px) {
+  .tech-news-page > .container { width: auto; max-width: none; padding: 0 14px; }
+  .tech-header { min-height: 72px; padding: 10px 0; }
+  .tech-header .logo img { max-width: 84px; max-height: 42px; }
+  .tech-header .logo::after { font-size: 14px; }
+  .tech-header::after { display: none; }
+  .tech-news-page .menu { height: 52px; margin: 12px 0 18px; }
+  .menu-res { z-index: 10000; background: var(--tech-navy); box-shadow: 0 10px 22px rgba(16,42,67,.25); }
+  .menu-res-inner ul > li a, .menu-res-inner ul > li p { color: #fff; font-size: 14px; }
+  .tech-hero { min-height: 0; padding: 31px 24px; border-radius: 12px; }
+  .tech-hero h1 { font-size: 25px; }
+  .tech-hero-orbit { display: none; }
+  .tech-topics { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .tech-topics a { min-height: 76px; padding: 11px; font-size: 11px; }
+  .tech-news-page .spotlight-img .info-head-main-crop { height: 205px; }
+  .tech-news-page #owl_spotlight_id .spotlight-item { grid-template-columns: 1fr; min-height: 0; }
+  .tech-news-page #owl_spotlight_id .spotlight-img { min-height: 205px; }
+  .tech-news-page #owl_spotlight_id .spotlight-item-caption { padding: 20px; }
+  .tech-news-page .spotlight-item-caption h2 { font-size: 20px; }
+  .tech-news-page .box-news .news-two-large > .row { grid-template-columns: 1fr; gap: 16px; }
+  .tech-news-page .box-news .news-two-large .info-head-fist-pages-crop { height: 190px; }
+  .tech-news-page .tech-home-feed-grid { grid-template-columns: 1fr; }
+  .tech-news-page .tech-home-feed-card { grid-template-columns: 28% minmax(0, 1fr); min-height: 128px; }
+  .tech-news-page .tech-home-feed-image { min-height: 100px; }
+  .tech-news-page #tech_description1, .tech-news-page #documnet_description1 { grid-template-columns: 1fr; }
+  .tech-news-page .list-news-popular li, .tech-news-page #tech_description1 li, .tech-news-page #documnet_description1 li { grid-template-columns: 28% minmax(0, 1fr); }
+  .tech-news-page .news-cate-item .row { grid-template-columns: 28% minmax(0, 1fr); column-gap: 14px; }
+  .tech-news-page .news-cate-item .row > .info-head-thump-crop { grid-column: 1; }
+  .tech-news-page .news-cate-item .row > .info-head-thump-crop + div { grid-column: 2; }
+  .tech-news-page .news-cate-item .info-head-thump-crop { height: 100%; min-height: 100px; }
+  .tech-news-page #child_group_content { grid-template-columns: 1fr; }
+  .tech-news-page .post-detail { padding: 20px; }
+  .tech-search-form { flex-direction: column; }
+  .tech-search-form button { min-height: 42px; }
+  .tech-search-card { grid-template-columns: 1fr; gap: 12px; }
+  .tech-search-image { height: 180px; }
+}

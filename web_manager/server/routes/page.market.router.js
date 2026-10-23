@@ -14,7 +14,35 @@ router.get('/', (req, res) => {
   res.render('main/area');
 });*/
 router.get('/shop', (req, res) => {
-  res.render('main/productShop');
+  res.render('main/SaleOnline');
+});
+
+router.get('/service', (req, res) => {
+  res.render('main/productService');
+});
+router.get('/service_info', (req, res) => {
+  res.render('main/serviceInfo');
+});
+router.get('/service_detail', (req, res) => {
+  res.render('main/requestInvoice');
+});
+
+const serviceAlphabet = 'lWktSROD18QbIrXCY9A6n3xJ4Z5GgdKwoHh7yjE0NcMTpzaVBFUqLsvei2fPm';
+function decodeServiceId(value) {
+  if (typeof value !== 'string' || value.length !== 12) return null;
+  let output = 0;
+  for (const character of value) {
+    const index = serviceAlphabet.indexOf(character);
+    if (index === -1) return null;
+    output = output * serviceAlphabet.length + index;
+    if (!Number.isSafeInteger(output)) return null;
+  }
+  return output;
+}
+router.get('/suorce-detail/:typePage', (req, res, next) => {
+  const serviceId = decodeServiceId(req.params.typePage);
+  if (!serviceId) return next();
+  res.render('main/DetailService', { detail: serviceId });
 });
 router.get('/product/product_detail', (req, res) => {
   res.render('main/DetailProduct',{ detail: req._parsedOriginalUrl.query });
@@ -112,6 +140,12 @@ router.get('/mqtt', (req, res) => {
     },
   });
 });
+router.get('/mqtt/certificate/create', (req, res) => {
+  res.render('mqtt/certificate-save');
+});
+router.get('/mqtt/certificate/get', (req, res) => {
+  res.render('mqtt/certificate-get');
+});
 
 router.get('/abouttest', (req, res) => {
   let options = {
@@ -147,4 +181,3 @@ router.get('/sample_pages/:typePage/:detailPages', (req, res) => {
 });
 
 module.exports = router;
-

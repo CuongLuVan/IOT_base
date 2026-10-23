@@ -1,113 +1,99 @@
 import React, { useState } from 'react';
-import PropTypes from 'prop-types';
 import {
-    FormControl,
-    Button,
-    InputLabel,
-    MenuItem,
-    Select,
-    TextField
+  FormControl,
+  InputLabel,
+  MenuItem,
+  Select
 } from '@material-ui/core';
-import ManagerData from '../../actions/ManagerData.js'
+import ManagerData from '../../actions/ManagerData.js';
+import { MODE_PAPER_LIBRARRY } from '../../config/config.js';
 
+const PAPER_LIBRARY_SUBCATEGORY_IDS = {
+  1: 1,
+  2: 21,
+  3: 31,
+  4: 41
+};
 
-const SelectGroupContentSub = ({ detailValue,onChange }) => {
-   // const [ handleClose] = useState()
-   console.log("Cho nay OK");
-   var group_content_sub =ManagerData.getTable("group_content_sub");
-   var group_content = ManagerData.getTable("group_content");
-   var idSelect = 0;
-   var item = group_content_sub.filter(o=>o.group_content_sub_id==detailValue);
-   if(item.length>0){
-       var itemMainMenu = group_content.filter(o=>o.group_content_id==item[0].group_content_id);
-       if(itemMainMenu.length>0){
-        idSelect=itemMainMenu[0].group_content_id;
-       }   
-   }
-    var  data_group_content=group_content_sub.filter(o=>o.group_content_id==idSelect);
+const sameId = (left, right) => String(left) === String(right);
 
-    const [state, setState] = useState({
-        group_content: group_content ,
-        group_content_sub: data_group_content,
-        detailInfo:{sub_id:detailValue,id:idSelect},
-    });
+const SelectGroupContentSub = ({ detailValue, onChange }) => {
+  const groupContentSub = ManagerData.getTable('group_content_sub');
+  const groupContent = ManagerData.getTable('group_content');
+  const selectedSubcategory = groupContentSub.find((item) =>
+    sameId(item.group_content_sub_id, detailValue)
+  );
+  const initialCategoryId = selectedSubcategory ? selectedSubcategory.group_content_id : 0;
+  const [detailInfo, setDetailInfo] = useState({
+    id: initialCategoryId,
+    sub_id: detailValue
+  });
 
+  const availableSubcategories = groupContentSub.filter((item) =>
+    sameId(item.group_content_id, detailInfo.id)
+  );
 
-    const  onChangeSub= (content,detail)=>{
-            var value= state.detailInfo;
-            value[detail] =content.target.value;
-            console.log("Content: " + content);
-            if(detail=='id')
-            {
-                value.sub_id=0;
-                var group_content_sub =ManagerData.getTable("group_content_sub");
-                var group_content_select  = group_content_sub.filter(o=>o.group_content_id==content.target.value);
-                setState((prev) => ({
-                    ...prev,
-                    group_content_sub:group_content_select,
-                    detailInfo: value
-                  })
-                );
-            }
-            else
-            {
-                setState((prev) => ({
-                    ...prev,
-                    detailInfo: value
-                  })
-                );
-                onChange(content);
-            }               
-    }
+  const onCategoryChange = (event) => {
+    const categoryId = event.target.value;
+    const subcategoryId = MODE_PAPER_LIBRARRY
+      ? (PAPER_LIBRARY_SUBCATEGORY_IDS[categoryId] || 0)
+      : 0;
+    const nextDetail = { id: categoryId, sub_id: subcategoryId };
+    setDetailInfo(nextDetail);
 
-    
+    // Paper Library has exactly one configured subcategory per top-level
+    // category, so selecting the parent also updates the form value.
+    if (MODE_PAPER_LIBRARRY) onChange({ target: { value: subcategoryId } });
+  };
 
-    return (
-        <div className={'dp-i'}>
-            <FormControl variant="outlined" className={'input-pages-register'}>
-                <InputLabel className={'register-label'} shrink id="demo-simple-select-menu">
-                    Chuyên mục (menu)
-                </InputLabel>
-                <Select
-                    className={'margin-right-register'}
-                    labelId="demo-simple-select-menu"
-                    id="status"
-                    value={state.detailInfo.id}
-                    onChange={(event) => {
-                        onChangeSub(event,"id");
-                    // setRole(event.target.value);
-                    }}
-                >
-                    {state.group_content.map((vars) => (
-                        <MenuItem value={vars.group_content_id} key={vars.group_content_id}>
-                        {vars.group_content}
-                        </MenuItem>
-                    ))}
-                </Select>
-            </FormControl>
-            <FormControl variant="outlined" className={'input-pages-register'}>
-                <InputLabel className={'register-label'} shrink id="demo-simple-select-menu1">
-                    Chuyên mục chi tiết
-                </InputLabel>
-                <Select
-                    className={'margin-right-register'}
-                    labelId="demo-simple-select-menu1"
-                    id="status"
-                    value={state.detailInfo.sub_id}
-                    onChange={(event) => {
-                        onChangeSub(event,"sub_id");
-                    // setRole(event.target.value);
-                    }}
-                >
-                    {state.group_content_sub.map((vars) => (
-                        <MenuItem value={vars.group_content_sub_id} key={vars.group_content_sub_id}>
-                        {vars.group_content}
-                        </MenuItem>
-                    ))}
-                </Select>
-            </FormControl>
-        </div>
-    );
-}
+  const onSubcategoryChange = (event) => {
+    const nextDetail = Object.assign({}, detailInfo, { sub_id: event.target.value });
+    setDetailInfo(nextDetail);
+    onChange(event);
+  };
+
+  return (
+    <div className="dp-i">
+      <FormControl variant="outlined" className="input-pages-register">
+        <InputLabel className="register-label" shrink id="group-content-label">
+          Chuyên mục (menu)
+        </InputLabel>
+        <Select
+          className="margin-right-register"
+          labelId="group-content-label"
+          id="group-content"
+          value={detailInfo.id}
+          onChange={onCategoryChange}
+        >
+          {groupContent.map((item) => (
+            <MenuItem value={item.group_content_id} key={item.group_content_id}>
+              {item.group_content}
+            </MenuItem>
+          ))}
+        </Select>
+      </FormControl>
+      {!MODE_PAPER_LIBRARRY && (
+        <FormControl variant="outlined" className="input-pages-register">
+          <InputLabel className="register-label" shrink id="group-content-sub-label">
+            Chuyên mục chi tiết
+          </InputLabel>
+          <Select
+            className="margin-right-register"
+            labelId="group-content-sub-label"
+            id="group-content-sub"
+            value={detailInfo.sub_id}
+            onChange={onSubcategoryChange}
+          >
+            {availableSubcategories.map((item) => (
+              <MenuItem value={item.group_content_sub_id} key={item.group_content_sub_id}>
+                {item.group_content}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      )}
+    </div>
+  );
+};
 
 export default SelectGroupContentSub;

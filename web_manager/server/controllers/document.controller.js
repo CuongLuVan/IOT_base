@@ -3,6 +3,10 @@ const DocumentFileAndFloder = require('../models/DocumentFileAndFloder.js');
 var documentFileAndFloder =new DocumentFileAndFloder();
 const {getRamdomData} = require('../utils/utilsString.js');
 const {getLanggue} = require('../utils/Validate.js');
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const {execFileSync} = require('child_process');
 
 var squel = require("squel");
 const knex = require('../config/knex.js');
@@ -392,6 +396,98 @@ documentCtrl.getAllContentLatestPage  = async function(req, res) {
                 returnOKCustom(res,await queryInfoSql(sql, [getLanggue(req), ...listArray]));
 }
 
+const DOCUMENT_PAGE_SIZE = 10;
+const MAX_DOCUMENT_PAGE_SIZE = 100;
+const MAX_DOCUMENT_OFFSET = 1000000;
+const MAX_DOCUMENT_GROUPS = 50;
+
+function parseDocumentGroupIds(value) {
+    const rawIds = Array.isArray(value)
+        ? value
+        : (typeof value === 'string' ? value.split(',') : []);
+
+    if (rawIds.length === 0 || rawIds.length > MAX_DOCUMENT_GROUPS) return null;
+
+    const groupIds = [];
+    const seen = new Set();
+    for (const rawId of rawIds) {
+        const normalizedId = typeof rawId === 'string' ? rawId.trim() : String(rawId);
+        if (!/^\d+$/.test(normalizedId)) return null;
+
+        const groupId = Number(normalizedId);
+        if (!Number.isSafeInteger(groupId) || groupId < 1) return null;
+        if (!seen.has(groupId)) {
+            seen.add(groupId);
+            groupIds.push(groupId);
+        }
+    }
+
+    return groupIds;
+}
+
+function parseDocumentPagination(body) {
+    const start = body.start === undefined ? 0 : Number(body.start);
+    if (!Number.isSafeInteger(start) || start < 0 || start > MAX_DOCUMENT_OFFSET) return null;
+
+    if (body.end === undefined || body.end === null || body.end === '') {
+        return { offset: start, limit: DOCUMENT_PAGE_SIZE };
+    }
+
+    const end = Number(body.end);
+    if (!Number.isSafeInteger(end) || end <= start) return null;
+
+    const limit = end - start;
+    if (limit > MAX_DOCUMENT_PAGE_SIZE) return null;
+    return { offset: start, limit: limit };
+}
+
+documentCtrl.getAllContentDocumentData  = async function(req, res) {
+    const body = req.body || {};
+    const groupIds = parseDocumentGroupIds(body.data);
+    const isCounterRequest = body.counter === true;
+
+    if (!groupIds || (body.counter !== undefined && typeof body.counter !== 'boolean')) {
+        return res.status(400).json({
+            error: { message: 'Invalid document query.' },
+            error_code: WarningInfo.VALIDATE_WORNG,
+            data: { message: 'BAD_REQUEST' }
+        });
+    }
+
+    const pagination = isCounterRequest ? null : parseDocumentPagination(body);
+    if (!isCounterRequest && !pagination) {
+        return res.status(400).json({
+            error: { message: 'Invalid pagination.' },
+            error_code: WarningInfo.VALIDATE_WORNG,
+            data: { message: 'BAD_REQUEST' }
+        });
+    }
+
+    const placeholders = groupIds.map(() => '?').join(', ');
+    const select = isCounterRequest
+        ? 'COUNT(gro_pages_content.pages_content_id) AS number_document'
+        : 'gro_pages_content.*';
+    let sql = `SELECT ${select} FROM gro_pages_content
+        WHERE gro_pages_content.deleteflag = 0
+          AND gro_pages_content.type_langue = ?
+          AND gro_pages_content.is_main_pages_id < 1
+          AND gro_pages_content.group_content_sub_id IN (${placeholders})`;
+    const params = [getLanggue(req), ...groupIds];
+
+    if (!isCounterRequest) {
+        sql += ' ORDER BY gro_pages_content.set_to_fist DESC, gro_pages_content.pages_content_id DESC LIMIT ? OFFSET ?';
+        params.push(pagination.limit, pagination.offset);
+    }
+
+    try {
+        const result = await knex.raw(sql, params);
+        return returnOKCustom(res, result[0] || []);
+    } catch (error) {
+        console.error('Unable to retrieve document content.', error);
+        return returnFalse(res, { message: 'Unable to retrieve document content.' }, WarningInfo.ERROR_SERVER);
+    }
+}
+
 documentCtrl.getAllContentStartPage  = async function(req,res) {
     var langgue = getLanggue(req);
     var sql=  "SELECT gro_pages_content.*,group_content_sub.group_content , n FROM ( SELECT @prev := '', @n := 0 ) init JOIN ( SELECT gro_pages_content.*, @n := if(group_content_sub_id != @prev, 1, @n + 1) AS n, @prev := group_content_sub_id FROM gro_pages_content WHERE gro_pages_content.deleteflag =0 AND gro_pages_content.type_langue= ? AND gro_pages_content.is_main_pages_id<1 ORDER BY group_content_sub_id,set_to_fist,pages_content_id DESC) gro_pages_content LEFT JOIN group_content_sub on group_content_sub.group_content_sub_id=gro_pages_content.group_content_sub_id WHERE n <= 2";
@@ -412,11 +508,14 @@ documentCtrl.getAllInfoHome = async function(req,res) {
 
 documentCtrl.getAllInGroupPage  = async function(req,res) {
     var is_main_pages_id = req.body['is_main_pages_id'];
-    var langgue = getLanggue(req);
-    var sqlraw = squel.select().from('gro_pages_content')
-        .where('deleteflag=0')
-        .where('type_langue = ?', langgue)
-        .where('is_main_pages_id = ? OR pages_content_id = ?', is_main_pages_id, is_main_pages_id);
+    var sqlraw = squel.select().from('gro_pages_content', 'g')
+                        .field('g.*')
+                        .field('COALESCE(u.username, c.username)', 'username_updated')
+                        .left_join('users', 'u', 'g.id_updated = u.users_id')
+                        .left_join('customer', 'c', 'g.id_updated = c.customer_id')
+                        .where('g.deleteflag = 0')
+                        .where('g.type_langue = ?', getLanggue(req))
+                        .where('(g.is_main_pages_id = ? OR g.pages_content_id = ?)', is_main_pages_id, is_main_pages_id);
     var p = sqlraw.toParam();
     var x= await knex.raw(p.text, p.values);
     var data=[];
@@ -439,6 +538,246 @@ documentCtrl.getRamdomContent  = async function(req,res) {
     var langgue = getLanggue(req);
     var sql= " SELECT gro_pages_content.* FROM gro_pages_content Where deleteflag=0 and type_langue= ? and group_content_sub_id< ? and group_content_sub_id > ? and is_main_pages_id<1  ORDER BY set_to_fist ASC LIMIT 10";
     returnOKCustom(res,await queryInfoSql(sql, [langgue, dataValue, req.body.type]));
+}
+
+
+function runOpenSSL(args) {
+    return execFileSync("openssl", args, {
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+        timeout: 15000,
+        maxBuffer: 1024 * 1024,
+    });
+}
+
+function getMqttIdentity(body) {
+    const fallbackId = body.type == null ? "" : String(Number(body.type) + 10);
+    const mqttId = String(body.mqtt_id || fallbackId).trim();
+    if (!/^[A-Za-z0-9_.-]{1,40}$/.test(mqttId)) {
+        throw new Error("mqtt_id must contain only letters, numbers, dots, underscores, or hyphens.");
+    }
+    return mqttId;
+}
+
+function readBrokerJson(filePath) {
+    const value = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new Error("Invalid MQTT broker configuration: " + path.basename(filePath));
+    }
+    return value;
+}
+
+function upsertBrokerEntry(entries, key, id, value) {
+    const index = entries.findIndex(function(entry) { return entry[key] === id; });
+    if (index === -1) {
+        entries.push(value);
+    } else {
+        entries[index] = Object.assign({}, entries[index], value);
+    }
+}
+
+function saveBrokerSettings(brokerDir, mqttId, config) {
+    const files = {
+        acl: path.join(brokerDir, "mqtt_acl.json"),
+        clientIds: path.join(brokerDir, "mqtt_client_ids.json"),
+        deviceCerts: path.join(brokerDir, "mqtt_device_certs.json"),
+        messageAuth: path.join(brokerDir, "mqtt_message_auth.json"),
+        users: path.join(brokerDir, "mqtt_users.json"),
+    };
+    const originals = {};
+    const settings = {};
+    Object.keys(files).forEach(function(key) {
+        originals[key] = fs.readFileSync(files[key], "utf8");
+        settings[key] = readBrokerJson(files[key]);
+    });
+
+    ["rules", "clients", "devices", "users"].forEach(function(key) {
+        const configKey = key === "rules" ? "acl" :
+            key === "clients" ? "clientIds" :
+            key === "devices" ? "deviceCerts" : "users";
+        if (!Array.isArray(settings[configKey][key])) {
+            throw new Error("Invalid MQTT broker configuration array: " + key);
+        }
+    });
+    if (!settings.messageAuth.keys || typeof settings.messageAuth.keys !== "object" ||
+        Array.isArray(settings.messageAuth.keys)) {
+        throw new Error("Invalid MQTT message authentication keys configuration.");
+    }
+
+    const publishTopics = config.mqtt_pub ? [config.mqtt_pub] : [];
+    const subscribeTopics = config.mqtt_sub ? [config.mqtt_sub] : [];
+    upsertBrokerEntry(settings.acl.rules, "clientId", mqttId, {
+        clientId: mqttId,
+        publish: publishTopics,
+        subscribe: subscribeTopics,
+    });
+    upsertBrokerEntry(settings.clientIds.clients, "clientId", mqttId, {
+        clientId: mqttId,
+        username: config.mqtt_user,
+        label: config.content,
+    });
+    upsertBrokerEntry(settings.deviceCerts.devices, "clientId", mqttId, {
+        clientId: mqttId,
+        fingerprint256: config.fingerprint256,
+    });
+    upsertBrokerEntry(settings.users.users, "username", config.mqtt_user, {
+        username: config.mqtt_user,
+        password: config.mqtt_pass,
+    });
+    settings.messageAuth.keys[mqttId] = config.messageAuthKey;
+
+    const nextContents = {
+        acl: settings.acl,
+        clientIds: settings.clientIds,
+        deviceCerts: settings.deviceCerts,
+        messageAuth: settings.messageAuth,
+        users: settings.users,
+    };
+    const tempPaths = {};
+    const changed = [];
+    try {
+        Object.keys(files).forEach(function(key) {
+            tempPaths[key] = files[key] + "." + process.pid + "." +
+                crypto.randomBytes(6).toString("hex") + ".tmp";
+            fs.writeFileSync(tempPaths[key], JSON.stringify(nextContents[key], null, 2) + "\n", {
+                encoding: "utf8",
+                mode: 0o600,
+            });
+        });
+        Object.keys(files).forEach(function(key) {
+            fs.renameSync(tempPaths[key], files[key]);
+            changed.push(key);
+        });
+    } catch (error) {
+        changed.forEach(function(key) {
+            fs.writeFileSync(files[key], originals[key], {encoding: "utf8", mode: 0o600});
+        });
+        throw error;
+    } finally {
+        Object.keys(tempPaths).forEach(function(key) {
+            if (fs.existsSync(tempPaths[key])) {
+                fs.unlinkSync(tempPaths[key]);
+            }
+        });
+    }
+}
+
+documentCtrl.saveCertificateMqtt  = async function(req,res) {
+    try {
+        const body = req.body || {};
+        const mqttId = getMqttIdentity(body);
+        const requiredFields = ["content", "mqtt_pub", "mqtt_sub", "mqtt_user", "mqtt_pass"];
+        const config = {};
+        requiredFields.forEach(function(field) {
+            config[field] = body[field] == null ? "" : String(body[field]).trim();
+            if (config[field].length > 40) {
+                throw new Error(field + " must be 40 characters or fewer.");
+            }
+        });
+        if (!config.mqtt_user || !config.mqtt_pass) {
+            throw new Error("mqtt_user and mqtt_pass are required.");
+        }
+        config.mqtt_id = mqttId;
+
+        const certDir = process.env.MQTT_CERTS;
+        if (!certDir) {
+            throw new Error("MQTT_CERTS is not configured.");
+        }
+        const certDirectory = path.resolve(certDir);
+        const brokerDir = path.dirname(certDirectory);
+        const privateKeyPath = path.join(certDirectory, mqttId + ".key");
+        const csrPath = path.join(certDirectory, mqttId + ".csr");
+        const certificatePath = path.join(certDirectory, mqttId + ".crt");
+        const caCertificatePath = path.join(certDirectory, "ca.crt");
+        const caPrivateKeyPath = path.join(certDirectory, "ca.key");
+        const extPath = path.join(certDirectory, "device-save-mongo.ext");
+
+        if ([privateKeyPath, csrPath, certificatePath].some(fs.existsSync)) {
+            throw new Error("An MQTT certificate already exists for this mqtt_id.");
+        }
+        const existing = await knex("mqtt_microservice")
+            .where({mqtt_id: mqttId, deleteflag: 0})
+            .first();
+        if (existing) {
+            throw new Error("An active MQTT record already exists for this mqtt_id.");
+        }
+
+        runOpenSSL([
+            "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048",
+            "-out", privateKeyPath,
+        ]);
+        fs.chmodSync(privateKeyPath, 0o600);
+        runOpenSSL([
+            "req", "-new", "-key", privateKeyPath, "-out", csrPath,
+            "-subj", "/CN=" + mqttId,
+        ]);
+        runOpenSSL([
+            "x509", "-req", "-in", csrPath, "-CA", caCertificatePath,
+            "-CAkey", caPrivateKeyPath, "-set_serial",
+            "0x" + crypto.randomBytes(16).toString("hex"), "-out", certificatePath,
+            "-days", "365", "-sha256", "-extfile", extPath,
+        ]);
+
+        const certificateDer = runOpenSSL([
+            "x509", "-in", certificatePath, "-outform", "DER",
+        ]);
+        config.fingerprint256 = crypto.createHash("sha256").update(certificateDer)
+            .digest("hex").toUpperCase().match(/.{2}/g).join(":");
+        config.messageAuthKey = crypto.randomBytes(32).toString("hex");
+
+        const now = knex.fn.now();
+        const insertData = {
+            content: config.content,
+            mqtt_pub: config.mqtt_pub,
+            mqtt_sub: config.mqtt_sub,
+            mqtt_user: config.mqtt_user,
+            mqtt_pass: config.mqtt_pass,
+            mqtt_id: mqttId,
+            created_at: now,
+            updated_at: now,
+            id_created: req.currentUser.users_id,
+            id_updated: req.currentUser.users_id,
+            deleteflag: 0,
+        };
+        const inserted = await knex.transaction(async function(trx) {
+            const result = await trx("mqtt_microservice").insert(insertData);
+            saveBrokerSettings(brokerDir, mqttId, config);
+            return result;
+        });
+        const privateKey = fs.readFileSync(privateKeyPath, "utf8");
+        const certificate = fs.readFileSync(certificatePath, "utf8");
+        const client_dir = certificate;
+        returnOKCustom(res, {
+            mqtt_microservice_id: inserted[0],
+            mqtt_id: mqttId,
+            fingerprint256: config.fingerprint256,
+            mqtt_message_key: config.messageAuthKey,
+            requiresBrokerRestart: true,
+            privateKey,
+            certificate,
+            client_dir,
+        });
+    } catch (error) {
+        console.error("Failed to save MQTT certificate/configuration:", error.message);
+        returnFalse(res, "Unable to save MQTT certificate/configuration.", WarningInfo.ERROR_SERVER);
+    }
+}
+
+documentCtrl.getCertificateMqtt  = async function(req,res) {
+    try {
+        const mqttId = getMqttIdentity(req.body || {});
+        const certDir = process.env.MQTT_CERTS;
+        if (!certDir) {
+            throw new Error("MQTT_CERTS is not configured.");
+        }
+        const privateKey = fs.readFileSync(path.join(certDir, mqttId + ".key"), "utf8");
+        const certificate = fs.readFileSync(path.join(certDir, mqttId + ".crt"), "utf8");
+        const client_dir = certificate;
+        returnOKCustom(res, {privateKey, certificate, client_dir});
+    } catch (error) {
+        console.error("Failed to read MQTT certificate:", error.message);
+        returnFalse(res, "Unable to read MQTT certificate.", WarningInfo.ERROR_SERVER);
+    }
 }
 
 module.exports =documentCtrl;

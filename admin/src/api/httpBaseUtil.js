@@ -1,6 +1,4 @@
 import axios from 'axios';
-import { useLogout  } from 'react-admin';
-import React, { forwardRef } from 'react';
 import { API_URL, JWT_TOKEN ,HOST_HTTP_CHAT,HOST_HTTP_HISTORY_CHAT} from '../config/config';
 import Swal from 'sweetalert2';
 import {
@@ -10,7 +8,7 @@ import {
 } from '../utils/storageUtil';
 
 import {checkErrorRetun} from '../utils/commonUtil';
-import ManagerData from '../actions/ManagerData.js';
+import { isAuthenticated } from '../utils/jwtUtil';
 
 
 
@@ -22,15 +20,24 @@ function showLoadding(){
 }
 
 
-function getHeader(){
-  return  {
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      'X-XSRF-TOKEN': getLocalStorage(JWT_TOKEN),
-      authorization: 'Beard ' + getLocalStorage(JWT_TOKEN),
-    },
-  };
+function isApiUrl(url) {
+  try {
+    return new URL(url, API_URL).origin === new URL(API_URL).origin;
+  } catch (error) {
+    return false;
+  }
+}
+
+function getHeader(url, data) {
+  const headers = { Accept: 'application/json' };
+  if (!(data instanceof FormData)) headers['Content-Type'] = 'application/json';
+
+  // Never disclose the admin access token to separately hosted chat services.
+  // The API middleware expects this standard Authorization scheme.
+  if (isApiUrl(url) && isAuthenticated()) {
+    headers.Authorization = 'Bearer ' + getLocalStorage(JWT_TOKEN);
+  }
+  return { headers };
 }
 
 
@@ -38,14 +45,16 @@ export const httpPostData = (url, data) => {
   showLoadding();
   return new Promise((resolve, reject) => {
     axios
-      .post(url,data,getHeader())
+      .post(url,data,getHeader(url, data))
       .then((response) => {
-        Swal.close();
         resolve(response);
       })
       .catch((error) => {
         checkErrorRetun(error);
         reject(error);
+      })
+      .finally(() => {
+        Swal.close();
       });
   });
 };
@@ -55,14 +64,16 @@ export const httpPostDataAPI = (url, data) => {
   showLoadding();
   return new Promise((resolve, reject) => {
     axios
-      .post(API_URL +url,data,getHeader())
+      .post(API_URL +url,data,getHeader(API_URL + url, data))
       .then((response) => {
-        Swal.close();
         resolve(response);
       })
       .catch((error) => {
         checkErrorRetun(error);
         reject(error);
+      })
+      .finally(() => {
+        Swal.close();
       });
   });
 };
@@ -70,14 +81,16 @@ export const httpPostDataAPI = (url, data) => {
 export const httpGetData = (url) => {
   showLoadding();
   return new Promise((resolve, reject) => {
-    axios.get(url,getHeader())
+    axios.get(url,getHeader(url))
       .then((response) => {
-        Swal.close();
         resolve(response);
       })
       .catch((error) => {
         checkErrorRetun(error);
         reject(error);
+      })
+      .finally(() => {
+        Swal.close();
       });
   });
 };
@@ -87,6 +100,10 @@ export const login = ({ email, password }) => {
   return new Promise((resolve, reject) =>  {
     axios.post(API_URL + 'auth/login', { email, password })
       .then((response) => {
+        if (!response.data || typeof response.data.token !== 'string' || !response.data.token) {
+          reject(new Error('The server did not return a valid access token.'));
+          return;
+        }
         setLocalStorage(JWT_TOKEN, response.data.token);
         resolve(response);
       })
@@ -99,11 +116,13 @@ export const login = ({ email, password }) => {
 }
 
 export const logout = () => {
-  return (dispatch) => {
-    clearLocalStorage(JWT_TOKEN);
-    dispatch(push('/tool/#/'));
-    return false;
-  };
+  return axios
+    .post(API_URL + 'auth/logout', {}, getHeader(API_URL + 'auth/logout', {}))
+    .catch(() => undefined)
+    .finally(() => {
+      clearLocalStorage(JWT_TOKEN);
+      sessionStorage.removeItem('username');
+    });
 }
 
 
@@ -111,8 +130,7 @@ export const logout = () => {
 export const getallInfoTable = (table,addInfo=null) => {
   var dataUpload= null;
   if(addInfo!=null) {
-    addInfo["table"]=table;
-    dataUpload=addInfo;
+    dataUpload = Object.assign({}, addInfo, { table });
   }
   else  dataUpload={ table: table };
   return httpPostData(API_URL + 'users/report',dataUpload);
@@ -121,8 +139,7 @@ export const getallInfoTable = (table,addInfo=null) => {
 export const getNumberPageOnTable = (table,addInfo=null) => {
   var dataUpload= null;
   if(addInfo!=null) {
-    addInfo["table"]=table;
-    dataUpload=addInfo;
+    dataUpload = Object.assign({}, addInfo, { table });
   }
   else  dataUpload={ table: table };
   return new Promise((resolve, reject) => {
@@ -166,15 +183,15 @@ export const setDataApprovedCompany = (data) => {
 }
 
 export const  addOneDataToTable = async (table, data)  =>  {
-  return await  httpPostData(API_URL + 'users/manager_add' ,Object.assign(data, { table: table }));
+  return await httpPostData(API_URL + 'users/manager_add', Object.assign({}, data, { table }));
 }
 
 export const deleteOneDataToTable = (table, data) => {
-  return httpPostData(API_URL + 'users/manager_delete' ,Object.assign(data, { table: table }));
+  return httpPostData(API_URL + 'users/manager_delete', Object.assign({}, data, { table }));
 }
 
 export const updateOneDataInfoTable = (table, data) => {
-  return httpPostData(API_URL + 'users/manager_update' ,Object.assign(data, { table: table }));
+  return httpPostData(API_URL + 'users/manager_update', Object.assign({}, data, { table }));
 }
 
 
@@ -212,14 +229,16 @@ export const updatePageToAdvertisement = ( data) => {
 export const uploadfileDataImageAdmin = (data) => {
   showLoadding();
   return new Promise((resolve, reject) => {
-    axios.post(API_URL + 'customers/import-image-admin',Object.assign(data),getHeader())
+    axios.post(API_URL + 'customers/import-image-admin',data,getHeader(API_URL + 'customers/import-image-admin', data))
       .then((response) => {
-        Swal.close();
         resolve(response.data);
       })
       .catch((error) => {
         checkErrorRetun(error);
         reject(error);
+      })
+      .finally(() => {
+        Swal.close();
       });
   });
 };
@@ -227,30 +246,33 @@ export const uploadfileDataImageAdmin = (data) => {
 export const uploadfileDataImage = (data) => {
   showLoadding();
   return new Promise((resolve, reject) => {
-    axios.post(API_URL + 'customers/import-image',Object.assign(data),getHeader())
+    axios.post(API_URL + 'customers/import-image',data,getHeader(API_URL + 'customers/import-image', data))
       .then((response) => {
-        Swal.close();
         resolve(response.data);
       })
       .catch((error) => {
         checkErrorRetun(error);
         reject(error);
+      })
+      .finally(() => {
+        Swal.close();
       });
   });
 };
 
 export const sendMessageChat = (data) => {
   showLoadding();
-  data["author_IP"]=ManagerData.infoMachine.Ipv4==""?ManagerData.infoMachine.Ipv4:ManagerData.infoMachine.Ipv6;
   return new Promise((resolve, reject) => {
-    axios.post(HOST_HTTP_CHAT + 'chat',Object.assign(data),getHeader())
+    axios.post(HOST_HTTP_CHAT + 'chat',data,getHeader(HOST_HTTP_CHAT + 'chat', data))
       .then((response) => {
-        Swal.close();
         resolve(response);
       })
       .catch((error) => {
         checkErrorRetun(error);
         reject(error);
+      })
+      .finally(() => {
+        Swal.close();
       });
   });
 }
@@ -289,6 +311,20 @@ export const getInfoClientMqtt = ( data) => {
 
 export const customerInCompany = ( data) => {
   return  httpPostData(API_URL + 'customers/customer-in-company' ,data);
+}
+
+export const getPendingCustomerDocuments = () => {
+  return httpGetData(API_URL + 'users/report-cus-documment');
+}
+
+export const reviewCustomerDocument = (id, status, rejectReason = '') => {
+  if (!Number.isSafeInteger(id) || id < 1) {
+    return Promise.reject(new Error('Invalid document id.'));
+  }
+  return httpPostData(API_URL + 'users/report-cus-documment/' + id, {
+    status,
+    reject_reason: rejectReason
+  });
 }
 
 //y

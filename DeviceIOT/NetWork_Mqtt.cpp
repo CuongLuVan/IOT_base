@@ -4,6 +4,8 @@
 #include "define_All.h"
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
+#include <esp_system.h>
+#include <time.h>
 
 #if ENABLE_MESSAGE_AUTHENTICATION
 #include <mbedtls/md.h>
@@ -21,6 +23,8 @@ using MqttWiFiClient = WiFiClient;
 #include "Memory.h"
 #include "MemoryData.h"
 #include "DebugInfo.h"
+#include "HighSpeedSampler.h"
+#include "SystemTask.h"
 #if ENABLE_ASCON_AEAD128
 #include "AsconAead128.h"
 #endif
@@ -368,11 +372,69 @@ struct SYSCFG {
 } Settings;
 extern QueueHandle_t deviceCommandQueue;
 
+static bool ensureBrokerClockSynced()
+{
+  static bool ntpConfigured = false;
+  if (!ntpConfigured) {
+    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+    ntpConfigured = true;
+  }
+  for (uint8_t attempt = 0; attempt < 50; ++attempt) {
+    if (time(NULL) >= 1704067200) {
+      return true;
+    }
+    delay(100);
+  }
+  return false;
+}
+
+static bool addBrokerReplayMetadata(String& payload)
+{
+  DynamicJsonDocument document(payload.length() * 2 + 256);
+  DeserializationError error = deserializeJson(document, payload);
+  if (error) {
+    String trimmedPayload = payload;
+    trimmedPayload.trim();
+    if (trimmedPayload.startsWith("{") || trimmedPayload.startsWith("[")) {
+      DEVICE_LOG_INFO("[MQTT] Publish blocked: invalid JSON replay envelope");
+      return false;
+    }
+    return true;
+  }
+  if (!document.is<JsonObject>()) {
+    DEVICE_LOG_INFO("[MQTT] Publish blocked: MQTT JSON payload must be an object");
+    return false;
+  }
+
+  const time_t now = time(NULL);
+  if (now < 1704067200) {
+    DEVICE_LOG_INFO("[MQTT] Publish blocked: system clock is not synchronized");
+    return false;
+  }
+
+  char nonce[17];
+  snprintf(nonce, sizeof(nonce), "%08lx%08lx",
+      (unsigned long)esp_random(), (unsigned long)esp_random());
+  document["timestamp"] = (uint64_t)now * 1000ULL;
+  document["nonce"] = nonce;
+
+  String protectedPayload;
+  if (serializeJson(document, protectedPayload) == 0) {
+    DEVICE_LOG_INFO("[MQTT] Publish blocked: failed to serialize replay metadata");
+    return false;
+  }
+  payload = protectedPayload;
+  return true;
+}
+
 void sendMessageInfoPublish(String data){
   String publishPayload = data;
 #if ENABLE_ASCON_AEAD128
   publishPayload = maybeEncryptPayload(data);
 #endif
+  if (!addBrokerReplayMetadata(publishPayload)) {
+    return;
+  }
 #if ENABLE_MESSAGE_AUTHENTICATION
   if (!messageAuthenticationLoaded) {
     DEVICE_LOG_INFO("[MQTT Auth] Publish blocked: credentials are not loaded");
@@ -386,14 +448,197 @@ void sendMessageInfoPublish(String data){
 #endif
   char *p = new char[publishPayload.length() + 1];
   strcpy(p, publishPayload.c_str());
-  if (MqttClient.publish(Settings.public_topic, p, 1)) {
+  if (!MqttClient.publish(Settings.public_topic, p, 1)) {
+    DEVICE_LOG_INFO("[MQTT] Publish failed");
   }
   delete[] p;
 }
+
+static bool parseHighSpeedMode(const char* mode, HighSpeedMode& result)
+{
+  if (strcmp(mode, "adc") == 0) {
+    result = HS_MODE_ADC_10KHZ;
+  } else if (strcmp(mode, "imu") == 0) {
+    result = HS_MODE_ICM32K;
+  } else if (strcmp(mode, "ads") == 0) {
+    result = HS_MODE_ADS100K;
+  } else if (strcmp(mode, "all") == 0) {
+    result = HS_MODE_ALL;
+  } else {
+    return false;
+  }
+  return true;
+}
+
+static void publishHighSpeedReply(const char* event, const char* reason = NULL)
+{
+  StaticJsonDocument<160> response;
+  response["event"] = event;
+  response["active"] = HighSpeedSampler::GetInstance().isSamplingActive();
+  if (reason != NULL) {
+    response["reason"] = reason;
+  }
+  String payload;
+  serializeJson(response, payload);
+  sendMessageInfoPublish(payload);
+}
+
+static bool handleHighSpeedCommand(JsonDocument& doc)
+{
+  const char* command = doc["cmd"] | "";
+  if (strcmp(command, "capture.start") == 0) {
+    const char* modeName = doc["mode"] | "";
+    const char* targetHost = doc["udp_host"] | "";
+    const uint32_t targetPort = doc["udp_port"] | 0;
+    const uint32_t durationMs = doc["duration_ms"] | 10000;
+
+    HighSpeedConfig config;
+    if (!parseHighSpeedMode(modeName, config.mode)) {
+      publishHighSpeedReply("capture.error", "invalid_mode");
+      return true;
+    }
+    if (!config.udpTargetIP.fromString(targetHost) || targetPort == 0 ||
+        targetPort > 65535 || config.udpTargetIP[0] == 0 ||
+        config.udpTargetIP[0] >= 224) {
+      publishHighSpeedReply("capture.error", "invalid_udp_target");
+      return true;
+    }
+    if (durationMs == 0 || durationMs > HS_CAPTURE_MAX_DURATION_MS) {
+      publishHighSpeedReply("capture.error", "invalid_duration");
+      return true;
+    }
+    config.udpTargetPort = static_cast<uint16_t>(targetPort);
+    config.durationMs = durationMs;
+    HighSpeedSampler& sampler = HighSpeedSampler::GetInstance();
+    if (sampler.isSamplingActive()) {
+      publishHighSpeedReply("capture.error", "capture_busy");
+      return true;
+    }
+    if (!sampler.isModeAvailable(config.mode)) {
+      publishHighSpeedReply("capture.error", "sensor_or_sampler_unavailable");
+      return true;
+    }
+    if (!sampler.startSampling(config)) {
+      publishHighSpeedReply("capture.error", "capture_start_failed");
+      return true;
+    }
+    publishHighSpeedReply("capture.started");
+    return true;
+  }
+
+  if (strcmp(command, "capture.stop") == 0) {
+    HighSpeedSampler& sampler = HighSpeedSampler::GetInstance();
+    const bool wasActive = sampler.isSamplingActive();
+    sampler.stopSampling();
+    publishHighSpeedReply(wasActive ? "capture.stopping" : "capture.stopped");
+    return true;
+  }
+
+  if (strcmp(command, "capture.status") == 0) {
+    publishHighSpeedReply("capture.status");
+    return true;
+  }
+  return false;
+}
+
+static void publishScheduleReply(const char* event)
+{
+  const String payload = SystemTask::schedulerJson(event);
+  if (payload.length() > 0) {
+    sendMessageInfoPublish(payload);
+  }
+}
+
+static bool handleScheduleCommand(JsonDocument& doc)
+{
+  const char* command = doc["cmd"] | "";
+  if (strcmp(command, "schedule.status") == 0) {
+    publishScheduleReply("schedule.status");
+    return true;
+  }
+
+  const int slot = doc["id"] | -1;
+  if (strcmp(command, "schedule.clear") == 0) {
+    if (slot < 0 || slot >= SYSTEM_TASK_SCHEDULE_MAX_RULES ||
+        !SystemTask::clearSchedule(static_cast<uint8_t>(slot))) {
+      publishScheduleReply("schedule.error");
+    } else {
+      publishScheduleReply("schedule.cleared");
+    }
+    return true;
+  }
+
+  if (strcmp(command, "schedule.set") != 0) {
+    return false;
+  }
+
+  // A schedule never accepts a GPIO or port selector: it controls only the
+  // fixed pump bit declared by SYSTEM_TASK_SCHEDULE_PORT_MASK.
+  if (doc.containsKey("port") || slot < 0 || slot >= SYSTEM_TASK_SCHEDULE_MAX_RULES) {
+    publishScheduleReply("schedule.error");
+    return true;
+  }
+
+  const char* periodName = doc["period"] | "";
+  const char* actionName = doc["action"] | "";
+  const int hour = doc["hour"] | -1;
+  const int minute = doc["minute"] | -1;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59 ||
+      (strcmp(actionName, "on") != 0 && strcmp(actionName, "off") != 0)) {
+    publishScheduleReply("schedule.error");
+    return true;
+  }
+
+  SystemControlSchedule rule = {};
+  rule.enabled = 1;
+  rule.hour = static_cast<uint8_t>(hour);
+  rule.minute = static_cast<uint8_t>(minute);
+  rule.turnOn = strcmp(actionName, "on") == 0 ? 1 : 0;
+
+  if (strcmp(periodName, "weekly") == 0) {
+    const int weekday = doc["weekday"] | -1;
+    if (weekday < 0 || weekday > 6) {
+      publishScheduleReply("schedule.error");
+      return true;
+    }
+    rule.period = SYSTEM_SCHEDULE_WEEKLY;
+    rule.weekday = static_cast<uint8_t>(weekday);
+  } else if (strcmp(periodName, "monthly") == 0) {
+    const int day = doc["day"] | -1;
+    if (day < 1 || day > 31) {
+      publishScheduleReply("schedule.error");
+      return true;
+    }
+    rule.period = SYSTEM_SCHEDULE_MONTHLY;
+    rule.day = static_cast<uint8_t>(day);
+  } else if (strcmp(periodName, "yearly") == 0) {
+    const int month = doc["month"] | -1;
+    const int day = doc["day"] | -1;
+    if (month < 1 || month > 12 || day < 1 || day > 31) {
+      publishScheduleReply("schedule.error");
+      return true;
+    }
+    rule.period = SYSTEM_SCHEDULE_YEARLY;
+    rule.month = static_cast<uint8_t>(month);
+    rule.day = static_cast<uint8_t>(day);
+  } else {
+    publishScheduleReply("schedule.error");
+    return true;
+  }
+
+  publishScheduleReply(SystemTask::configureSchedule(static_cast<uint8_t>(slot), rule)
+      ? "schedule.saved" : "schedule.error");
+  return true;
+}
+
 DeviceCommand cmd;
 void MqttDataCallback(char* topic, byte* data, unsigned int data_len)
 {
-    String payload = String((char*)data).substring(0, data_len);
+    String payload;
+    payload.reserve(data_len);
+    for (unsigned int i = 0; i < data_len; ++i) {
+        payload += static_cast<char>(data[i]);
+    }
 #if ENABLE_MESSAGE_AUTHENTICATION
     if (!messageAuthenticationLoaded || !verifyMqttPayload(payload.c_str())) {
         DEVICE_LOG_INFO("[MQTT Auth] Rejected message with invalid signature");
@@ -408,14 +653,17 @@ void MqttDataCallback(char* topic, byte* data, unsigned int data_len)
     payload = decryptedPayload;
 #endif
     DEVICE_LOG_INFO("MqttDataCallback................................:" + payload);
-#if ENABLE_MESSAGE_AUTHENTICATION
-    StaticJsonDocument<256> doc;
-#else
-    StaticJsonDocument<128> doc; // smaller docs for commands
-#endif
+    StaticJsonDocument<512> doc;
     DeserializationError err = deserializeJson(doc, payload);
     if (err) {
          DEVICE_LOG_INFO("[MQTT] JSON parse error:" + String(err.f_str()));
+        return;
+    }
+
+    if (handleHighSpeedCommand(doc)) {
+        return;
+    }
+    if (handleScheduleCommand(doc)) {
         return;
     }
 
@@ -454,7 +702,6 @@ void MqttDataCallback(char* topic, byte* data, unsigned int data_len)
 
 bool parseJsonToSettings(String json) {
   DEVICE_LOG_INFO("start NetWork_Mqtt::parseJsonToSettings");
-  DEVICE_LOG_INFO(json);
   DeserializationError error = deserializeJson(jsonBufferMqtt, json);
   if (error) {
      DEVICE_LOG_INFO(F("deserializeJson() failed: "));
@@ -487,9 +734,8 @@ void NetWork_Mqtt::setupInfoMQTT()
     
     DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT  mqtt_host ==>"+String(Settings.mqtt_host));
     DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT mqtt_port ==>"+String(Settings.mqtt_port));
-    DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT mqtt_client ==>"+String(Settings.mqtt_client));
-    DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT mqtt_user ==>"+String(Settings.mqtt_user));
-    DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT mqtt_pwd ==>"+String(Settings.mqtt_pwd));
+    DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT  mqtt_client ==>"+String(Settings.mqtt_client));
+    DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT  mqtt_user ==>"+String(Settings.mqtt_user));
     DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT subcribe_topic ==>"+String(Settings.subcribe_topic));
 
 #if ENABLE_mTLS
@@ -545,6 +791,9 @@ void NetWork_Mqtt::setupInfoMQTT()
     }
 #endif
     MqttClient.setServer(Settings.mqtt_host, Settings.mqtt_port);
+    if (!MqttClient.setBufferSize(MQTT_PAYLOAD_SIZE)) {
+        DEVICE_LOG_INFO("[MQTT] Failed to enlarge packet buffer for capture commands");
+    }
     MqttClient.setCallback(MqttDataCallback);
     //if (MqttClient.connect(Settings.mqtt_client, Settings.mqtt_user, Settings.mqtt_pwd, Settings.subcribe_topic, 1, true, "")) {
 
@@ -572,12 +821,16 @@ void NetWork_Mqtt::connectMqtt(){
     return;
   }
 #endif
+  if (!ensureBrokerClockSynced()) {
+    DEVICE_LOG_INFO("[MQTT TLS] Connection blocked: system clock synchronization failed");
+    return;
+  }
   MqttClient.setCallback(MqttDataCallback);
   MqttClient.setServer(Settings.mqtt_host, Settings.mqtt_port);
   if (!MqttClient.connected())
   {
          DEVICE_LOG_INFO("Attempting MQTT connection...");
-        if (MqttClient.connect(Settings.mqtt_client, Settings.mqtt_user, Settings.mqtt_pwd)) {
+        if (MqttClient.connect(Settings.mqtt_client)) {
             DEVICE_LOG_INFO("connected");
             MqttClient.subscribe(Settings.subcribe_topic);
 #if ENABLE_ASCON_AEAD128
@@ -601,10 +854,12 @@ unsigned char  NetWork_Mqtt::checkStatusMqtt(){
 }
 void NetWork_Mqtt::sendMessageInfo(char * data){
   String payload = String(data);
-  DEVICE_LOG_INFO("start NetWork_Mqtt::sendMessageInfo"+ payload);
 #if ENABLE_ASCON_AEAD128
   payload = maybeEncryptPayload(payload);
 #endif
+  if (!addBrokerReplayMetadata(payload)) {
+    return;
+  }
 #if ENABLE_MESSAGE_AUTHENTICATION
   if (!messageAuthenticationLoaded) {
     DEVICE_LOG_INFO("[MQTT Auth] Publish blocked: credentials are not loaded");
@@ -618,7 +873,8 @@ void NetWork_Mqtt::sendMessageInfo(char * data){
 #endif
   char *p = new char[payload.length() + 1];
   strcpy(p, payload.c_str());
-  if (MqttClient.publish(Settings.public_topic, p, 1)) {
+  if (!MqttClient.publish(Settings.public_topic, p, 1)) {
+    DEVICE_LOG_INFO("[MQTT] Publish failed");
   }
   delete[] p;
   DEVICE_LOG_INFO("end NetWork_Mqtt::sendMessageInfo");
@@ -633,9 +889,7 @@ void NetWork_Mqtt::MqttSubscribe(char *topic)
 }
 
 void NetWork_Mqtt::lisenMqtt(){
-  DEVICE_LOG_INFO("start NetWork_Mqtt::lisenMqtt");
   MqttClient.loop(); 
-  DEVICE_LOG_INFO("end NetWork_Mqtt::lisenMqtt");
 }
 
 void NetWork_Mqtt::MqttReconnect()
@@ -653,5 +907,3 @@ void NetWork_Mqtt::MqttReconnect()
   this->connectMqtt();
   DEVICE_LOG_INFO("end NetWork_Mqtt::MqttReconnect");
 }
-
-

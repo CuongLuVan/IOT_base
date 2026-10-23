@@ -48,6 +48,7 @@ router.route('/registerAdvertisement').post(isAuthenticated,  documentCtrl.postA
 router.route('/updateAdvertisement').post(isAuthenticated,  documentCtrl.postUpdateAdvertisementToDataBase);
 router.route('/document_detail/:typePage').get(documentCtrl.getAllContentDetailPage);
 router.route('/lastest_detail/:typePage').get(documentCtrl.getAllContentLatestPage);
+router.route('/document_info_data').post(documentCtrl.getAllContentDocumentData);
 router.route('/get_new').get(documentCtrl.getAllContentStartPage);
 router.route('/get_tool').get( documentCtrl.getAllInfoTool);
 router.route('/get_home').get(documentCtrl.getAllInfoHome);
@@ -61,6 +62,11 @@ router.route('/test_upload').post((req, res) => {
   fs.createReadStream("./server/routes/acc.pdf").pipe(res);
  // res.send(JSON.stringify({sample:false}));
 });
+
+
+router.route('/saveCertificateMqtt').post(isAuthenticated,  documentCtrl.saveCertificateMqtt);
+router.route('/getCertificateMqtt').post(isAuthenticated,  documentCtrl.getCertificateMqtt);
+
 
 module.exports =  router;
 

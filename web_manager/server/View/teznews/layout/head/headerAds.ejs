@@ -1,4 +1,4 @@
-<header class="header">
+<header class="header tech-header">
     <div class="row">
         <div class="col-md-3 col-sm-6 col-xs-12">
             <a href="/" class="logo">
@@ -68,10 +68,4 @@
         });
      
     }
-    postInfoData('/api/document/get_advertisement',{group_content_sub_id:0},(dataJson)=>{
-        if(!dataJson.error){
-            getDataInfoAdvertisementHeader(dataJson.data);
-        }
-        
-    });
-</script>    
+</script>
