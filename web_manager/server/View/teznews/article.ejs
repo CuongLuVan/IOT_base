@@ -60,7 +60,7 @@
                     }
                     else
                     {
-                        getInfoHtml( "/"+ dataJson.data.result,(data)=>{
+                        getInfoHtml( "/"+ dataJson.data.result.data,(data)=>{
                             if(data==false) return; 
                             $('#check_data_side_menu').html(data); //.replaceAll("</p>","<br/>").replaceAll("<p>","<br/>")
                             $('html, body').animate({ scrollTop: 0 }, 'fast');
