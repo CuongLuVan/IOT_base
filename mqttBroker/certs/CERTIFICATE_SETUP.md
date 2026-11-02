@@ -1,8 +1,6 @@
 # MQTT client Certificate Setup
 
-
   Step 1:
-
   openssl genpkey  -algorithm RSA -out iot_ai_control.key -pkeyopt rsa_keygen_bits:2048
   openssl req -new -key iot_ai_control.key -out iot_ai_control.csr  -subj "/CN=iot_ai_control"
 
@@ -33,9 +31,21 @@ mqtt_device_certs.json
       "fingerprint256": "36:A1:5F:EB:31:F9:9F:11:FC:DD:11:9F:E6:07:47:0B:FC:AB:04:D4:F8:39:09:36:9D:77:D9:A6:64:F6:7A:6D"
     }
 step 6  thêm vào mqtt_message_auth.json
-Step 7: bổ xung mqtt_client_ids.js
+Step 7: bổ xung mqtt_client_ids.json
 step 8 bổ xung mqtt_users.json
 step 9 mqtt_acl.json
+
+## Lưu certificate từ trang quản lý
+
+Khi tạo client bằng `saveCertificateMqtt`, hệ thống tự tạo các file
+`<clientId>.key`, `<clientId>.csr`, `<clientId>.crt` và `<clientId>.cnf`
+trong thư mục `MQTT_CERTS` (thư mục `certs`). Certificate có thời hạn 3650
+ngày; fingerprint SHA-256 được tính từ certificate vừa tạo.
+
+Hệ thống cũng tự cập nhật `mqtt_device_certs.json`, `mqtt_message_auth.json`,
+`mqtt_client_ids.json`, `mqtt_users.json` và `mqtt_acl.json` trong thư mục cha
+của `MQTT_CERTS`, không lưu các file JSON này trong `certs`. Quyền publish và
+subscribe trong ACL lấy từ các topic được nhập khi tạo client.
 
 
 
