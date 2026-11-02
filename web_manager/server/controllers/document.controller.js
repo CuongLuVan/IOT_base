@@ -688,11 +688,11 @@ documentCtrl.saveCertificateMqtt  = async function(req,res) {
         const privateKeyPath = path.join(certDirectory, mqttId + ".key");
         const csrPath = path.join(certDirectory, mqttId + ".csr");
         const certificatePath = path.join(certDirectory, mqttId + ".crt");
+        const extPath = path.join(certDirectory, mqttId + ".cnf");
         const caCertificatePath = path.join(certDirectory, "ca.crt");
         const caPrivateKeyPath = path.join(certDirectory, "ca.key");
-        const extPath = path.join(certDirectory, "device-save-mongo.ext");
 
-        if ([privateKeyPath, csrPath, certificatePath].some(fs.existsSync)) {
+        if ([privateKeyPath, csrPath, certificatePath, extPath].some(fs.existsSync)) {
             throw new Error("An MQTT certificate already exists for this mqtt_id.");
         }
         const existing = await knex("mqtt_microservice")
@@ -702,6 +702,18 @@ documentCtrl.saveCertificateMqtt  = async function(req,res) {
             throw new Error("An active MQTT record already exists for this mqtt_id.");
         }
 
+        fs.writeFileSync(extPath, [
+            "basicConstraints=critical,CA:FALSE",
+            "keyUsage=critical,digitalSignature",
+            "extendedKeyUsage=clientAuth",
+            "subjectKeyIdentifier=hash",
+            "authorityKeyIdentifier=keyid,issuer",
+            "",
+        ].join("\n"), {
+            encoding: "ascii",
+            flag: "wx",
+            mode: 0o600,
+        });
         runOpenSSL([
             "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048",
             "-out", privateKeyPath,
@@ -715,7 +727,7 @@ documentCtrl.saveCertificateMqtt  = async function(req,res) {
             "x509", "-req", "-in", csrPath, "-CA", caCertificatePath,
             "-CAkey", caPrivateKeyPath, "-set_serial",
             "0x" + crypto.randomBytes(16).toString("hex"), "-out", certificatePath,
-            "-days", "365", "-sha256", "-extfile", extPath,
+            "-days", "3650", "-sha256", "-extfile", extPath,
         ]);
 
         const certificateDer = runOpenSSL([
