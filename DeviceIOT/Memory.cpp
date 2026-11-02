@@ -26,10 +26,12 @@ Memory *Memory::GetInstance()
 
 void Memory::initEEPROM(int size) {
       DEVICE_LOG_INFO("start Memory::initEEPROM");
-      EEPROM.begin(size);
+      if (size <= 0) {
+          DEVICE_LOG_INFO("[Memory] EEPROM size must be positive");
+          while(1) { delay(100); }
+      }
       if (!EEPROM.begin(size)) {
-          Serial.println("EEPROM init failed");
-          // Có thể delay ngắn hoặc dừng hẳn
+          DEVICE_LOG_INFO("[Memory] EEPROM initialization failed");
           while(1) { delay(100); }
       }
       _size = size;
@@ -109,6 +111,71 @@ String Memory::readLargeString(int address, int maxLen) {
     len++;
   }
   return data;
+}
+
+bool Memory::readBoundedString(int address, size_t maxLength, String &value) {
+  value = "";
+  if (_size <= 0 || address < 0 || address >= _size || maxLength == 0 ||
+      maxLength >= static_cast<size_t>(_size - address)) {
+    return false;
+  }
+
+  value.reserve(maxLength);
+  for (size_t i = 0; i <= maxLength; ++i) {
+    const unsigned char character = EEPROM.read(address + static_cast<int>(i));
+    if (character == '\0') {
+      return true;
+    }
+    if (i == maxLength) {
+      value = "";
+      return false;
+    }
+    value += static_cast<char>(character);
+  }
+  value = "";
+  return false;
+}
+
+bool Memory::writeBoundedString(int address, const char *value, size_t maxLength) {
+  const BoundedStringWrite entry = {address, value, maxLength};
+  return writeBoundedStrings(&entry, 1);
+}
+
+bool Memory::writeBoundedStrings(const BoundedStringWrite *values, size_t count) {
+  if (_size <= 0 || values == nullptr || count == 0) {
+    return false;
+  }
+
+  for (size_t i = 0; i < count; ++i) {
+    const BoundedStringWrite &entry = values[i];
+    if (entry.value == nullptr || entry.address < 0 ||
+        entry.address >= _size || entry.maxLength == 0 ||
+        entry.maxLength >= static_cast<size_t>(_size - entry.address) ||
+        strlen(entry.value) > entry.maxLength) {
+      return false;
+    }
+
+    const size_t entryEnd =
+        static_cast<size_t>(entry.address) + entry.maxLength + 1;
+    for (size_t j = 0; j < i; ++j) {
+      const size_t previousStart = static_cast<size_t>(values[j].address);
+      const size_t previousEnd = previousStart + values[j].maxLength + 1;
+      if (static_cast<size_t>(entry.address) < previousEnd &&
+          previousStart < entryEnd) {
+        return false;
+      }
+    }
+  }
+
+  for (size_t i = 0; i < count; ++i) {
+    const BoundedStringWrite &entry = values[i];
+    const size_t length = strlen(entry.value);
+    for (size_t j = 0; j <= entry.maxLength; ++j) {
+      const char character = j < length ? entry.value[j] : '\0';
+      EEPROM.write(entry.address + static_cast<int>(j), character);
+    }
+  }
+  return EEPROM.commit();
 }
 
 // Ghi một ký tự

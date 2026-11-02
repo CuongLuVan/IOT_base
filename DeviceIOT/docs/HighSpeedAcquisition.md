@@ -57,7 +57,30 @@ ESP32 nhận lệnh trên topic `subcribe_topic` đã cấu hình hiện có và
 
 ### Bảo mật và phân quyền theo broker `MqttBroker1885.js`
 
-Broker hiện bật TLS, mTLS, ACL và replay protection, chỉ nghe MQTTS trên cổng `1885` (không mở listener MQTT không mã hóa cùng cổng). Broker dừng khởi động nếu không đọc được server key/certificate. Firmware mặc định dùng TLS+mTLS; mỗi thiết bị phải được provision CA certificate, client certificate và private key vào EEPROM trước khi kết nối. PEM strings phải null-terminated tại `MTLS_CA_CERT_ADDRESS`, `MTLS_CLIENT_CERT_ADDRESS` và `MTLS_PRIVATE_KEY_ADDRESS`. `mqtt_host` phải khớp tên/IP nằm trong SAN của server certificate, `mqtt_port` phải là `1885`, và `mqtt_client` phải khớp chính xác `clientId` cùng fingerprint đã đăng ký tại `mqtt_device_certs.json`. Server certificate hiện chỉ có SAN `localhost` và `127.0.0.1`, nên chưa xác thực được broker truy cập từ ESP32 qua mạng; phải cấp lại server certificate có SAN đúng với DNS name hoặc IP thực tế đã provision. Không dùng chung private key giữa thiết bị.
+Broker hiện bật TLS, mTLS, ACL và replay protection, chỉ nghe MQTTS trên cổng `1885` (không mở listener MQTT không mã hóa cùng cổng). Broker dừng khởi động nếu không đọc được server key/certificate. Firmware bắt buộc TLS+mTLS; build sẽ thất bại nếu tắt một trong hai. Trước khi kết nối, firmware kiểm tra cấu hình MQTT, vùng PEM có null terminator trong giới hạn EEPROM và marker CA/client certificate/private key; nếu thiếu/sai định dạng, nó từ chối kết nối, không fallback sang MQTT thường hay `setInsecure()`. TLS handshake vẫn là bước xác nhận cuối cùng cho chuỗi CA, hostname/SAN, thời hạn chứng chỉ và cặp client certificate/private key.
+
+Provision CA certificate, client certificate và private key riêng cho từng thiết bị vào EEPROM trước khi khởi động mạng. Host-post `/setup` nhận HTTP POST có JSON trong body (hoặc tham số form `data`) chứa cấu hình cùng ba trường `mqtt_ca_cert`, `mqtt_client_cert`, `mqtt_private_key`; handler kiểm tra marker PEM/kích thước, xóa ba trường PEM trước khi lưu JSON cấu hình thông thường, rồi ghi ba vùng EEPROM trong một lần commit. Mỗi trường phải có PEM certificate/private key không mã hóa bằng passphrase. Ví dụ body JSON:
+
+```json
+{
+  "mqtt_host": "broker.example.local",
+  "mqtt_port": 1885,
+  "mqtt_client": "device1",
+  "public_topic": "devices/device1/data",
+  "subcribe_topic": "devices/device1/commands/#",
+  "mqtt_ca_cert": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----",
+  "mqtt_client_cert": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----",
+  "mqtt_private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+}
+```
+
+Gửi bằng HTTP `POST` với `Content-Type: application/json`; không đặt PEM trong query string hay URL. Cấu hình MQTT còn lại tiếp tục theo ví dụ bên dưới.
+
+**Cảnh báo:** theo yêu cầu hiện tại, `/setup` chưa xác thực mật khẩu và truyền qua HTTP thường; private key có thể bị nghe lén hoặc thay thế bởi người có thể kết nối vào AP/host-post. AP `ESP_Config` hiện dùng mật khẩu mặc định `12345678`. Chỉ dùng để thử nghiệm trong môi trường cô lập; không dùng để provision thiết bị sản xuất. Trước khi triển khai thật, thêm xác thực provisioning riêng cho mỗi thiết bị và bảo vệ kênh truyền (ví dụ provisioning tại nhà máy qua USB/serial hoặc TLS có xác thực).
+
+Đây là EEPROM giả lập trên flash, **không phải ROM bất biến**; firmware này không bật mã hóa dữ liệu lưu trữ. Không ghi PEM/private key vào log hoặc repository. Các địa chỉ là `MTLS_CA_CERT_ADDRESS` (1300, tối đa 4095 ký tự), `MTLS_CLIENT_CERT_ADDRESS` (5500, tối đa 4095), và `MTLS_PRIVATE_KEY_ADDRESS` (9700, tối đa `MTLS_PRIVATE_KEY_MAX_LENGTH`, hiện 10779 khi chỉ bật mTLS). Ghi bounded xóa phần đuôi slot cũ, giới hạn theo kích thước, và commit EEPROM; firmware sẽ từ chối kết nối nếu PEM thiếu/sai định dạng. Bật flash/NVS encryption và Secure Boot trong cấu hình sản xuất của ESP32 nếu cần bảo vệ bí mật khi thiết bị bị tháo hoặc đọc flash; việc đó cần cấu hình khóa/provision riêng theo đúng chip và quy trình sản xuất.
+
+`mqtt_host` phải là DNS/IP mà ESP32 truy cập được và khớp SAN trong server certificate; không dùng `localhost` cho broker chạy trên máy khác. `mqtt_port` phải đúng cổng TLS của broker (`1885`), `mqtt_client` phải khớp chính xác `clientId` và fingerprint đã đăng ký tại `mqtt_device_certs.json`, topic publish không được chứa wildcard và phải được ACL cho phép. Server certificate hiện chỉ có SAN `localhost` và `127.0.0.1`, nên chưa xác thực được broker truy cập từ ESP32 qua mạng; cần cấp lại certificate có SAN đúng với DNS name/IP thực tế. Không dùng chung private key giữa thiết bị.
 
 Firmware chỉ kết nối sau khi đồng hồ đã đồng bộ NTP để xác thực chứng chỉ TLS. Mọi JSON publish của firmware được thêm `timestamp` dạng Unix epoch milliseconds và `nonce` ngẫu nhiên trước khi publish. Simulator publisher dùng ISO-8601 timestamp và UUID nonce; broker chấp nhận cả Unix milliseconds lẫn ISO-8601. JSON lệnh do backend/mobile publish cũng phải có hai trường này ở cấp cao nhất; timestamp phải là thời gian publish hiện tại, nằm trong replay window cấu hình broker (mặc định tối đa lệch 300 giây), nonce phải được tạo mới cho từng lệnh và không được tái sử dụng trên cùng client/topic trong cửa sổ chống replay.
 

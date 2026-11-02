@@ -11,6 +11,10 @@
 // Broker yêu cầu mTLS; client certificate/private key phải được provision vào EEPROM.
 #define ENABLE_mTLS true
 
+#if !ENABLE_TLS_SSL || !ENABLE_mTLS
+  #error "Secure MQTT requires TLS server verification and mutual TLS client authentication."
+#endif
+
 // false = giữ nguyên payload MQTT hiện tại.
 // true  = ký và kiểm tra JSON MQTT bằng HMAC-SHA256.
 #define ENABLE_MESSAGE_AUTHENTICATION false
@@ -79,22 +83,37 @@
 #endif
 
 // Mỗi dữ liệu PEM phải kết thúc bằng '\0'. Các vùng không chồng lấp nhau trong EEPROM.
+#define MESSAGE_AUTH_KEY_ID_ADDRESS      20000
+#define MESSAGE_AUTH_KEY_ID_MAX_LENGTH   127
+#define MESSAGE_AUTH_SECRET_ADDRESS      20200
+#define MESSAGE_AUTH_SECRET_MAX_LENGTH   255
+
 #define MTLS_CA_CERT_ADDRESS             1300
 #define MTLS_CA_CERT_MAX_LENGTH          4095
 #define MTLS_CLIENT_CERT_ADDRESS         5500
 #define MTLS_CLIENT_CERT_MAX_LENGTH      4095
 #define MTLS_PRIVATE_KEY_ADDRESS         9700
-#if ENABLE_MESSAGE_AUTHENTICATION
-#define MTLS_PRIVATE_KEY_MAX_LENGTH      (MESSAGE_AUTH_KEY_ID_ADDRESS - MTLS_PRIVATE_KEY_ADDRESS - 1)
+#if ENABLE_ASCON_AEAD128
+#define MTLS_PRIVATE_KEY_STORAGE_END     ASCON_PUBLIC_KEYS_ADDRESS
+#elif ENABLE_MESSAGE_AUTHENTICATION
+#define MTLS_PRIVATE_KEY_STORAGE_END     MESSAGE_AUTH_KEY_ID_ADDRESS
 #else
-#define MTLS_PRIVATE_KEY_MAX_LENGTH      (EEPROM_SIZE - MTLS_PRIVATE_KEY_ADDRESS - 1)
+#define MTLS_PRIVATE_KEY_STORAGE_END     EEPROM_SIZE
 #endif
+#define MTLS_PRIVATE_KEY_MAX_LENGTH      (MTLS_PRIVATE_KEY_STORAGE_END - MTLS_PRIVATE_KEY_ADDRESS - 1)
 
-// Message-authentication data: null-terminated key id and HMAC secret.
-#define MESSAGE_AUTH_KEY_ID_ADDRESS      20000
-#define MESSAGE_AUTH_KEY_ID_MAX_LENGTH   127
-#define MESSAGE_AUTH_SECRET_ADDRESS      20200
-#define MESSAGE_AUTH_SECRET_MAX_LENGTH   255
+#if MTLS_CA_CERT_ADDRESS + MTLS_CA_CERT_MAX_LENGTH >= MTLS_CLIENT_CERT_ADDRESS
+  #error "CA certificate EEPROM region overlaps the client certificate region."
+#endif
+#if MTLS_CLIENT_CERT_ADDRESS + MTLS_CLIENT_CERT_MAX_LENGTH >= MTLS_PRIVATE_KEY_ADDRESS
+  #error "Client certificate EEPROM region overlaps the private key region."
+#endif
+#if MTLS_PRIVATE_KEY_MAX_LENGTH <= 0
+  #error "No EEPROM space remains for the mTLS private key."
+#endif
+#if ENABLE_ASCON_AEAD128 && MTLS_PRIVATE_KEY_ADDRESS + MTLS_PRIVATE_KEY_MAX_LENGTH >= ASCON_PUBLIC_KEYS_ADDRESS
+  #error "mTLS private key EEPROM region overlaps the Ascon key region."
+#endif
 
 #define JSON_BUFFER_SIZE               512
 #define JSON_SMALL_BUFFER_SIZE         128

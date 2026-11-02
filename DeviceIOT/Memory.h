@@ -1,11 +1,19 @@
 //#include <semphr.h> 
 //#include "freertos/semphr.h"
   #include <Arduino.h>
+  #include <stddef.h>
 
-#define  WIFI_SSSID    50
-#define  WIFI_PASS    100
-#define  WIFI_SETUP_JSON    150
-#define  VERSJON_SETUP_JSON    1250
+#define WIFI_SSSID    50
+#define WIFI_PASS    100
+#define WIFI_SETUP_JSON    150
+#define WIFI_SETUP_JSON_MAX_LENGTH 1024
+#define VERSJON_SETUP_JSON    1250
+
+struct BoundedStringWrite {
+    int address;
+    const char *value;
+    size_t maxLength;
+};
 
 class Memory
 {
@@ -16,7 +24,7 @@ class Memory
      */
 private:
     static Memory * pinstance_;
-    int _size;
+    int _size = 0;
     uint64_t  time_stamp = 0;
     uint32_t startTime = 0;
    // static std::mutex mutex_;
@@ -64,6 +72,9 @@ public:
     void writeString(int address, String str);
     String readString(int address, int maxLen = 1024);
     String readLargeString(int address, int maxLen);
+    bool readBoundedString(int address, size_t maxLength, String &value);
+    bool writeBoundedString(int address, const char *value, size_t maxLength);
+    bool writeBoundedStrings(const BoundedStringWrite *values, size_t count);
     void writeChar(int address, char value);
     char readChar(int address);
     void saveWiFiCredentials(int ssidAddr, int passAddr, const char* ssid, const char* pass);

@@ -22,6 +22,11 @@
 #include <time.h>
 #include "MemoryData.h"
 
+#define WIFI_SETUP_REQUEST_MAX_LENGTH 24576
+
+static_assert(WIFI_SETUP_JSON + WIFI_SETUP_JSON_MAX_LENGTH < MTLS_CA_CERT_ADDRESS,
+              "Wi-Fi setup JSON region overlaps the CA certificate region.");
+
 extern NetWork_RF netWork_RF;
 extern String lastLoraPayload;
 
@@ -38,7 +43,42 @@ extern InfoDeviceControl statusDevice;
 
 String wifiIp = "";
 
+namespace {
+bool containsPemBlock(const String &pem, const char *beginMarker,
+                      const char *endMarker)
+{
+    const int begin = pem.indexOf(beginMarker);
+    return begin >= 0 && pem.indexOf(endMarker, begin + strlen(beginMarker)) >= 0;
+}
 
+bool isCertificatePem(const String &pem)
+{
+    return containsPemBlock(pem, "-----BEGIN CERTIFICATE-----",
+                            "-----END CERTIFICATE-----");
+}
+
+bool isPrivateKeyPem(const String &pem)
+{
+    if (containsPemBlock(pem, "-----BEGIN ENCRYPTED PRIVATE KEY-----",
+                         "-----END ENCRYPTED PRIVATE KEY-----")) {
+        return false;
+    }
+    return containsPemBlock(pem, "-----BEGIN PRIVATE KEY-----",
+                            "-----END PRIVATE KEY-----") ||
+        containsPemBlock(pem, "-----BEGIN RSA PRIVATE KEY-----",
+                         "-----END RSA PRIVATE KEY-----") ||
+        containsPemBlock(pem, "-----BEGIN EC PRIVATE KEY-----",
+                         "-----END EC PRIVATE KEY-----");
+}
+
+void sendSetupError(int statusCode, const char *error)
+{
+    String response = "{\"success\":false,\"error\":\"";
+    response += error;
+    response += "\"}";
+    webServer->send(statusCode, "application/json", response);
+}
+}
 
 void NetWork_Wifi::setHeader()
 {
@@ -59,11 +99,75 @@ void NetWork_Wifi::handleRoot(){
 void NetWork_Wifi::handleSetUp(){
     DEVICE_LOG_INFO("start NetWork_Wifi::handleSetUp");
     String data = webServer->arg("data");
-    deserializeJson(jsonBuffer, data);
-    Memory::GetInstance()->writeString(WIFI_SETUP_JSON,data);
+    if (data.length() == 0) {
+        data = webServer->arg("plain");
+    }
+    if (data.length() == 0 || data.length() > WIFI_SETUP_REQUEST_MAX_LENGTH) {
+        sendSetupError(400, "invalid_setup_payload_size");
+        return;
+    }
+
+    DynamicJsonDocument setupDocument(data.length() + 1024);
+    DeserializationError parseError = deserializeJson(setupDocument, data);
+    if (parseError || !setupDocument.is<JsonObject>()) {
+        sendSetupError(400, "invalid_setup_json");
+        return;
+    }
+
+    if (!setupDocument["mqtt_ca_cert"].is<const char *>() ||
+        !setupDocument["mqtt_client_cert"].is<const char *>() ||
+        !setupDocument["mqtt_private_key"].is<const char *>()) {
+        sendSetupError(400, "missing_mtls_credentials");
+        return;
+    }
+
+    const String caCertificate = setupDocument["mqtt_ca_cert"] | "";
+    const String clientCertificate = setupDocument["mqtt_client_cert"] | "";
+    const String privateKey = setupDocument["mqtt_private_key"] | "";
+    if (!isCertificatePem(caCertificate) ||
+        !isCertificatePem(clientCertificate) ||
+        !isPrivateKeyPem(privateKey) ||
+        caCertificate.length() > MTLS_CA_CERT_MAX_LENGTH ||
+        clientCertificate.length() > MTLS_CLIENT_CERT_MAX_LENGTH ||
+        privateKey.length() > MTLS_PRIVATE_KEY_MAX_LENGTH) {
+        sendSetupError(400, "invalid_or_oversized_mtls_credentials");
+        return;
+    }
+
+    setupDocument.remove("mqtt_ca_cert");
+    setupDocument.remove("mqtt_client_cert");
+    setupDocument.remove("mqtt_private_key");
+    String storedConfiguration;
+    storedConfiguration.reserve(data.length());
+    if (serializeJson(setupDocument, storedConfiguration) == 0 ||
+        storedConfiguration.length() > WIFI_SETUP_JSON_MAX_LENGTH) {
+        sendSetupError(400, "mqtt_configuration_too_large");
+        return;
+    }
+
+    BoundedStringWrite credentials[] = {
+        {MTLS_CA_CERT_ADDRESS, caCertificate.c_str(), MTLS_CA_CERT_MAX_LENGTH},
+        {MTLS_CLIENT_CERT_ADDRESS, clientCertificate.c_str(), MTLS_CLIENT_CERT_MAX_LENGTH},
+        {MTLS_PRIVATE_KEY_ADDRESS, privateKey.c_str(), MTLS_PRIVATE_KEY_MAX_LENGTH}
+    };
+    Memory *memory = Memory::GetInstance();
+    if (!memory->writeBoundedStrings(credentials,
+                                     sizeof(credentials) / sizeof(credentials[0]))) {
+        DEVICE_LOG_INFO("[Setup] Failed to store mTLS credentials in EEPROM");
+        sendSetupError(500, "credential_storage_failed");
+        return;
+    }
+    if (!memory->writeBoundedString(WIFI_SETUP_JSON,
+                                    storedConfiguration.c_str(),
+                                    WIFI_SETUP_JSON_MAX_LENGTH)) {
+        DEVICE_LOG_INFO("[Setup] Failed to store MQTT configuration in EEPROM");
+        sendSetupError(500, "configuration_storage_failed");
+        return;
+    }
+
     //WIFI_BLE_PROVISION  WIFI_SMART_CONFIG
-    Memory::GetInstance()->writeChar(WIFI_MODE,WIFI_BLE_SMART_CONFIG);
-    webServer->send(200, "application/json", "{'data':true}");
+    memory->writeChar(WIFI_MODE,WIFI_BLE_SMART_CONFIG);
+    webServer->send(200, "application/json", "{\"success\":true}");
     delay(WIFI_WEB_RESPONSE_DELAY_MS);
     ESP.restart();            // Restart ESP
     DEVICE_LOG_INFO("end NetWork_Wifi::handleSetUp");
@@ -167,7 +271,7 @@ void NetWork_Wifi::startWebserverRoot()
     webServer = new class WebServer(WIFI_HTTP_PORT);
     webServer->enableCORS(true);
     webServer->on("/", this->handleRoot);
-    webServer->on("/setup", this->handleSetUp);
+    webServer->on("/setup", HTTP_POST, this->handleSetUp);
     webServer->on("/lora", HTTP_GET, this->handleLoraGet);
     webServer->on("/lora", HTTP_POST, this->handleLoraPost);
     webServer->begin(); // Web server start
@@ -622,4 +726,3 @@ void NetWork_Wifi::loopProvisioning(){
   }
   DEVICE_LOG_INFO("end NetWork_Wifi::loopProvisioning");
 }
-

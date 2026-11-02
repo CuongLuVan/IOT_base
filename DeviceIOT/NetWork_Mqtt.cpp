@@ -29,6 +29,10 @@ using MqttWiFiClient = WiFiClient;
 #include "AsconAead128.h"
 #endif
 
+#if !ENABLE_TLS_SSL || !ENABLE_mTLS || MQTT_NO_TLS
+#error "This firmware requires TLS with client-certificate authentication for MQTT."
+#endif
+
 MqttWiFiClient EspClient;
 PubSubClient MqttClient(EspClient);         // MQTT Client
 
@@ -44,6 +48,65 @@ String tlsCaCertificate;
 String mtlsClientCertificate;
 String mtlsPrivateKey;
 bool mtlsCredentialsLoaded = false;
+#endif
+bool mqttConfigurationReady = false;
+
+static bool copyMqttSetting(JsonVariantConst source, char *destination,
+                            size_t destinationSize, bool required,
+                            const char *settingName)
+{
+  const char *value = source.as<const char *>();
+  if (value == NULL) {
+    if (!required) {
+      destination[0] = '\0';
+      return true;
+    }
+    DEVICE_LOG_INFO(String("[MQTT] Missing required setting: ") + settingName);
+    return false;
+  }
+
+  const size_t length = strlen(value);
+  if ((required && length == 0) || length >= destinationSize) {
+    DEVICE_LOG_INFO(String("[MQTT] Invalid or oversized setting: ") + settingName);
+    return false;
+  }
+  memcpy(destination, value, length + 1);
+  return true;
+}
+
+static bool isPublishTopicValid(const char *topic)
+{
+  return topic != NULL && topic[0] != '\0' &&
+      strchr(topic, '+') == NULL && strchr(topic, '#') == NULL;
+}
+
+#if ENABLE_mTLS
+static bool containsPemBlock(const String &pem, const char *beginMarker,
+                             const char *endMarker)
+{
+  const int begin = pem.indexOf(beginMarker);
+  return begin >= 0 && pem.indexOf(endMarker, begin + strlen(beginMarker)) >= 0;
+}
+
+static bool isCertificatePem(const String &pem)
+{
+  return containsPemBlock(pem, "-----BEGIN CERTIFICATE-----",
+                         "-----END CERTIFICATE-----");
+}
+
+static bool isPrivateKeyPem(const String &pem)
+{
+  if (containsPemBlock(pem, "-----BEGIN ENCRYPTED PRIVATE KEY-----",
+                       "-----END ENCRYPTED PRIVATE KEY-----")) {
+    return false;
+  }
+  return containsPemBlock(pem, "-----BEGIN PRIVATE KEY-----",
+                          "-----END PRIVATE KEY-----") ||
+      containsPemBlock(pem, "-----BEGIN RSA PRIVATE KEY-----",
+                       "-----END RSA PRIVATE KEY-----") ||
+      containsPemBlock(pem, "-----BEGIN EC PRIVATE KEY-----",
+                       "-----END EC PRIVATE KEY-----");
+}
 #endif
 
 #if ENABLE_ASCON_AEAD128
@@ -704,27 +767,49 @@ bool parseJsonToSettings(String json) {
   DEVICE_LOG_INFO("start NetWork_Mqtt::parseJsonToSettings");
   DeserializationError error = deserializeJson(jsonBufferMqtt, json);
   if (error) {
-     DEVICE_LOG_INFO(F("deserializeJson() failed: "));
-      DEVICE_LOG_INFO(error.f_str());
+    DEVICE_LOG_INFO(String("[MQTT] Configuration JSON parse failed: ") + error.f_str());
     return false;
   }
 
-  strlcpy(Settings.mqtt_fingerprint, jsonBufferMqtt["mqtt_fingerprint"] | "", sizeof(Settings.mqtt_fingerprint));
-  strlcpy(Settings.mqtt_host,       jsonBufferMqtt["mqtt_host"] | "",       sizeof(Settings.mqtt_host));
-  Settings.mqtt_port =              jsonBufferMqtt["mqtt_port"] | 0;
-  strlcpy(Settings.mqtt_client,     jsonBufferMqtt["mqtt_client"] | "",     sizeof(Settings.mqtt_client));
-  strlcpy(Settings.mqtt_user,       jsonBufferMqtt["mqtt_user"] | "",       sizeof(Settings.mqtt_user));
-  strlcpy(Settings.mqtt_pwd,        jsonBufferMqtt["mqtt_pwd"] | "",        sizeof(Settings.mqtt_pwd));
-  strlcpy(Settings.public_topic,    jsonBufferMqtt["public_topic"] | "",    sizeof(Settings.public_topic));
-  strlcpy(Settings.subcribe_topic,  jsonBufferMqtt["subcribe_topic"] | "",  sizeof(Settings.subcribe_topic));
-  strlcpy(Settings.mqtt_grptopic,   jsonBufferMqtt["mqtt_grptopic"] | "",   sizeof(Settings.mqtt_grptopic));
-  strlcpy(Settings.web_password,    jsonBufferMqtt["web_password"] | "",    sizeof(Settings.web_password));
+  SYSCFG parsedSettings = {};
+  const long mqttPort = jsonBufferMqtt["mqtt_port"] | 0L;
+  if (mqttPort <= 0 || mqttPort > 65535 ||
+      !copyMqttSetting(jsonBufferMqtt["mqtt_fingerprint"], parsedSettings.mqtt_fingerprint,
+                       sizeof(parsedSettings.mqtt_fingerprint), false, "mqtt_fingerprint") ||
+      !copyMqttSetting(jsonBufferMqtt["mqtt_host"], parsedSettings.mqtt_host,
+                       sizeof(parsedSettings.mqtt_host), true, "mqtt_host") ||
+      !copyMqttSetting(jsonBufferMqtt["mqtt_client"], parsedSettings.mqtt_client,
+                       sizeof(parsedSettings.mqtt_client), true, "mqtt_client") ||
+      !copyMqttSetting(jsonBufferMqtt["mqtt_user"], parsedSettings.mqtt_user,
+                       sizeof(parsedSettings.mqtt_user), false, "mqtt_user") ||
+      !copyMqttSetting(jsonBufferMqtt["mqtt_pwd"], parsedSettings.mqtt_pwd,
+                       sizeof(parsedSettings.mqtt_pwd), false, "mqtt_pwd") ||
+      !copyMqttSetting(jsonBufferMqtt["public_topic"], parsedSettings.public_topic,
+                       sizeof(parsedSettings.public_topic), true, "public_topic") ||
+      !copyMqttSetting(jsonBufferMqtt["subcribe_topic"], parsedSettings.subcribe_topic,
+                       sizeof(parsedSettings.subcribe_topic), true, "subcribe_topic") ||
+      !copyMqttSetting(jsonBufferMqtt["mqtt_grptopic"], parsedSettings.mqtt_grptopic,
+                       sizeof(parsedSettings.mqtt_grptopic), false, "mqtt_grptopic") ||
+      !copyMqttSetting(jsonBufferMqtt["web_password"], parsedSettings.web_password,
+                       sizeof(parsedSettings.web_password), false, "web_password") ||
+      !isPublishTopicValid(parsedSettings.public_topic) ||
+      parsedSettings.subcribe_topic[0] == '\0') {
+    DEVICE_LOG_INFO("[MQTT] Invalid MQTT configuration; connection disabled");
+    return false;
+  }
+
+  parsedSettings.mqtt_port = static_cast<uint16_t>(mqttPort);
+  Settings = parsedSettings;
   DEVICE_LOG_INFO("end NetWork_Mqtt::parseJsonToSettings");
   return true;
 }
 
 void NetWork_Mqtt::setupInfoMQTT()
 {
+    mqttConfigurationReady = false;
+#if ENABLE_mTLS
+    mtlsCredentialsLoaded = false;
+#endif
 
     String payload = Memory::GetInstance()->readString(WIFI_SETUP_JSON);
     if(!parseJsonToSettings(payload)){
@@ -735,30 +820,31 @@ void NetWork_Mqtt::setupInfoMQTT()
     DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT  mqtt_host ==>"+String(Settings.mqtt_host));
     DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT mqtt_port ==>"+String(Settings.mqtt_port));
     DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT  mqtt_client ==>"+String(Settings.mqtt_client));
-    DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT  mqtt_user ==>"+String(Settings.mqtt_user));
     DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT subcribe_topic ==>"+String(Settings.subcribe_topic));
 
 #if ENABLE_mTLS
-    // All three PEM strings are stored as null-terminated data in ROM/EEPROM.
-    // Keep them in global Strings because WiFiClientSecure retains their pointers.
-    tlsCaCertificate = Memory::GetInstance()->readLargeString(
-        MTLS_CA_CERT_ADDRESS, MTLS_CA_CERT_MAX_LENGTH);
-    mtlsClientCertificate = Memory::GetInstance()->readLargeString(
-        MTLS_CLIENT_CERT_ADDRESS, MTLS_CLIENT_CERT_MAX_LENGTH);
-    mtlsPrivateKey = Memory::GetInstance()->readLargeString(
-        MTLS_PRIVATE_KEY_ADDRESS, MTLS_PRIVATE_KEY_MAX_LENGTH);
+    Memory *memory = Memory::GetInstance();
+    const bool caRead = memory->readBoundedString(
+        MTLS_CA_CERT_ADDRESS, MTLS_CA_CERT_MAX_LENGTH, tlsCaCertificate);
+    const bool clientCertificateRead = memory->readBoundedString(
+        MTLS_CLIENT_CERT_ADDRESS, MTLS_CLIENT_CERT_MAX_LENGTH, mtlsClientCertificate);
+    const bool privateKeyRead = memory->readBoundedString(
+        MTLS_PRIVATE_KEY_ADDRESS, MTLS_PRIVATE_KEY_MAX_LENGTH, mtlsPrivateKey);
 
-    mtlsCredentialsLoaded = false;
-    if (tlsCaCertificate.length() == 0 || mtlsClientCertificate.length() == 0 ||
-        mtlsPrivateKey.length() == 0) {
-        DEVICE_LOG_INFO("[MQTT mTLS] Missing CA certificate, client certificate, or private key");
-    } else {
-        EspClient.setCACert(tlsCaCertificate.c_str());
-        EspClient.setCertificate(mtlsClientCertificate.c_str());
-        EspClient.setPrivateKey(mtlsPrivateKey.c_str());
-        mtlsCredentialsLoaded = true;
-        DEVICE_LOG_INFO("[MQTT mTLS] Credentials loaded from ROM/EEPROM");
+    if (!caRead || !clientCertificateRead || !privateKeyRead ||
+        !isCertificatePem(tlsCaCertificate) ||
+        !isCertificatePem(mtlsClientCertificate) ||
+        !isPrivateKeyPem(mtlsPrivateKey)) {
+        DEVICE_LOG_INFO("[MQTT mTLS] Missing, unterminated, or invalid PEM credentials; connection disabled");
+        return;
     }
+
+    // Keep PEM storage alive: WiFiClientSecure retains pointers to these buffers.
+    EspClient.setCACert(tlsCaCertificate.c_str());
+    EspClient.setCertificate(mtlsClientCertificate.c_str());
+    EspClient.setPrivateKey(mtlsPrivateKey.c_str());
+    mtlsCredentialsLoaded = true;
+    DEVICE_LOG_INFO("[MQTT mTLS] CA, client certificate, and private key loaded");
 #elif ENABLE_TLS_SSL
     // Dữ liệu tại TLS_SSL_DATA_ADDRESS phải là CA certificate PEM, kết thúc bằng '\0'.
     // Không dùng setInsecure() khi ENABLE_TLS_SSL để bắt buộc xác thực chứng chỉ server.
@@ -795,6 +881,7 @@ void NetWork_Mqtt::setupInfoMQTT()
         DEVICE_LOG_INFO("[MQTT] Failed to enlarge packet buffer for capture commands");
     }
     MqttClient.setCallback(MqttDataCallback);
+    mqttConfigurationReady = true;
     //if (MqttClient.connect(Settings.mqtt_client, Settings.mqtt_user, Settings.mqtt_pwd, Settings.subcribe_topic, 1, true, "")) {
 
     //}
@@ -815,6 +902,10 @@ void NetWork_Mqtt::disconnetMqtt(){
 
 void NetWork_Mqtt::connectMqtt(){
   DEVICE_LOG_INFO("start NetWork_Mqtt::connectMqtt");
+  if (!mqttConfigurationReady) {
+    DEVICE_LOG_INFO("[MQTT] Connection blocked: configuration or TLS credentials are not ready");
+    return;
+  }
 #if ENABLE_mTLS
   if (!mtlsCredentialsLoaded) {
     DEVICE_LOG_INFO("[MQTT mTLS] Connection blocked: credentials are not loaded");
@@ -832,9 +923,13 @@ void NetWork_Mqtt::connectMqtt(){
          DEVICE_LOG_INFO("Attempting MQTT connection...");
         if (MqttClient.connect(Settings.mqtt_client)) {
             DEVICE_LOG_INFO("connected");
-            MqttClient.subscribe(Settings.subcribe_topic);
+             if (!MqttClient.subscribe(Settings.subcribe_topic, MQTT_PUBLISH_QOS)) {
+                 DEVICE_LOG_INFO("[MQTT] Subscribe failed; closing connection");
+                 MqttClient.disconnect();
+                 return;
+             }
 #if ENABLE_ASCON_AEAD128
-            sendMessageInfoPublish(buildAsconHandshakePayload());
+             sendMessageInfoPublish(buildAsconHandshakePayload());
 #else
             this->sendMessageInfo("{\"test\":\"mqtt connect\"}");
 #endif
