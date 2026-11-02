@@ -5,6 +5,7 @@
   },
   "dependencies": {
     "crypto": "^1.0.1",
+    "dotenv": "^18.0.9",
     "mqtt": "^5.16.0",
     "tls": "^0.0.1"
   }

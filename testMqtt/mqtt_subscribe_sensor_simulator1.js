@@ -1,3 +1,4 @@
+require('dotenv').config();
 const mqtt = require('mqtt');
 const { randomUUID } = require('crypto');
 const fs = require('fs');
@@ -6,7 +7,7 @@ const path = require('path');
 const mqttHost = process.env.MQTT_HOST || 'localhost';
 const mqttPort = Number(process.env.MQTT_PORT || 1885);
 const brokerUrl = `mqtts://${mqttHost}:${mqttPort}`;
-const clientId = process.env.MQTT_CLIENT_ID || 'device2';
+const clientId = process.env.DEVICE_ID2 || 'device2';
 const subscribeTopic = process.env.MQTT_SUBSCRIBE_TOPIC || 'devices/device1/data';
 const brokerCertDir = path.resolve(__dirname, '..', 'mqttBroker', 'certs');
 
@@ -15,14 +16,14 @@ function resolveCertPath(envName, defaultPath) {
   return path.isAbsolute(certPath) ? certPath : path.resolve(__dirname, certPath);
 }
 
-const caPath = resolveCertPath('MQTT_CA_CERT', path.join(brokerCertDir, 'ca.crt'));
-const clientCertPath = resolveCertPath('MQTT_CLIENT_CERT', path.join(brokerCertDir, 'device2.crt'));
-const clientKeyPath = resolveCertPath('MQTT_CLIENT_KEY', path.join(brokerCertDir, 'device2.key'));
+const caPath = resolveCertPath('MQTT_CA_CERT2', path.join(brokerCertDir, 'ca.crt'));
+const clientCertPath = resolveCertPath('MQTT_CLIENT_CERT2', path.join(brokerCertDir, 'device2.crt'));
+const clientKeyPath = resolveCertPath('MQTT_CLIENT_KEY2', path.join(brokerCertDir, 'device2.key'));
 
 for (const certPath of [caPath, clientCertPath, clientKeyPath]) {
   if (!fs.existsSync(certPath)) {
     console.error(`Certificate file not found: ${certPath}`);
-    console.error('Set MQTT_CA_CERT, MQTT_CLIENT_CERT, and MQTT_CLIENT_KEY to valid certificate paths.');
+    console.error('Set MQTT_CA_CERT2, MQTT_CLIENT_CERT2, and MQTT_CLIENT_KEY2 to valid certificate paths.');
     process.exit(1);
   }
 }

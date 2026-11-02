@@ -1,3 +1,4 @@
+require('dotenv').config();
 const mqtt = require('mqtt');
 const { randomUUID } = require('crypto');
 const fs = require('fs');
@@ -10,8 +11,8 @@ const clientId = process.env.MQTT_CLIENT_ID || 'device1';
 const siteId = process.env.SITE_ID || `demo-${randomUUID().slice(0, 8)}`;
 const deviceId = process.env.DEVICE_ID || clientId;
 const intervalMs = Math.max(1000, Number(process.env.INTERVAL_MS || 5000));
-const publishTopic = process.env.MQTT_PUBLISH_TOPIC || `devices/${clientId}/data`;
-const subscribeTopic = process.env.MQTT_SUBSCRIBE_TOPIC || `devices/${clientId}/commands/#`;
+const publishTopic = process.env.MQTT_PUBLISH_TOPIC || `pub_c/${clientId}`;
+const subscribeTopic = process.env.MQTT_SUBSCRIBE_TOPIC || `sub_c/${clientId}`;
 const brokerCertDir = path.resolve(__dirname, '..', 'mqttBroker', 'certs');
 
 function resolveCertPath(envName, defaultPath) {
