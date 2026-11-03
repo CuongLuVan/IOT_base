@@ -1,5 +1,6 @@
 const mqtt = require('mqtt');
 const { EventEmitter } = require('events');
+const { tlsOptions, protectPayload, isCredentialRejection } = require('./mqttSecurity.js');
 
 /**
  * MqttService
@@ -71,16 +72,19 @@ class MqttService extends EventEmitter {
       try {
         this.disconnect();
 
-        const protocol = params.protocol || process.env.MQTT_PROTOCOL || 'mqtt';
+        // MqttBroker1885.js only accepts MQTTS with an ECDSA client certificate
+        // registered for this clientId, so both default to the secure setup.
+        const protocol = params.protocol || process.env.MQTT_PROTOCOL || 'mqtts';
         const host = params.host || process.env.MQTT_HOST || 'localhost';
-        const port = params.port !== undefined && params.port !== '' ? params.port : (process.env.MQTT_PORT || 1883);
+        const port = params.port !== undefined && params.port !== '' ? params.port : (process.env.MQTT_PORT || 1885);
         const username = params.username !== undefined ? params.username : (process.env.MQTT_USER || '');
         const password = params.password !== undefined ? params.password : (process.env.MQTT_PASS || '');
-        const clientId = params.clientId || process.env.MQTT_CLIENT_ID || 'web_manager_' + Math.random().toString(16).substring(2, 10);
+        const clientId = params.clientId || process.env.MQTT_CLIENT_ID || 'web_manager';
         const keepalive = parseInt(params.keepalive || process.env.MQTT_KEEPALIVE || 60, 10) || 60;
         const clean = params.clean !== undefined ? !!params.clean : true;
         const autoSub = String(params.topics || '').split(',').map((s) => s.trim()).filter(Boolean);
         const url = String(host).includes('://') ? host : `${protocol}://${host}:${port}`;
+        const urlProtocol = url.split('://')[0];
 
         this.connectionStatus = 'CONNECTING';
         this.lastError = null;
@@ -94,6 +98,7 @@ class MqttService extends EventEmitter {
           clean,
           reconnectPeriod: 5000,
           connectTimeout: 10000,
+          ...tlsOptions(urlProtocol, clientId),
         });
 
         let settled = false;
@@ -138,6 +143,11 @@ class MqttService extends EventEmitter {
 
         client.on('error', (err) => {
           this._logEvent('ERROR', { error: err.message });
+          if (isCredentialRejection(err)) {
+            // Retrying would only add failures for the broker's brute-force
+            // protection: check mqtt_device_certs.json for this clientId.
+            client.end(true);
+          }
           if (!settled) {
             clearTimeout(timeout);
             settled = true;
@@ -196,11 +206,12 @@ class MqttService extends EventEmitter {
     return new Promise((resolve, reject) => {
       if (!this.isConnected()) return reject(new Error('Chưa kết nối tới MQTT broker'));
       if (!topic || !String(topic).trim()) return reject(new Error('Thiếu topic để publish'));
-      let payload = message;
-      if (payload && typeof payload === 'object') {
-        try { payload = JSON.stringify(payload); } catch (e) { payload = String(payload); }
-      } else {
-        payload = String(payload == null ? '' : payload);
+      let payload;
+      try {
+        // timestamp/nonce (and the HMAC signature when configured) for the broker.
+        payload = protectPayload(message == null ? '' : message, this.options && this.options.clientId);
+      } catch (e) {
+        payload = String(message);
       }
       this.client.publish(String(topic).trim(), payload, { qos: parseInt(qos, 10) || 0, retain: !!retain }, (err) => {
         if (err) {
@@ -221,6 +232,11 @@ class MqttService extends EventEmitter {
       const q = parseInt(qos, 10) || 0;
       this.client.subscribe(t, { qos: q }, (err, granted) => {
         if (err) return reject(err);
+        if (Array.isArray(granted) && granted.some((g) => g.qos >= 128)) {
+          // SUBACK 0x80: the broker refused the topic.
+          this._logEvent('SUBSCRIBE_REJECTED', { topic: t });
+          return reject(new Error(`Broker từ chối subscribe ${t}: clientId chưa được phép trong mqtt_acl.json`));
+        }
         if (!this.subscriptions.includes(t)) this.subscriptions.push(t);
         this._logEvent('SUBSCRIBE', { topic: t, qos: q, granted });
         resolve(granted);

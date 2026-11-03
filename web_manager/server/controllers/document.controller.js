@@ -715,8 +715,10 @@ documentCtrl.saveCertificateMqtt  = async function(req,res) {
             mode: 0o600,
         });
         runOpenSSL([
-            "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048",
-            "-out", privateKeyPath,
+            // ECDSA P-256: required by the broker (enableECDSA) and small
+            // enough for the device EEPROM layout.
+            "genpkey", "-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:P-256",
+            "-pkeyopt", "ec_param_enc:named_curve", "-out", privateKeyPath,
         ]);
         fs.chmodSync(privateKeyPath, 0o600);
         runOpenSSL([
