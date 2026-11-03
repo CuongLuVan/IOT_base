@@ -1,0 +1,5 @@
+numpy
+pandas
+scikit-learn
+paho-mqtt>=1.6
+python-dotenv
