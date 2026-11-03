@@ -1,6 +1,15 @@
+// Simulates a device against mqttBroker/MqttBroker1885.js. Security settings
+// mirror the broker flags:
+//   enable_TLS_SSL / enableTLSCertificate  -> MQTT_CA_CERT, MQTT_CLIENT_CERT, MQTT_CLIENT_KEY
+//                                             (ECDSA P-256, see mqttBroker/certs/CERTIFICATE_SETUP.md)
+//   mTLS off (mqtt_users.json)             -> MQTT_USERNAME, MQTT_PASSWORD
+//   enableAttack (mqtt_replay.json)        -> "timestamp" + "nonce" in every payload
+//   enableMessageAuthentication            -> MQTT_HMAC_SECRET (+ MQTT_HMAC_KEY_ID, default clientId)
+//   enableBruteForce                       -> stop reconnecting when the broker rejects the credentials
+//   enableACL (mqtt_acl.json)              -> MQTT_PUBLISH_TOPIC / MQTT_SUBSCRIBE_TOPIC must be allowed
 require('dotenv').config();
 const mqtt = require('mqtt');
-const { randomUUID } = require('crypto');
+const { randomUUID, createHmac, timingSafeEqual } = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
@@ -13,6 +22,10 @@ const deviceId = process.env.DEVICE_ID || clientId;
 const intervalMs = Math.max(1000, Number(process.env.INTERVAL_MS || 5000));
 const publishTopic = process.env.MQTT_PUBLISH_TOPIC || `pub_c/${clientId}`;
 const subscribeTopic = process.env.MQTT_SUBSCRIBE_TOPIC || `sub_c/${clientId}`;
+const username = process.env.MQTT_USERNAME || undefined;
+const password = process.env.MQTT_PASSWORD || undefined;
+const hmacSecret = process.env.MQTT_HMAC_SECRET || '';
+const hmacKeyId = process.env.MQTT_HMAC_KEY_ID || clientId;
 const brokerCertDir = path.resolve(__dirname, '..', 'mqttBroker', 'certs');
 
 function resolveCertPath(envName, defaultPath) {
@@ -73,8 +86,46 @@ function createSensorPayload() {
   };
 }
 
+// Same canonical form as canonicalizePayloadValue() in MqttBroker1885.js.
+function canonicalize(value) {
+  if (Array.isArray(value)) {
+    return '[' + value.map(canonicalize).join(',') + ']';
+  }
+  if (value && typeof value === 'object') {
+    return '{' + Object.keys(value).sort()
+      .map((key) => JSON.stringify(key) + ':' + canonicalize(value[key])).join(',') + '}';
+  }
+  return JSON.stringify(value);
+}
+
+// The broker removes "signature" and "keyId" before computing the HMAC.
+function computeSignature(payload) {
+  const { signature, keyId, ...body } = payload;
+  return createHmac('sha256', hmacSecret).update(canonicalize(body)).digest('hex');
+}
+
+function signPayload(payload) {
+  if (!hmacSecret) return payload;
+  return { ...payload, keyId: hmacKeyId, signature: computeSignature(payload) };
+}
+
+function describeSignature(text) {
+  if (!hmacSecret) return '';
+  let payload;
+  try {
+    payload = JSON.parse(text);
+  } catch (error) {
+    return ' [not JSON]';
+  }
+  if (!payload || typeof payload.signature !== 'string') return ' [unsigned]';
+  const expected = Buffer.from(computeSignature(payload), 'hex');
+  const received = Buffer.from(payload.signature.replace(/^(0x|sha256:)/i, ''), 'hex');
+  const valid = expected.length === received.length && timingSafeEqual(expected, received);
+  return valid ? ' [signature OK]' : ' [signature INVALID]';
+}
+
 function publishTelemetry(client) {
-  const payload = createSensorPayload();
+  const payload = signPayload(createSensorPayload());
   client.publish(publishTopic, JSON.stringify(payload), { qos: 1, retain: false }, (error) => {
     if (error) {
       console.error('Publish failed:', error.message);
@@ -86,6 +137,8 @@ function publishTelemetry(client) {
 
 const client = mqtt.connect(brokerUrl, {
   clientId,
+  username,
+  password,
   clean: true,
   reconnectPeriod: 3000,
   connectTimeout: 10000,
@@ -96,9 +149,15 @@ client.on('connect', () => {
   console.log(`Connected to ${brokerUrl} as ${clientId}`);
   console.log(`Publishing one message every ${intervalMs} ms on: ${publishTopic}`);
 
-  client.subscribe(subscribeTopic, { qos: 1 }, (error) => {
-    if (error) console.error('Subscribe failed:', error.message);
-    else console.log(`Subscribed to ${subscribeTopic}`);
+  client.subscribe(subscribeTopic, { qos: 1 }, (error, granted) => {
+    if (error) {
+      console.error('Subscribe failed:', error.message);
+    } else if (granted.some((grant) => grant.qos >= 128)) {
+      // SUBACK 0x80: the broker refused the topic.
+      console.error(`Subscribe rejected for ${subscribeTopic}: not allowed for ${clientId} in mqtt_acl.json`);
+    } else {
+      console.log(`Subscribed to ${subscribeTopic}`);
+    }
   });
 
   publishTelemetry(client);
@@ -107,11 +166,22 @@ client.on('connect', () => {
 });
 
 client.on('message', (receivedTopic, message) => {
-  console.log(`[received] ${receivedTopic} ${message.toString()}`);
+  const text = message.toString();
+  console.log(`[received] ${receivedTopic} ${text}${describeSignature(text)}`);
 });
 
 client.on('reconnect', () => console.log('Reconnecting...'));
-client.on('error', (error) => console.error('MQTT error:', error.message));
+client.on('error', (error) => {
+  console.error('MQTT error:', error.message);
+  // CONNACK 4/5 (v3.1.1) or 134/135 (v5): retrying with the same credentials
+  // only adds failures until the broker's brute-force protection blocks us.
+  if ([4, 5, 134, 135].includes(error.code)) {
+    console.error('Broker rejected the credentials: check mqtt_device_certs.json (fingerprint/clientId)' +
+      ' or mqtt_users.json (MQTT_USERNAME/MQTT_PASSWORD). Not retrying.');
+    clearInterval(timer);
+    client.end(true, () => process.exit(1));
+  }
+});
 
 function shutdown() {
   console.log('\nStopping simulator...');

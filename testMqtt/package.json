@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "sensor-sim": "node --env-file=.env mqtt_public_sensor_simulator.js",
+    "sensor-sim": "node --env-file-if-exists=.env mqtt_publish_sensor_simulator.js",
     "mqtt-test": "node --env-file=.env sample_test03.js"
   },
   "dependencies": {
