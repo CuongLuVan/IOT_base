@@ -27,6 +27,27 @@ var enable_TLS_SSL = true; // change to true to enable TLS/SSL
 var enableTLSCertificate = true; // set to true to enable mTLS + per-device certs
 var enableACL = true; // set to true to enable ACL enforcement
 var enableAttack = true; // set to true to enable replay attack protection
+// Restrict TLS to ECDSA P-256 certificates (certs/generate_ecdsa_certs.ps1).
+// The device EEPROM layout only fits ECDSA P-256 credentials, so RSA client
+// certificates are rejected and the handshake uses ECDHE-ECDSA suites.
+var enableECDSA = true;
+var ecdsaTlsOptions = {
+  minVersion: 'TLSv1.2',
+  // TLS 1.2 suites supported by ESP32 mbedTLS and ESP8266 BearSSL, plus the
+  // TLS 1.3 suites used by Node.js clients such as testMqtt.
+  ciphers: [
+    'TLS_AES_128_GCM_SHA256',
+    'TLS_AES_256_GCM_SHA384',
+    'TLS_CHACHA20_POLY1305_SHA256',
+    'ECDHE-ECDSA-AES128-GCM-SHA256',
+    'ECDHE-ECDSA-AES256-GCM-SHA384',
+    'ECDHE-ECDSA-CHACHA20-POLY1305',
+    'ECDHE-ECDSA-AES128-SHA256'
+  ].join(':'),
+  honorCipherOrder: true,
+  ecdhCurve: 'prime256v1',
+  sigalgs: 'ecdsa_secp256r1_sha256'
+};
 
 var tlsOptions = {
   keyPath: __dirname + '/certs/server.key',
@@ -91,6 +112,8 @@ if (enableTLSCertificate) {
 
 // Mosca's legacy `secure` option drops TLS fields when it builds `credentials`.
 // Pass the complete TLS options explicitly so the mqtts server requests client certificates.
+// Mosca hands `credentials` unchanged to tls.createServer(), so Node TLS
+// options (ciphers, ecdhCurve, ...) can be added here.
 if (settings.secure) {
   settings.credentials = {
     keyPath: settings.secure.keyPath,
@@ -101,6 +124,28 @@ if (settings.secure) {
       settings.credentials[option] = settings.secure[option];
     }
   });
+  if (enableECDSA) {
+    Object.keys(ecdsaTlsOptions).forEach(function(option) {
+      settings.credentials[option] = ecdsaTlsOptions[option];
+    });
+    console.log('TLS restricted to ECDSA P-256 certificates');
+  }
+}
+
+function isEcdsaP256(certificate) {
+  return Boolean(certificate &&
+    (certificate.asn1Curve === 'prime256v1' || certificate.nistCurve === 'P-256'));
+}
+
+// Refuse to start with a server certificate the devices cannot use.
+if (enableECDSA && settings.secure) {
+  var serverCertificate = new crypto.X509Certificate(fs.readFileSync(tlsOptions.certPath));
+  var serverKeyDetails = serverCertificate.publicKey.asymmetricKeyDetails || {};
+  if (serverCertificate.publicKey.asymmetricKeyType !== 'ec' ||
+      serverKeyDetails.namedCurve !== 'prime256v1') {
+    throw new Error('enableECDSA requires an ECDSA P-256 server certificate at ' +
+      tlsOptions.certPath + ' (run certs/generate_ecdsa_certs.ps1)');
+  }
 }
 
 // Optional ACL (Access Control List) support
@@ -176,8 +221,9 @@ function readJsonFile(path, callback) {
 // Helper: match MQTT topic patterns with '+' and '#' wildcards
 function topicMatches(pattern, topic) {
   if (typeof pattern !== 'string' || !pattern) return false;
-  // Escape regex, then replace MQTT wildcards
-  var re = pattern.replace(/[[\]{}()+?.\\^$|]/g, function(m) { return '\\' + m; });
+  // Escape regex characters except the MQTT wildcards, then replace those.
+  // ('+' must not be escaped first, or "a/+" never matches "a/b".)
+  var re = pattern.replace(/[[\]{}()*?.\\^$|]/g, function(m) { return '\\' + m; });
   re = re.replace(/\+/g, '[^/]+');
   re = re.replace(/#/g, '.*');
   re = '^' + re + '$';
@@ -284,6 +330,11 @@ function verifyDeviceCertificate(client, identity, callback) {
     var stream = client && client.connection && client.connection.stream;
     var peer = stream && typeof stream.getPeerCertificate === 'function' ? stream.getPeerCertificate(true) : null;
     var peerFingerprint = peer && (peer.fingerprint256 || peer.fingerprint);
+    if (enableECDSA && peer && !isEcdsaP256(peer)) {
+      console.warn('mTLS authentication failed for', identity, '- client certificate is not ECDSA P-256');
+      callback(false);
+      return;
+    }
     var authorized = Boolean(peer && typeof expected === 'string' && (
       (typeof peerFingerprint === 'string' && peerFingerprint.toLowerCase() === expected.toLowerCase()) ||
       (peer.subject && peer.subject.CN && expected === peer.subject.CN)

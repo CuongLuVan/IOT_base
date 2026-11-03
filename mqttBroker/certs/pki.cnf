@@ -1,0 +1,32 @@
+# OpenSSL configuration for the ECDSA P-256 MQTT PKI (Windows and Linux).
+# Used with:  -config pki.cnf             (openssl req)
+#             -extfile pki.cnf -extensions v3_server|v3_client   (openssl x509 -req)
+# See CERTIFICATE_SETUP.md.
+
+[req]
+# The subject always comes from -subj, so no interactive prompt is needed.
+prompt             = no
+distinguished_name = req_dn
+
+[req_dn]
+CN = unused
+
+# CA certificate (openssl req -x509 ... -extensions v3_ca)
+[v3_ca]
+basicConstraints = critical,CA:TRUE
+keyUsage         = critical,keyCertSign,cRLSign
+subjectKeyIdentifier = hash
+
+# Broker certificate. subjectAltName MUST list the host name / IP that the
+# devices put in mqtt_host, otherwise they reject the broker.
+[v3_server]
+basicConstraints = critical,CA:FALSE
+keyUsage         = critical,digitalSignature
+extendedKeyUsage = serverAuth
+subjectAltName   = DNS:localhost,IP:127.0.0.1,IP:103.1.238.175
+
+# Device (client) certificate; the CN is the MQTT clientId.
+[v3_client]
+basicConstraints = critical,CA:FALSE
+keyUsage         = critical,digitalSignature
+extendedKeyUsage = clientAuth

@@ -2,15 +2,27 @@
   "devices": [
     {
       "clientId": "device1",
-      "fingerprint256": "0A:DA:1B:2B:F7:26:D3:1F:12:D3:24:DB:E2:D2:AA:87:C7:6F:A3:81:9B:29:51:E2:ED:D5:59:6D:84:BD:11:DB"
+      "fingerprint256": "83:68:8A:3B:50:10:F8:94:DA:3C:B4:20:9B:F3:F4:77:A3:25:D4:58:44:F6:E5:E2:77:70:14:35:8F:7E:E2:70"
     },
     {
       "clientId": "device2",
-      "fingerprint256": "94:76:3C:51:36:52:65:6B:68:35:6C:56:34:B4:E7:59:52:87:A8:A8:96:64:03:70:F7:47:6E:97:18:03:04:4D"
+      "fingerprint256": "A4:1D:51:35:DE:B8:96:76:78:6D:12:A2:10:75:49:E8:44:77:B7:1C:C2:64:6C:60:14:19:10:FF:9E:3A:96:94"
     },
     {
       "clientId": "device_iot1",
-      "fingerprint256": "0B:09:16:0C:37:88:92:C3:A5:88:A6:EE:FA:23:80:79:6C:8B:DB:65:D2:C0:FD:21:DA:B3:9C:D5:42:9B:DF:94"
+      "fingerprint256": "08:C6:D2:19:60:81:E8:72:FA:20:BB:CD:16:8C:59:52:A7:DB:B7:3D:80:0B:D1:88:CF:04:1D:5E:B4:7D:2D:58"
+    },
+    {
+      "clientId": "web_manager",
+      "fingerprint256": "6F:FD:2F:95:D7:62:A2:3B:FE:65:E4:67:F3:5B:C7:25:80:67:E5:DF:1D:4E:56:21:A1:F2:28:7B:5B:BE:4F:9F"
+    },
+    {
+      "clientId": "iot_ai_control",
+      "fingerprint256": "28:A5:3E:9F:50:82:61:7A:EB:A8:E9:78:37:1B:C6:A1:8B:7C:69:C4:E4:70:B5:01:0E:32:44:FC:07:CB:AA:EE"
+    },
+    {
+      "clientId": "iot_data_logger",
+      "fingerprint256": "16:65:F3:BC:1C:BD:08:3F:EC:F6:07:0D:F7:36:E4:B5:9D:E8:7D:AC:FD:72:27:CA:F7:09:6A:CD:27:CE:98:C0"
     }
   ]
 }

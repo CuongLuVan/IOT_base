@@ -2,23 +2,74 @@
   "rules": [
     {
       "clientId": "device1",
-      "publish": ["devices/device1/data", "devices/device1/commands/#"],
-      "subscribe": ["devices/device1/commands/#"]
+      "publish": [
+        "devices/device1/data",
+        "devices/device1/commands/#",
+        "pub_c/device1"
+      ],
+      "subscribe": [
+        "devices/device1/commands/#",
+        "sub_c/device1"
+      ]
     },
     {
       "clientId": "device2",
       "publish": [],
-      "subscribe": ["devices/device1/data"]
+      "subscribe": [
+        "devices/device1/data",
+        "pub_c/device1"
+      ]
     },
     {
       "clientId": "device_iot1",
-      "publish": ["devices/device1/commands/#"],
-      "subscribe": ["devices/device1/data"]
+      "publish": [
+        "devices/device1/commands/#",
+        "sub_c/device1"
+      ],
+      "subscribe": [
+        "devices/device1/data",
+        "pub_c/device1"
+      ]
+    },
+    {
+      "clientId": "web_manager",
+      "publish": [
+        "sub_c/+",
+        "devices/+/commands/#"
+      ],
+      "subscribe": [
+        "pub_c/+",
+        "devices/+/data",
+        "iot/alert/#"
+      ]
+    },
+    {
+      "clientId": "iot_ai_control",
+      "publish": [
+        "iot/alert/#"
+      ],
+      "subscribe": [
+        "iot/power/#"
+      ]
+    },
+    {
+      "clientId": "iot_data_logger",
+      "publish": [],
+      "subscribe": [
+        "pub_c/+",
+        "devices/+/data",
+        "iot/power/#",
+        "iot/alert/#"
+      ]
     },
     {
       "username": "alice",
-      "publish": ["/users/alice"],
-      "subscribe": ["/users/alice"]
+      "publish": [
+        "/users/alice"
+      ],
+      "subscribe": [
+        "/users/alice"
+      ]
     }
   ]
 }

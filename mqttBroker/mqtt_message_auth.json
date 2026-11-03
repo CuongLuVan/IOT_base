@@ -2,10 +2,15 @@
   "scheme": "hmac-sha256",
   "field": "signature",
   "keyField": "keyId",
-  "ignoreTopics": ["$SYS/#"],
+  "ignoreTopics": [
+    "$SYS/#"
+  ],
   "keys": {
     "device1": "replace_with_secret_for_device1",
     "device2": "replace_with_secret_for_device2",
-    "iotuser": "replace_with_secret_for_iotuser"
+    "iotuser": "replace_with_secret_for_iotuser",
+    "web_manager": "replace_with_secret_for_web_manager",
+    "iot_ai_control": "replace_with_secret_for_iot_ai_control",
+    "iot_data_logger": "replace_with_secret_for_iot_data_logger"
   }
 }

@@ -1,0 +1,4 @@
+# Private keys and signing requests never go into git.
+*.key
+*.csr
+*.ext
