@@ -1,43 +1,58 @@
 
 
-#define MODE_WIFI_ADRESS          1
 #define SUPPORT_RTOS true
 #define SUPPORT_LORA 0
 #define SUPPORT_MQTT 1
 
-// Broker MqttBroker1885.js yêu cầu TLS; CA certificate được provision vào EEPROM.
+// ---------------------------------------------------------------------------
+// MQTT security. Mỗi cờ tương ứng một cờ trong mqttBroker/MqttBroker1885.js;
+// giữ hai bên giống nhau. Tính năng nào broker không dùng thì để 0 để không
+// tốn flash/RAM/EEPROM. Không có chế độ MQTT không mã hóa: broker bắt buộc TLS.
+// ---------------------------------------------------------------------------
+
+// enable_TLS_SSL: xác thực chứng chỉ broker bằng CA trong EEPROM.
 #define ENABLE_TLS_SSL true
 
-// Broker yêu cầu mTLS; client certificate/private key phải được provision vào EEPROM.
+// enableTLSCertificate: mTLS, broker xác thực thiết bị bằng fingerprint
+// chứng chỉ client (mqtt_device_certs.json).
 #define ENABLE_mTLS true
 
 #if !ENABLE_TLS_SSL || !ENABLE_mTLS
   #error "Secure MQTT requires TLS server verification and mutual TLS client authentication."
 #endif
 
-// false = giữ nguyên payload MQTT hiện tại.
-// true  = ký và kiểm tra JSON MQTT bằng HMAC-SHA256.
+// Gửi thêm mqtt_user/mqtt_pwd khi CONNECT. Firmware luôn dùng mTLS, broker xác
+// thực thiết bị bằng chứng chỉ; chỉ bật khi broker bật enableClientID và cần
+// khớp username trong mqtt_client_ids.json.
+#define ENABLE_MQTT_USER_AUTH false
+
+// enableAttack: thêm "timestamp" (ms) và "nonce" vào mọi publish
+// (mqtt_replay.json, maxSkewSeconds mặc định 300 s -> cần đồng bộ NTP).
+#define ENABLE_REPLAY_PROTECTION true
+
+// enableMessageAuthentication: ký HMAC-SHA256 theo dạng canonical của broker
+// (key sắp xếp, bỏ "signature"/"keyId") và kiểm tra chữ ký lệnh nhận về.
 #define ENABLE_MESSAGE_AUTHENTICATION false
 
-// false = giữ nguyên luồng MQTT hiện tại.
-// true  = bật mã hóa Ascon-AEAD128 cho các payload MQTT ngoài lệnh handshake.
+// enableBruteForce: broker khóa client sau maxFailedAttempts lần CONNECT lỗi
+// trong windowSeconds (mqtt_bruteforce.json). Cờ này giới hạn số lần thử để
+// thiết bị không tự làm mình bị khóa.
+#define ENABLE_MQTT_CONNECT_RATE_LIMIT false
+#define MQTT_CONNECT_MAX_FAILURES 4            // = maxFailedAttempts - 1
+#define MQTT_CONNECT_FAILURE_WINDOW_MS 300000UL // = windowSeconds * 1000
+
+// Ascon-AEAD128 mã hóa đầu cuối với server; broker chỉ chuyển tiếp, không hỗ trợ.
 #define ENABLE_ASCON_AEAD128 false
 #define ASCON_RANDOM_DIGITS 5
 #define ASCON_KEY_ROTATION_MS 86400000UL
 #define ASCON_PUBLIC_KEY_COUNT 10
 #define ASCON_PUBLIC_KEY_HEX_LENGTH 32
 #define ASCON_PUBLIC_KEY_ENTRY_LENGTH 33
-#define ASCON_PUBLIC_KEYS_ADDRESS 18000
-#define ASCON_HANDSHAKE_DIGITS_ADDRESS 18330
-#define ASCON_HANDSHAKE_DIGITS_MAX_LENGTH 8
-#define ASCON_KEY_ROTATION_TIME_ADDRESS 18350
-
-// TLS/mTLS MQTT connection; never fall back to an insecure client.
-#define MQTT_NO_TLS 0
 
 #define COMMAND_TYPE_CONTROL      0x01
 #define COMMAND_TYPE_OTHER        0x02
 #define COMMAND_TYPE_SCHEDULE_CONTROL 0x03
+#define COMMAND_TYPE_ASCON_HANDSHAKE  0x07
 
 #define COMMAND_RESERVED_NONE     0x00
 #define COMMAND_RESERVED_CONTROL  0x01
@@ -70,35 +85,63 @@
 
 #define UART_BUFFER_SIZE               1024
 #define UART_READ_TIMEOUT_MS           100
-#if ENABLE_MESSAGE_AUTHENTICATION
-#define EEPROM_SIZE                    (32 * 1024)
-#else
-#define EEPROM_SIZE                    (20 * 1024)
-#endif
-#define TLS_SSL_DATA_ADDRESS            1300
-#if ENABLE_MESSAGE_AUTHENTICATION
-#define TLS_SSL_DATA_MAX_LENGTH         (MESSAGE_AUTH_KEY_ID_ADDRESS - TLS_SSL_DATA_ADDRESS - 1)
-#else
-#define TLS_SSL_DATA_MAX_LENGTH         (EEPROM_SIZE - TLS_SSL_DATA_ADDRESS - 1)
-#endif
+// ---------------------------------------------------------------------------
+// EEPROM layout (giống hệt DeviceIOT8266). Mỗi chuỗi kết thúc bằng '\0';
+// *_MAX_LENGTH không tính ký tự '\0'. Trên ESP32, EEPROM.begin() giữ bản sao
+// RAM đúng bằng EEPROM_SIZE, nên EEPROM_SIZE chỉ kéo dài đến vùng cuối cùng
+// đang bật. Mục tiêu: mọi cấu hình < 3 KB (tối đa 2831 B khi bật tất cả).
+// ---------------------------------------------------------------------------
+#define MODE_WIFI_ADRESS                 1
+#define WIFI_SSSID                       2      // SSID tối đa 32 ký tự
+#define WIFI_SSID_MAX_LENGTH             32
+#define WIFI_PASS                        (WIFI_SSSID + WIFI_SSID_MAX_LENGTH + 1)
+#define WIFI_PASS_MAX_LENGTH             63
+#define VERSJON_SETUP_JSON               (WIFI_PASS + WIFI_PASS_MAX_LENGTH + 1)
+#define VERSJON_MAX_LENGTH               15
+// Lịch bơm của DeviceIOT8266 (ESP32 lưu lịch trong NVS Preferences).
+#define SYSTEM_TASK_SCHEDULE_STORAGE_ADDRESS (VERSJON_SETUP_JSON + VERSJON_MAX_LENGTH + 1)
+#define SYSTEM_TASK_SCHEDULE_STORAGE_SIZE    112
+// JSON cấu hình MQTT đã thu gọn (chỉ các trường NetWork_Mqtt đọc).
+#define WIFI_SETUP_JSON                  (SYSTEM_TASK_SCHEDULE_STORAGE_ADDRESS + SYSTEM_TASK_SCHEDULE_STORAGE_SIZE)
+#define WIFI_SETUP_JSON_MAX_LENGTH       447
 
-// Mỗi dữ liệu PEM phải kết thúc bằng '\0'. Các vùng không chồng lấp nhau trong EEPROM.
-#define MESSAGE_AUTH_KEY_ID_ADDRESS      20000
-#define MESSAGE_AUTH_KEY_ID_MAX_LENGTH   127
-#define MESSAGE_AUTH_SECRET_ADDRESS      20200
-#define MESSAGE_AUTH_SECRET_MAX_LENGTH   255
+// Dữ liệu bảo mật: chứng chỉ ECDSA P-256 (mqttBroker/certs/generate_ecdsa_certs.ps1).
+// Đo thực tế: ca.crt 622 B, deviceX.crt 642 B, key SEC1 không public key
+// 134 B (PKCS#8 246 B); cộng thêm ~11 B nếu xuống dòng CRLF.
+// Chứng chỉ RSA không còn vừa các vùng này.
+#define SECURITY_DATA_ADDRESS            (WIFI_SETUP_JSON + WIFI_SETUP_JSON_MAX_LENGTH + 1)
+#define MTLS_CA_CERT_ADDRESS             SECURITY_DATA_ADDRESS
+#define MTLS_CA_CERT_MAX_LENGTH          703
+#define MTLS_CLIENT_CERT_ADDRESS         (MTLS_CA_CERT_ADDRESS + MTLS_CA_CERT_MAX_LENGTH + 1)
+#define MTLS_CLIENT_CERT_MAX_LENGTH      767
+#define MTLS_PRIVATE_KEY_ADDRESS         (MTLS_CLIENT_CERT_ADDRESS + MTLS_CLIENT_CERT_MAX_LENGTH + 1)
+#define MTLS_PRIVATE_KEY_MAX_LENGTH      255
+// TLS một chiều chỉ dùng CA tại cùng địa chỉ.
+#define TLS_SSL_DATA_ADDRESS             MTLS_CA_CERT_ADDRESS
+#define TLS_SSL_DATA_MAX_LENGTH          MTLS_CA_CERT_MAX_LENGTH
 
-#define MTLS_CA_CERT_ADDRESS             1300
-#define MTLS_CA_CERT_MAX_LENGTH          4095
-#define MTLS_CLIENT_CERT_ADDRESS         5500
-#define MTLS_CLIENT_CERT_MAX_LENGTH      4095
-#define MTLS_PRIVATE_KEY_ADDRESS         9700
+// keyId trùng tên key trong mqtt_message_auth.json (thường là clientId);
+// secret tối đa 64 ký tự (ví dụ 32 byte dạng hex).
+#define MESSAGE_AUTH_KEY_ID_ADDRESS      (MTLS_PRIVATE_KEY_ADDRESS + MTLS_PRIVATE_KEY_MAX_LENGTH + 1)
+#define MESSAGE_AUTH_KEY_ID_MAX_LENGTH   32
+#define MESSAGE_AUTH_SECRET_ADDRESS      (MESSAGE_AUTH_KEY_ID_ADDRESS + MESSAGE_AUTH_KEY_ID_MAX_LENGTH + 1)
+#define MESSAGE_AUTH_SECRET_MAX_LENGTH   64
+#define MESSAGE_AUTH_MAX_FIELDS          24
+
+#define ASCON_PUBLIC_KEYS_ADDRESS        (MESSAGE_AUTH_SECRET_ADDRESS + MESSAGE_AUTH_SECRET_MAX_LENGTH + 1)
+
 #if ENABLE_ASCON_AEAD128
-#define MTLS_PRIVATE_KEY_STORAGE_END     ASCON_PUBLIC_KEYS_ADDRESS
+#define EEPROM_SIZE                      (ASCON_PUBLIC_KEYS_ADDRESS + ASCON_PUBLIC_KEY_COUNT * ASCON_PUBLIC_KEY_ENTRY_LENGTH)
 #elif ENABLE_MESSAGE_AUTHENTICATION
-#define MTLS_PRIVATE_KEY_STORAGE_END     MESSAGE_AUTH_KEY_ID_ADDRESS
+#define EEPROM_SIZE                      ASCON_PUBLIC_KEYS_ADDRESS
+#elif ENABLE_mTLS
+#define EEPROM_SIZE                      MESSAGE_AUTH_KEY_ID_ADDRESS
 #else
-#define MTLS_PRIVATE_KEY_STORAGE_END     EEPROM_SIZE
+#define EEPROM_SIZE                      MTLS_CLIENT_CERT_ADDRESS
+#endif
+
+#if EEPROM_SIZE > 3072
+  #error "EEPROM layout exceeds the 3 KB budget."
 #endif
 #define MTLS_PRIVATE_KEY_MAX_LENGTH      (MTLS_PRIVATE_KEY_STORAGE_END - MTLS_PRIVATE_KEY_ADDRESS - 1)
 
@@ -173,6 +216,12 @@
 
 #define LORA_BUFFER_SIZE               255
 #define MQTT_PAYLOAD_SIZE              1024
+// Gói MQTT trên đường truyền: Ascon mã hex nên cần gấp đôi payload gốc.
+#if ENABLE_ASCON_AEAD128
+#define MQTT_PACKET_SIZE               2048
+#else
+#define MQTT_PACKET_SIZE               MQTT_PAYLOAD_SIZE
+#endif
 #define SENSOR_PAYLOAD_SIZE            256
 #define DEVICE_PAYLOAD_SIZE            256
 

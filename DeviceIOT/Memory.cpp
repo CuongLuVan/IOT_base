@@ -69,18 +69,28 @@ double  Memory::readDouble(int address) {
 }
 
 // Ghi chuỗi kiểu const char*
-void  Memory::writeString(int address, const char* str) {
+// maxLen < 0: bounded only by EEPROM_SIZE. A string that does not fit is
+// refused instead of overwriting the next region (e.g. the certificates).
+bool  Memory::writeString(int address, const char* str, int maxLen) {
+  if (str == NULL || address < 0 || address >= _size) {
+    return false;
+  }
   int len = strlen(str);
+  if ((maxLen >= 0 && len > maxLen) || len > _size - address - 1) {
+    DEVICE_LOG_INFO("[Memory] Refused oversized string write");
+    return false;
+  }
   for (int i = 0; i < len; i++) {
     EEPROM.write(address + i, str[i]);
   }
   EEPROM.write(address + len, '\0'); // null-terminate
   EEPROM.commit();
+  return true;
 }
 
 // Ghi chuỗi kiểu String
-void  Memory::writeString(int address, String str) {
-  writeString(address, str.c_str());
+bool  Memory::writeString(int address, const String &str, int maxLen) {
+  return writeString(address, str.c_str(), maxLen);
 }
 
 // Đọc chuỗi về String
@@ -98,17 +108,29 @@ String  Memory::readString(int address, int maxLen ) {
 }
 
 // Intended for certificates and keys that are too large for a stack buffer.
+// Measures the string first so the heap allocation is the stored length, not
+// the region size. Erased cells (0xFF) also end the string.
 String Memory::readLargeString(int address, int maxLen) {
-  String data;
-  data.reserve(maxLen);
+  if (address < 0 || maxLen <= 0 || address >= _size) {
+    return String();
+  }
+  if (maxLen > _size - address) {
+    maxLen = _size - address;
+  }
   int len = 0;
   while (len < maxLen) {
     unsigned char k = EEPROM.read(address + len);
-    if (k == '\0') {
+    if (k == '\0' || k == 0xFF) {
       break;
     }
-    data += (char)k;
     len++;
+  }
+  String data;
+  if (len == 0 || !data.reserve(len)) {
+    return data;
+  }
+  for (int i = 0; i < len; i++) {
+    data += (char)EEPROM.read(address + i);
   }
   return data;
 }
@@ -195,8 +217,8 @@ void  Memory::saveWiFiCredentials(int ssidAddr, int passAddr, const char* ssid, 
 }
 
 void  Memory::getWiFiCredentials(int ssidAddr, int passAddr, String &ssid, String &pass) {
-  ssid = readString(ssidAddr);
-  pass = readString(passAddr);
+  ssid = readString(ssidAddr, WIFI_SSID_MAX_LENGTH);
+  pass = readString(passAddr, WIFI_PASS_MAX_LENGTH);
 }
 
 uint64_t  Memory::getTimeStamp(){

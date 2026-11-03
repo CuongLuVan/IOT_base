@@ -21,8 +21,10 @@
 #include "DebugInfo.h"
 #include <time.h>
 #include "MemoryData.h"
+#include "NetWork_Mqtt.h"
 
-#define WIFI_SETUP_REQUEST_MAX_LENGTH 24576
+// Settings plus three ECDSA P-256 PEMs (~1.4 KB) with JSON escaping.
+#define WIFI_SETUP_REQUEST_MAX_LENGTH 4096
 
 static_assert(WIFI_SETUP_JSON + WIFI_SETUP_JSON_MAX_LENGTH < MTLS_CA_CERT_ADDRESS,
               "Wi-Fi setup JSON region overlaps the CA certificate region.");
@@ -40,6 +42,35 @@ static  SmartConfigStatus enableSmartConfig = SmartConfigStatus::DISABLE_SMARTCO
 static  SmartProvisioningBle enableProvisioningBle = SmartProvisioningBle::DISABLE_BLE;
 extern InfoSensor sensorValue;
 extern InfoDeviceControl statusDevice;
+
+// Keeps only the fields NetWork_Mqtt reads, so the stored JSON fits
+// WIFI_SETUP_JSON_MAX_LENGTH (config.html also sends unused fields).
+static bool compactMqttSettings(JsonDocument &input, String &output)
+{
+    static const char *const kKeys[] = {
+        "mqtt_host", "mqtt_port", "mqtt_client", "mqtt_user", "mqtt_pwd",
+        "public_topic", "subcribe_topic"
+    };
+    StaticJsonDocument<JSON_BUFFER_SIZE> compact;
+    for (const char *key : kKeys) {
+        if (input.containsKey(key)) {
+            compact[key] = input[key];
+        }
+    }
+    output = "";
+    return serializeJson(compact, output) > 0 && !compact.overflowed() &&
+           output.length() <= WIFI_SETUP_JSON_MAX_LENGTH;
+}
+
+// info.txt: getInfoDevice data sent to the mobile app is Ascon-encrypted too.
+static String httpInfoPayload()
+{
+#if ENABLE_ASCON_AEAD128
+    return getAsconEncryptedPayload(getInfoDevice(sensorValue, statusDevice));
+#else
+    return getInfoDevice(sensorValue, statusDevice);
+#endif
+}
 
 String wifiIp = "";
 
@@ -134,13 +165,9 @@ void NetWork_Wifi::handleSetUp(){
         return;
     }
 
-    setupDocument.remove("mqtt_ca_cert");
-    setupDocument.remove("mqtt_client_cert");
-    setupDocument.remove("mqtt_private_key");
+    // Only the MQTT fields are stored; the PEM fields have their own regions.
     String storedConfiguration;
-    storedConfiguration.reserve(data.length());
-    if (serializeJson(setupDocument, storedConfiguration) == 0 ||
-        storedConfiguration.length() > WIFI_SETUP_JSON_MAX_LENGTH) {
+    if (!compactMqttSettings(setupDocument, storedConfiguration)) {
         sendSetupError(400, "mqtt_configuration_too_large");
         return;
     }
@@ -180,8 +207,8 @@ void NetWork_Wifi::handleSetUpWifi(){
     //Memory::GetInstance()->writeString(WIFI_SETUP_JSON,data);
     //WIFI_BLE_PROVISION  WIFI_SMART_CONFIG
     Memory::GetInstance()->writeChar(WIFI_MODE,WIFI_START_CONNECT);
-    Memory::GetInstance()->writeString(WIFI_SSSID, jsonBuffer["ssid"].as<String>());
-    Memory::GetInstance()->writeString(WIFI_PASS,jsonBuffer["password"].as<String>());
+    Memory::GetInstance()->writeString(WIFI_SSSID, jsonBuffer["ssid"].as<String>(), WIFI_SSID_MAX_LENGTH);
+    Memory::GetInstance()->writeString(WIFI_PASS, jsonBuffer["password"].as<String>(), WIFI_PASS_MAX_LENGTH);
 
     webServer->send(200, "application/json", "{'data':true}");
      DEVICE_LOG_INFO("end NetWork_Wifi::end................................");
@@ -215,12 +242,12 @@ void NetWork_Wifi::handleControl(){
             //Serial.printf("[MQTT] Queued (non-RTOS) command type=%d value=%d\n", cmd.commandType, cmd.commandValue);
         #endif
     }
-    webServer->send(200, "application/json", getInfoDevice(sensorValue,statusDevice));
+    webServer->send(200, "application/json", httpInfoPayload());
 }
 
 void NetWork_Wifi::handleUpdate(){
     DEVICE_LOG_INFO("start NetWork_Wifi::handleUpdate ...............  ");
-    webServer->send(200, "application/json", getInfoDevice(sensorValue,statusDevice));
+    webServer->send(200, "application/json", httpInfoPayload());
 }
 
 
@@ -405,7 +432,7 @@ void NetWork_Wifi::setupOTA(void){
         }
         String serverVersion = jsonBuffer["version"];
         String binUrl = jsonBuffer["bin"];
-        String currentFirmwareVersion = Memory::GetInstance()->readString(VERSION_OTA);;
+        String currentFirmwareVersion = Memory::GetInstance()->readString(VERSJON_SETUP_JSON, VERSJON_MAX_LENGTH);
 
         Serial.printf("Current: %s, Server: %s\n", currentFirmwareVersion.c_str(), serverVersion.c_str());
 
@@ -448,7 +475,7 @@ void NetWork_Wifi::setupOTA(void){
               Serial.println("OTA update successful");
               if (Update.isFinished()) {
                 Serial.println("Update successful, saving version...");
-                Memory::GetInstance()->writeString(VERSJON_SETUP_JSON,serverVersion);
+                Memory::GetInstance()->writeString(VERSJON_SETUP_JSON, serverVersion, VERSJON_MAX_LENGTH);
                 Memory::GetInstance()->writeChar(WIFI_MODE,WIFI_START_CONNECT);
                 delay(WIFI_OTA_RESTART_DELAY_MS);
                 ESP.restart();
@@ -619,8 +646,8 @@ void NetWork_Wifi::loopSmartConfig(){
           password = WiFi.psk();
           // save to reset wifi
           enableSmartConfig=  SmartConfigStatus::DISABLE_SMARTCONFIG;
-          Memory::GetInstance()->writeString(WIFI_SSSID,ssid);
-          Memory::GetInstance()->writeString(WIFI_PASS,password);
+          Memory::GetInstance()->writeString(WIFI_SSSID, ssid, WIFI_SSID_MAX_LENGTH);
+          Memory::GetInstance()->writeString(WIFI_PASS, password, WIFI_PASS_MAX_LENGTH);
           //WIFI_BLE_PROVISION  WIFI_SMART_CONFIG
           Memory::GetInstance()->writeChar(WIFI_MODE,WIFI_START_CONNECT);
           ESP.restart();            // Restart ESP
@@ -659,8 +686,8 @@ void  NetWork_Wifi::sysProvEvent(arduino_event_t *sys_event) {
       Serial.println((const char *)sys_event->event_info.prov_cred_recv.ssid);
       Serial.print("\tPassword : ");
       Serial.println((char const *)sys_event->event_info.prov_cred_recv.password);
-      Memory::GetInstance()->writeString(WIFI_SSSID,ssid);
-      Memory::GetInstance()->writeString(WIFI_PASS,password);
+      Memory::GetInstance()->writeString(WIFI_SSSID, ssid, WIFI_SSID_MAX_LENGTH);
+      Memory::GetInstance()->writeString(WIFI_PASS, password, WIFI_PASS_MAX_LENGTH);
       //WIFI_BLE_PROVISION  WIFI_SMART_CONFIG
       Memory::GetInstance()->writeChar(WIFI_MODE,WIFI_START_CONNECT);
       ESP.restart();            // Restart ESP

@@ -1,3 +1,7 @@
+#pragma once
+
+#include <Arduino.h>
+#include "define_All.h"
 
 class NetWork_Mqtt {
     public:
@@ -13,7 +17,7 @@ class NetWork_Mqtt {
 };
 
 #if ENABLE_ASCON_AEAD128
+// Encrypts with the current MQTT session key for the HTTP API (info.txt rule).
+// Fails closed until the first key exists.
 String getAsconEncryptedPayload(const String &payload);
-bool tryAsconDecryptPayload(const String &payload, String &plainText);
-void ensureAsconKeyReady();
 #endif

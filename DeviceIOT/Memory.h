@@ -3,11 +3,9 @@
   #include <Arduino.h>
   #include <stddef.h>
 
-#define WIFI_SSSID    50
-#define WIFI_PASS    100
-#define WIFI_SETUP_JSON    150
-#define WIFI_SETUP_JSON_MAX_LENGTH 1024
-#define VERSJON_SETUP_JSON    1250
+// EEPROM addresses (WIFI_SSSID, WIFI_PASS, WIFI_SETUP_JSON, ...) live in the
+// layout block of define_All.h.
+#include "define_All.h"
 
 struct BoundedStringWrite {
     int address;
@@ -68,8 +66,8 @@ public:
     long readLong(int address);
     void writeDouble(int address, double value);
     double readDouble(int address);
-    void writeString(int address, const char* str);
-    void writeString(int address, String str);
+    bool writeString(int address, const char* str, int maxLen = -1);
+    bool writeString(int address, const String &str, int maxLen = -1);
     String readString(int address, int maxLen = 1024);
     String readLargeString(int address, int maxLen);
     bool readBoundedString(int address, size_t maxLength, String &value);

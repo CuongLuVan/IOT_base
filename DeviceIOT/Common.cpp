@@ -1,15 +1,14 @@
 #include "Common.h"
-#include "NetWork_Mqtt.h"
 #include <ArduinoJson.h>
 #include "define_All.h"
 
 
 
-StaticJsonDocument<JSON_BUFFER_SIZE> jsonBufferData;
-
 String getInfoDevice(InfoSensor sensorValue, InfoDeviceControl statusDevice)
 {
-    jsonBufferData.clear();
+    // Local document: no permanent RAM, and the HTTP and MQTT tasks no longer
+    // share one buffer.
+    StaticJsonDocument<JSON_BUFFER_SIZE> jsonBufferData;
     jsonBufferData["se"] = DEVICE_SERVICE_ID;
     String vaString =  String(sensorValue.valueHumi) + "," + String(sensorValue.valueTemp) + "," + String(sensorValue.valueDust) + "," + String(sensorValue.valueDust_PM2_5) + "," + String(sensorValue.valueDust_PM10) + "," + String(sensorValue.valueDust_PM1) + "," + String(sensorValue.valueControl);
     String coString =  String(statusDevice.device_port) + "," + String(statusDevice.button_click) + "," + String(statusDevice.button_status) + "," + String(statusDevice.count_info);
@@ -17,9 +16,7 @@ String getInfoDevice(InfoSensor sensorValue, InfoDeviceControl statusDevice)
     jsonBufferData["co"] = coString;
     String response;
     serializeJson(jsonBufferData, response);
-#if ENABLE_ASCON_AEAD128
-    return getAsconEncryptedPayload(response);
-#else
+    // Plaintext here: the MQTT and HTTP senders apply Ascon themselves, so
+    // MQTT payloads are not encrypted twice.
     return response;
-#endif
 }

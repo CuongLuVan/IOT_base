@@ -11,7 +11,7 @@
 #include <mbedtls/md.h>
 #endif
 
-#if MQTT_NO_TLS || ENABLE_TLS_SSL || ENABLE_mTLS
+#if ENABLE_TLS_SSL || ENABLE_mTLS
 #include <WiFiClientSecure.h>
 using MqttWiFiClient = WiFiClientSecure;
 #else
@@ -19,17 +19,17 @@ using MqttWiFiClient = WiFiClientSecure;
 using MqttWiFiClient = WiFiClient;
 #endif
 
-#include <StreamString.h>                   // Webserver, Updater                  // WifiManager
 #include "Memory.h"
 #include "MemoryData.h"
 #include "DebugInfo.h"
 #include "HighSpeedSampler.h"
 #include "SystemTask.h"
 #if ENABLE_ASCON_AEAD128
+#include <new>
 #include "AsconAead128.h"
 #endif
 
-#if !ENABLE_TLS_SSL || !ENABLE_mTLS || MQTT_NO_TLS
+#if !ENABLE_TLS_SSL || !ENABLE_mTLS
 #error "This firmware requires TLS with client-certificate authentication for MQTT."
 #endif
 
@@ -38,9 +38,23 @@ PubSubClient MqttClient(EspClient);         // MQTT Client
 
 extern InfoSensor sensorValue;
 extern InfoDeviceControl statusDevice;
-StaticJsonDocument<512> jsonBufferMqtt;
+extern QueueHandle_t deviceCommandQueue;
+
+// Only the fields used by this firmware; sizes follow PubSubClient limits.
+struct SYSCFG {
+  char          mqtt_host[128];
+  uint16_t      mqtt_port;
+  char          mqtt_client[33];
+#if ENABLE_MQTT_USER_AUTH
+  char          mqtt_user[33];
+  char          mqtt_pwd[33];
+#endif
+  char          public_topic[65];
+  char          subcribe_topic[65];
+} Settings;
 
 #if ENABLE_TLS_SSL || ENABLE_mTLS
+// WiFiClientSecure keeps these pointers, so the PEM strings stay global.
 String tlsCaCertificate;
 #endif
 
@@ -109,222 +123,168 @@ static bool isPrivateKeyPem(const String &pem)
 }
 #endif
 
-#if ENABLE_ASCON_AEAD128
-static uint8_t currentAsconKey[16] = {0};
-static String currentAsconDigits;
-static uint64_t currentAsconKeyTimestamp = 0;
-static bool asconKeyReady = false;
-
+#if ENABLE_ASCON_AEAD128 || ENABLE_MESSAGE_AUTHENTICATION
 static const char hexAlphabet[] = "0123456789abcdef";
 
-static String hexEncode(const uint8_t *data, size_t length)
+static void appendHex(String &out, const uint8_t *data, size_t length)
 {
-    String result;
-    result.reserve(length * 2);
     for (size_t i = 0; i < length; i++) {
-        uint8_t b = data[i];
-        result += hexAlphabet[b >> 4];
-        result += hexAlphabet[b & 0x0F];
+        out += hexAlphabet[data[i] >> 4];
+        out += hexAlphabet[data[i] & 0x0F];
     }
-    return result;
 }
 
-static bool hexDecode(const String &hex, uint8_t *out, size_t outLen)
+static int hexNibble(char c)
 {
-    if (hex.length() != (int)(outLen * 2)) {
-        return false;
-    }
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+static bool hexDecode(const char *hex, uint8_t *out, size_t outLen)
+{
     for (size_t i = 0; i < outLen; i++) {
-        char hi = hex.charAt(2 * i);
-        char lo = hex.charAt(2 * i + 1);
-        auto decodeNibble = [](char c) -> int {
-            if (c >= '0' && c <= '9') return c - '0';
-            if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-            if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-            return -1;
-        };
-        int hiVal = decodeNibble(hi);
-        int loVal = decodeNibble(lo);
-        if (hiVal < 0 || loVal < 0) {
+        int hi = hexNibble(hex[2 * i]);
+        int lo = hi < 0 ? -1 : hexNibble(hex[2 * i + 1]);
+        if (lo < 0) {
             return false;
         }
-        out[i] = (uint8_t)((hiVal << 4) | loVal);
+        out[i] = (uint8_t)((hi << 4) | lo);
     }
     return true;
 }
+#endif
+
+#if ENABLE_ASCON_AEAD128
+static uint8_t currentAsconKey[16] = {0};
+static char currentAsconDigits[ASCON_RANDOM_DIGITS + 1] = {0};
+static uint32_t asconKeyCreatedMs = 0;
+static bool asconKeyReady = false;
 
 static bool readAsconPublicKey(int index, uint8_t key[16])
 {
-    if (index < 0 || index >= ASCON_PUBLIC_KEY_COUNT) {
-        return false;
-    }
-    int address = ASCON_PUBLIC_KEYS_ADDRESS + index * ASCON_PUBLIC_KEY_ENTRY_LENGTH;
-    String hexKey = Memory::GetInstance()->readString(address, ASCON_PUBLIC_KEY_HEX_LENGTH);
-    if (hexKey.length() != ASCON_PUBLIC_KEY_HEX_LENGTH) {
-        return false;
-    }
-    return hexDecode(hexKey, key, 16);
+    String hexKey = Memory::GetInstance()->readString(
+        ASCON_PUBLIC_KEYS_ADDRESS + index * ASCON_PUBLIC_KEY_ENTRY_LENGTH,
+        ASCON_PUBLIC_KEY_HEX_LENGTH);
+    return hexKey.length() == ASCON_PUBLIC_KEY_HEX_LENGTH &&
+           hexDecode(hexKey.c_str(), key, 16);
 }
 
-static String generateAsconDigits()
+// The key lives only in RAM: a new one is chosen at boot and every
+// ASCON_KEY_ROTATION_MS, and announced to the server by the handshake.
+static bool rotateAsconKey()
 {
-    randomSeed(ESP.getCycleCount());
-    String digits;
-    digits.reserve(ASCON_RANDOM_DIGITS);
-    for (int i = 0; i < ASCON_RANDOM_DIGITS; i++) {
-        digits += String(random(0, 10));
-    }
-    return digits;
-}
-
-static bool generateAsconKeyFromDigits(const String &digits)
-{
-    if (digits.length() != ASCON_RANDOM_DIGITS) {
-        return false;
-    }
+    char digits[ASCON_RANDOM_DIGITS + 1];
     uint8_t result[16] = {0};
     for (int i = 0; i < ASCON_RANDOM_DIGITS; i++) {
-        int index = digits.charAt(i) - '0';
+        int index = (int)(esp_random() % ASCON_PUBLIC_KEY_COUNT);
         uint8_t key[16];
         if (!readAsconPublicKey(index, key)) {
+            DEVICE_LOG_INFO("[ASCON] Key table is missing or invalid in EEPROM");
             return false;
         }
         for (int b = 0; b < 16; b++) {
             result[b] ^= key[b];
         }
+        digits[i] = (char)('0' + index);
     }
-    memcpy(currentAsconKey, result, 16);
+    digits[ASCON_RANDOM_DIGITS] = '\0';
+    memcpy(currentAsconKey, result, sizeof(currentAsconKey));
+    memcpy(currentAsconDigits, digits, sizeof(currentAsconDigits));
+    asconKeyCreatedMs = millis();
+    asconKeyReady = true;
+    DEVICE_LOG_INFO("[ASCON] Session key rotated");
     return true;
 }
 
-void ensureAsconKeyReady()
+static bool asconRotationDue()
 {
-    uint64_t now = Memory::GetInstance()->getTimeStamp();
-    uint64_t lastRotation = (uint64_t)Memory::GetInstance()->readLong(ASCON_KEY_ROTATION_TIME_ADDRESS);
-    String savedDigits = Memory::GetInstance()->readString(ASCON_HANDSHAKE_DIGITS_ADDRESS, ASCON_HANDSHAKE_DIGITS_MAX_LENGTH);
-
-    if (!asconKeyReady || savedDigits.length() != ASCON_RANDOM_DIGITS ||
-        lastRotation == 0 || now - lastRotation >= ASCON_KEY_ROTATION_MS) {
-        currentAsconDigits = generateAsconDigits();
-        if (!generateAsconKeyFromDigits(currentAsconDigits)) {
-            DEVICE_LOG_INFO("[ASCON] Failed to generate key from public key store");
-            return;
-        }
-        Memory::GetInstance()->writeString(ASCON_HANDSHAKE_DIGITS_ADDRESS, currentAsconDigits);
-        Memory::GetInstance()->writeLong(ASCON_KEY_ROTATION_TIME_ADDRESS, (long)now);
-        currentAsconKeyTimestamp = now;
-        asconKeyReady = true;
-        DEVICE_LOG_INFO("[ASCON] New key generated from digits: " + currentAsconDigits);
-    } else {
-        currentAsconDigits = savedDigits;
-        if (!generateAsconKeyFromDigits(currentAsconDigits)) {
-            DEVICE_LOG_INFO("[ASCON] Failed to restore key from saved digits");
-            return;
-        }
-        asconKeyReady = true;
-    }
+    return !asconKeyReady || millis() - asconKeyCreatedMs >= ASCON_KEY_ROTATION_MS;
 }
 
-String getAsconEncryptedPayload(const String &payload)
+// Envelope: {"com":1,"value":"<hex nonce16 | ciphertext | tag16>"}
+static bool asconEncrypt(String &payload)
 {
-    ensureAsconKeyReady();
-    if (!asconKeyReady) {
-        return payload;
-    }
     size_t len = payload.length();
-    uint8_t *cipher = new uint8_t[len];
+    uint8_t *cipher = new (std::nothrow) uint8_t[len > 0 ? len : 1];
     if (cipher == nullptr) {
-        return payload;
+        return false;
     }
     uint8_t nonce[16];
-    uint64_t t = millis();
-    uint32_t r0 = random(0, 0x7FFFFFFF);
-    uint32_t r1 = random(0, 0x7FFFFFFF);
-    memcpy(nonce, &t, sizeof(t));
-    memcpy(nonce + 8, &r0, sizeof(r0));
-    memcpy(nonce + 12, &r1, sizeof(r1));
+    esp_fill_random(nonce, sizeof(nonce));
     uint8_t tag[16];
-    if (!asconAead128Encrypt(currentAsconKey, nonce, nullptr, 0,
-                              (const uint8_t *)payload.c_str(), len,
-                              cipher, tag)) {
-        delete[] cipher;
-        return payload;
-    }
-
-    String packed = hexEncode(nonce, 16) + hexEncode(cipher, len) + hexEncode(tag, 16);
-    delete[] cipher;
-
-    StaticJsonDocument<128> doc;
-    doc["com"] = 1;
-    doc["value"] = packed;
+    asconAead128Encrypt(currentAsconKey, nonce, nullptr, 0,
+                        (const uint8_t *)payload.c_str(), len, cipher, tag);
     String wrapped;
-    serializeJson(doc, wrapped);
-    return wrapped;
+    if (!wrapped.reserve(2 * (len + 32) + 24)) {
+        delete[] cipher;
+        return false;
+    }
+    wrapped = "{\"com\":1,\"value\":\"";
+    appendHex(wrapped, nonce, sizeof(nonce));
+    appendHex(wrapped, cipher, len);
+    appendHex(wrapped, tag, sizeof(tag));
+    wrapped += "\"}";
+    delete[] cipher;
+    payload = wrapped;
+    return true;
 }
 
-bool tryAsconDecryptPayload(const String &payload, String &plainText)
+static bool asconDecrypt(const char *hex, String &plainText)
 {
-    ensureAsconKeyReady();
-    if (!asconKeyReady) {
+    size_t hexLen = strlen(hex);
+    if (!asconKeyReady || hexLen % 2 != 0 || hexLen <= 64) {
         return false;
     }
-    uint8_t *packed = nullptr;
-    size_t packedLen = payload.length() / 2;
-    if (packedLen < 48) {
-        return false;
-    }
-    packed = new uint8_t[packedLen];
-    if (!hexDecode(payload, packed, packedLen)) {
-        delete[] packed;
-        return false;
-    }
-    size_t nonceLen = 16;
-    size_t tagLen = 16;
-    size_t cipherLen = packedLen - nonceLen - tagLen;
-    uint8_t *plain = new uint8_t[cipherLen];
-    bool ok = asconAead128Decrypt(currentAsconKey, packed, nullptr, 0,
-                                  packed + nonceLen, cipherLen,
-                                  packed + nonceLen + cipherLen,
-                                  plain);
+    size_t packedLen = hexLen / 2;
+    size_t cipherLen = packedLen - 32;
+    uint8_t *packed = new (std::nothrow) uint8_t[packedLen];
+    uint8_t *plain = new (std::nothrow) uint8_t[cipherLen + 1];
+    bool ok = packed != nullptr && plain != nullptr &&
+              hexDecode(hex, packed, packedLen) &&
+              asconAead128Decrypt(currentAsconKey, packed, nullptr, 0,
+                                  packed + 16, cipherLen,
+                                  packed + 16 + cipherLen, plain);
     if (ok) {
-        plainText = String((const char *)plain, cipherLen);
+        plain[cipherLen] = '\0';
+        ok = strlen((const char *)plain) == cipherLen;
+        if (ok) {
+            plainText = (const char *)plain;
+        }
     }
     delete[] packed;
     delete[] plain;
     return ok;
 }
 
-static bool payloadIsAsconHandshake(const String &payload)
+// Replaces an encrypted command with its plaintext JSON. Only the handshake
+// request ({"com":7}) may arrive unencrypted.
+static bool unwrapEncryptedCommand(JsonDocument &doc)
 {
-    StaticJsonDocument<64> doc;
-    if (deserializeJson(doc, payload)) {
+    int com = doc["com"] | 0;
+    if (com == COMMAND_TYPE_ASCON_HANDSHAKE) {
+        return true;
+    }
+    const char *hex = doc["value"].as<const char *>();
+    if (com != COMMAND_TYPE_CONTROL || hex == nullptr) {
         return false;
     }
-    int co = doc["co"] | 0;
-    int com = doc["com"] | 0;
-    return co == 6 || com == 7;
+    String plainText;
+    if (!asconDecrypt(hex, plainText)) {
+        return false;
+    }
+    doc.clear();
+    return !deserializeJson(doc, plainText) && doc.is<JsonObject>();
 }
 
-static String maybeEncryptPayload(const String &payload)
+String getAsconEncryptedPayload(const String &payload)
 {
-    if (payloadIsAsconHandshake(payload)) {
-        return payload;
+    String encrypted = payload;
+    if (!asconKeyReady || !asconEncrypt(encrypted)) {
+        return "{\"error\":\"ascon_key_not_ready\"}";
     }
-    if (payload.startsWith("{\"com\":1") || payload.startsWith("{\"co\":6")) {
-        return payload;
-    }
-    return getAsconEncryptedPayload(payload);
-}
-
-static String buildAsconHandshakePayload()
-{
-    ensureAsconKeyReady();
-    StaticJsonDocument<64> doc;
-    doc["co"] = 6;
-    doc["va"] = currentAsconDigits;
-    String handshake;
-    serializeJson(doc, handshake);
-    return handshake;
+    return encrypted;
 }
 #endif
 
@@ -333,107 +293,170 @@ String messageAuthenticationKeyId;
 String messageAuthenticationSecret;
 bool messageAuthenticationLoaded = false;
 
-bool calculateHmacSha256(const String &data, String &signature)
+// Mirrors JSON.stringify() for strings so the HMAC input matches the broker.
+static void appendJsonString(String &out, const char *value)
 {
-    const mbedtls_md_info_t *mdInfo = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
-    if (mdInfo == NULL) {
-        return false;
+    out += '"';
+    for (const char *p = value; *p != '\0'; ++p) {
+        char c = *p;
+        switch (c) {
+            case '"':  out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\b': out += "\\b"; break;
+            case '\f': out += "\\f"; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            default:
+                if ((uint8_t)c < 0x20) {
+                    char escaped[7];
+                    snprintf(escaped, sizeof(escaped), "\\u%04x", (uint8_t)c);
+                    out += escaped;
+                } else {
+                    out += c;
+                }
+        }
     }
+    out += '"';
+}
 
-    unsigned char digest[32];
-    mbedtls_md_context_t context;
-    mbedtls_md_init(&context);
-    int result = mbedtls_md_setup(&context, mdInfo, 1);
-    if (result == 0) result = mbedtls_md_hmac_starts(&context,
-        (const unsigned char *)messageAuthenticationSecret.c_str(), messageAuthenticationSecret.length());
-    if (result == 0) result = mbedtls_md_hmac_update(&context,
-        (const unsigned char *)data.c_str(), data.length());
-    if (result == 0) result = mbedtls_md_hmac_finish(&context, digest);
-    mbedtls_md_free(&context);
-    if (result != 0) {
-        return false;
+// Same canonical form as canonicalizePayloadValue() in MqttBroker1885.js.
+static bool appendCanonicalJson(String &out, JsonVariantConst value)
+{
+    if (value.is<JsonObjectConst>()) {
+        JsonObjectConst object = value.as<JsonObjectConst>();
+        const char *keys[MESSAGE_AUTH_MAX_FIELDS];
+        size_t count = 0;
+        for (JsonPairConst pair : object) {
+            if (count == MESSAGE_AUTH_MAX_FIELDS) {
+                return false;
+            }
+            const char *key = pair.key().c_str();
+            size_t pos = count++;
+            while (pos > 0 && strcmp(keys[pos - 1], key) > 0) {
+                keys[pos] = keys[pos - 1];
+                --pos;
+            }
+            keys[pos] = key;
+        }
+        out += '{';
+        for (size_t i = 0; i < count; i++) {
+            if (i > 0) out += ',';
+            appendJsonString(out, keys[i]);
+            out += ':';
+            if (!appendCanonicalJson(out, object[keys[i]])) {
+                return false;
+            }
+        }
+        out += '}';
+        return true;
     }
-
-    char hexDigest[65];
-    for (size_t i = 0; i < sizeof(digest); ++i) {
-        sprintf(&hexDigest[i * 2], "%02x", digest[i]);
+    if (value.is<JsonArrayConst>()) {
+        out += '[';
+        bool first = true;
+        for (JsonVariantConst item : value.as<JsonArrayConst>()) {
+            if (!first) out += ',';
+            first = false;
+            if (!appendCanonicalJson(out, item)) {
+                return false;
+            }
+        }
+        out += ']';
+        return true;
     }
-    hexDigest[64] = '\0';
-    signature = hexDigest;
+    if (value.is<const char *>()) {
+        appendJsonString(out, value.as<const char *>());
+        return true;
+    }
+    String scalar;
+    serializeJson(value, scalar);
+    out += scalar;
     return true;
 }
 
-bool signaturesMatch(const char *first, const String &second)
+static bool calculateHmacSha256(const String &data, char signature[65])
 {
-    if (first == NULL || strlen(first) != second.length()) {
+    const mbedtls_md_info_t *mdInfo = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
+    unsigned char digest[32];
+    if (mdInfo == NULL ||
+        mbedtls_md_hmac(mdInfo,
+            (const unsigned char *)messageAuthenticationSecret.c_str(),
+            messageAuthenticationSecret.length(),
+            (const unsigned char *)data.c_str(), data.length(), digest) != 0) {
         return false;
     }
-    unsigned char difference = 0;
-    for (size_t i = 0; i < second.length(); ++i) {
-        difference |= ((unsigned char)first[i] ^ (unsigned char)second[i]);
+    for (size_t i = 0; i < sizeof(digest); ++i) {
+        signature[2 * i] = hexAlphabet[digest[i] >> 4];
+        signature[2 * i + 1] = hexAlphabet[digest[i] & 0x0F];
     }
-    return difference == 0;
+    signature[64] = '\0';
+    return true;
 }
 
-bool signMqttPayload(const char *payload, String &signedPayload)
+// The broker drops "signature" and "keyId" before computing the HMAC.
+static bool canonicalSignature(JsonDocument &document, char signature[65])
 {
-    DynamicJsonDocument document(strlen(payload) + 256);
-    if (deserializeJson(document, payload)) {
+    document.remove("signature");
+    document.remove("keyId");
+    String canonical;
+    return appendCanonicalJson(canonical, document.as<JsonVariantConst>()) &&
+           calculateHmacSha256(canonical, signature);
+}
+
+static bool signMqttPayload(String &payload)
+{
+    if (!messageAuthenticationLoaded) {
+        DEVICE_LOG_INFO("[MQTT Auth] Publish blocked: credentials are not loaded");
+        return false;
+    }
+    DynamicJsonDocument document(payload.length() * 2 + 256);
+    if (deserializeJson(document, payload) || !document.is<JsonObject>()) {
         DEVICE_LOG_INFO("[MQTT Auth] Cannot sign a non-JSON payload");
         return false;
     }
-
-    document.remove("signature");
-    document["keyId"] = messageAuthenticationKeyId;
-    String dataToSign;
-    serializeJson(document, dataToSign);
-
-    String signature;
-    if (!calculateHmacSha256(dataToSign, signature)) {
+    char signature[65];
+    if (!canonicalSignature(document, signature)) {
         DEVICE_LOG_INFO("[MQTT Auth] HMAC calculation failed");
         return false;
     }
+    document["keyId"] = messageAuthenticationKeyId;
     document["signature"] = signature;
-    serializeJson(document, signedPayload);
+    String signedPayload;
+    if (serializeJson(document, signedPayload) == 0 || document.overflowed()) {
+        return false;
+    }
+    payload = signedPayload;
     return true;
 }
 
-bool verifyMqttPayload(const char *payload)
+static bool verifyMqttPayload(JsonDocument &document)
 {
-    DynamicJsonDocument document(strlen(payload) + 256);
-    if (deserializeJson(document, payload)) {
-        DEVICE_LOG_INFO("[MQTT Auth] Rejected non-JSON payload");
+    if (!messageAuthenticationLoaded) {
         return false;
     }
-    const char *keyId = document["keyId"];
-    const char *receivedSignature = document["signature"];
-    if (keyId == NULL || messageAuthenticationKeyId != keyId || receivedSignature == NULL) {
-        DEVICE_LOG_INFO("[MQTT Auth] Rejected message with missing or unknown keyId/signature");
+    const char *keyId = document["keyId"] | "";
+    const char *received = document["signature"] | "";
+    if (messageAuthenticationKeyId != keyId || strlen(received) != 64) {
         return false;
     }
-
-    document.remove("signature");
-    String dataToSign;
-    serializeJson(document, dataToSign);
-    String expectedSignature;
-    return calculateHmacSha256(dataToSign, expectedSignature) &&
-        signaturesMatch(receivedSignature, expectedSignature);
+    char receivedCopy[65];
+    strlcpy(receivedCopy, received, sizeof(receivedCopy));
+    char expected[65];
+    if (!canonicalSignature(document, expected)) {
+        return false;
+    }
+    unsigned char difference = 0;
+    for (size_t i = 0; i < 64; ++i) {
+        difference |= (unsigned char)(tolower(receivedCopy[i]) ^ expected[i]);
+    }
+    return difference == 0;
 }
 #endif
 
-struct SYSCFG {
-  char          mqtt_fingerprint[60];      // 1AD To be freed by binary fingerprint
-  char          mqtt_host[128];             // 1E9
-  uint16_t      mqtt_port;                 // 20A
-  char          mqtt_client[33];           // 20C
-  char          mqtt_user[33];             // 22D
-  char          mqtt_pwd[33];              // 24E
-  char          public_topic[33];            // 26F
-  char          subcribe_topic[33];          // 290
-  char          mqtt_grptopic[33];         // 2B1
-  char          web_password[33];          // 4A9
-} Settings;
-extern QueueHandle_t deviceCommandQueue;
+static bool clockIsValid()
+{
+  return time(NULL) >= 1704067200;
+}
 
 static bool ensureBrokerClockSynced()
 {
@@ -443,7 +466,7 @@ static bool ensureBrokerClockSynced()
     ntpConfigured = true;
   }
   for (uint8_t attempt = 0; attempt < 50; ++attempt) {
-    if (time(NULL) >= 1704067200) {
+    if (clockIsValid()) {
       return true;
     }
     delay(100);
@@ -451,26 +474,16 @@ static bool ensureBrokerClockSynced()
   return false;
 }
 
+#if ENABLE_REPLAY_PROTECTION
+// Fields read by verifyReplayProtection() in MqttBroker1885.js.
 static bool addBrokerReplayMetadata(String& payload)
 {
   DynamicJsonDocument document(payload.length() * 2 + 256);
-  DeserializationError error = deserializeJson(document, payload);
-  if (error) {
-    String trimmedPayload = payload;
-    trimmedPayload.trim();
-    if (trimmedPayload.startsWith("{") || trimmedPayload.startsWith("[")) {
-      DEVICE_LOG_INFO("[MQTT] Publish blocked: invalid JSON replay envelope");
-      return false;
-    }
-    return true;
-  }
-  if (!document.is<JsonObject>()) {
+  if (deserializeJson(document, payload) || !document.is<JsonObject>()) {
     DEVICE_LOG_INFO("[MQTT] Publish blocked: MQTT JSON payload must be an object");
     return false;
   }
-
-  const time_t now = time(NULL);
-  if (now < 1704067200) {
+  if (!clockIsValid()) {
     DEVICE_LOG_INFO("[MQTT] Publish blocked: system clock is not synchronized");
     return false;
   }
@@ -478,44 +491,112 @@ static bool addBrokerReplayMetadata(String& payload)
   char nonce[17];
   snprintf(nonce, sizeof(nonce), "%08lx%08lx",
       (unsigned long)esp_random(), (unsigned long)esp_random());
-  document["timestamp"] = (uint64_t)now * 1000ULL;
+  document["timestamp"] = (uint64_t)time(NULL) * 1000ULL;
   document["nonce"] = nonce;
 
   String protectedPayload;
-  if (serializeJson(document, protectedPayload) == 0) {
+  if (serializeJson(document, protectedPayload) == 0 || document.overflowed()) {
     DEVICE_LOG_INFO("[MQTT] Publish blocked: failed to serialize replay metadata");
     return false;
   }
   payload = protectedPayload;
   return true;
 }
+#endif
 
-void sendMessageInfoPublish(String data){
-  String publishPayload = data;
+static bool publishSecured(String payload, bool encrypt = true);
+
 #if ENABLE_ASCON_AEAD128
-  publishPayload = maybeEncryptPayload(data);
-#endif
-  if (!addBrokerReplayMetadata(publishPayload)) {
-    return;
+// Sends the key digits in plaintext, rotating the key first if it is due.
+static bool announceAsconKey()
+{
+  if (asconRotationDue() && !rotateAsconKey()) {
+    return false;
   }
-#if ENABLE_MESSAGE_AUTHENTICATION
-  if (!messageAuthenticationLoaded) {
-    DEVICE_LOG_INFO("[MQTT Auth] Publish blocked: credentials are not loaded");
-    return;
-  }
-  String signedData;
-  if (!signMqttPayload(publishPayload.c_str(), signedData)) {
-    return;
-  }
-  publishPayload = signedData;
-#endif
-  char *p = new char[publishPayload.length() + 1];
-  strcpy(p, publishPayload.c_str());
-  if (!MqttClient.publish(Settings.public_topic, p, 1)) {
-    DEVICE_LOG_INFO("[MQTT] Publish failed");
-  }
-  delete[] p;
+  return publishSecured(String("{\"co\":6,\"va\":\"") + currentAsconDigits + "\"}", false);
 }
+#endif
+
+// Single publish path. Order: encrypt -> replay metadata -> sign, so the
+// broker can check replay fields and the signature without the Ascon key.
+static bool publishSecured(String payload, bool encrypt)
+{
+  if (!MqttClient.connected()) {
+    return false;
+  }
+#if ENABLE_ASCON_AEAD128
+  if (encrypt) {
+    // The server learns a new key only from the handshake; if that publish
+    // fails, retry the rotation instead of using a key it does not know.
+    if (asconRotationDue() && !announceAsconKey()) {
+      asconKeyReady = false;
+      DEVICE_LOG_INFO("[ASCON] Publish blocked: session key is not available");
+      return false;
+    }
+    if (!asconEncrypt(payload)) {
+      DEVICE_LOG_INFO("[ASCON] Publish blocked: encryption failed");
+      return false;
+    }
+  }
+#else
+  (void)encrypt;
+#endif
+#if ENABLE_REPLAY_PROTECTION
+  if (!addBrokerReplayMetadata(payload)) {
+    return false;
+  }
+#endif
+#if ENABLE_MESSAGE_AUTHENTICATION
+  if (!signMqttPayload(payload)) {
+    return false;
+  }
+#endif
+  if (payload.length() >= MQTT_PACKET_SIZE) {
+    DEVICE_LOG_INFO("[MQTT] Publish blocked: payload too large");
+    return false;
+  }
+  // Never retained: a retained copy would be replayed to later subscribers.
+  if (!MqttClient.publish(Settings.public_topic, payload.c_str(), false)) {
+    DEVICE_LOG_INFO("[MQTT] Publish failed");
+    return false;
+  }
+  return true;
+}
+
+static void sendMessageInfoPublish(const String &data)
+{
+  publishSecured(data);
+}
+
+#if ENABLE_MQTT_CONNECT_RATE_LIMIT
+// Keeps failed CONNECTs below the broker's brute-force threshold.
+static uint32_t connectFailureTimes[MQTT_CONNECT_MAX_FAILURES] = {0};
+static uint8_t connectFailureCount = 0;
+static uint8_t connectFailureOldest = 0;
+
+static bool connectAttemptAllowed()
+{
+  return connectFailureCount < MQTT_CONNECT_MAX_FAILURES ||
+         millis() - connectFailureTimes[connectFailureOldest] >= MQTT_CONNECT_FAILURE_WINDOW_MS;
+}
+
+static void recordConnectResult(bool connected)
+{
+  if (connected) {
+    connectFailureCount = 0;
+    connectFailureOldest = 0;
+    return;
+  }
+  uint8_t slot = (connectFailureOldest + connectFailureCount) % MQTT_CONNECT_MAX_FAILURES;
+  if (connectFailureCount == MQTT_CONNECT_MAX_FAILURES) {
+    slot = connectFailureOldest;
+    connectFailureOldest = (connectFailureOldest + 1) % MQTT_CONNECT_MAX_FAILURES;
+  } else {
+    connectFailureCount++;
+  }
+  connectFailureTimes[slot] = millis();
+}
+#endif
 
 static bool parseHighSpeedMode(const char* mode, HighSpeedMode& result)
 {
@@ -697,31 +778,30 @@ static bool handleScheduleCommand(JsonDocument& doc)
 DeviceCommand cmd;
 void MqttDataCallback(char* topic, byte* data, unsigned int data_len)
 {
-    String payload;
-    payload.reserve(data_len);
-    for (unsigned int i = 0; i < data_len; ++i) {
-        payload += static_cast<char>(data[i]);
+    (void)topic;
+    if (data_len == 0 || data_len >= MQTT_PACKET_SIZE) {
+        DEVICE_LOG_INFO("[MQTT] Rejected empty or oversized message");
+        return;
+    }
+    // Copy mode: signature checks remove fields and decryption reuses the document.
+    DynamicJsonDocument doc(MQTT_JSON_DOC_SIZE + data_len);
+    DeserializationError err = deserializeJson(doc, (const char*)data, data_len);
+    if (err || !doc.is<JsonObject>()) {
+        DEVICE_LOG_INFO("[MQTT] JSON parse error");
+        return;
     }
 #if ENABLE_MESSAGE_AUTHENTICATION
-    if (!messageAuthenticationLoaded || !verifyMqttPayload(payload.c_str())) {
+    if (!verifyMqttPayload(doc)) {
         DEVICE_LOG_INFO("[MQTT Auth] Rejected message with invalid signature");
         return;
     }
 #endif
 #if ENABLE_ASCON_AEAD128
-    String decryptedPayload;
-    if (!tryAsconDecryptPayload(payload, decryptedPayload)) {
-        decryptedPayload = payload;
-    }
-    payload = decryptedPayload;
-#endif
-    DEVICE_LOG_INFO("MqttDataCallback................................:" + payload);
-    StaticJsonDocument<512> doc;
-    DeserializationError err = deserializeJson(doc, payload);
-    if (err) {
-         DEVICE_LOG_INFO("[MQTT] JSON parse error:" + String(err.f_str()));
+    if (!unwrapEncryptedCommand(doc)) {
+        DEVICE_LOG_INFO("[ASCON] Rejected unencrypted or undecryptable command");
         return;
     }
+#endif
 
     if (handleHighSpeedCommand(doc)) {
         return;
@@ -731,76 +811,68 @@ void MqttDataCallback(char* topic, byte* data, unsigned int data_len)
     }
 
     int com = doc["com"] | 0;
-    if (com == 7) {
-        String handshake = buildAsconHandshakePayload();
-        sendMessageInfoPublish(handshake);
+#if ENABLE_ASCON_AEAD128
+    if (com == COMMAND_TYPE_ASCON_HANDSHAKE) {
+        if (!announceAsconKey()) {
+            DEVICE_LOG_INFO("[ASCON] Handshake reply failed");
+        }
         return;
     }
+#endif
 
     cmd.commandType = com;
     cmd.commandValue = doc["value"] | 0;
 
-    if(cmd.commandType == 0x02) {
-        cmd.reserved = 0;
+    if(cmd.commandType == COMMAND_TYPE_OTHER) {
+        cmd.reserved = COMMAND_RESERVED_NONE;
         sendMessageInfoPublish(getInfoDevice(sensorValue,statusDevice));
-    } else if(cmd.commandType == 0x01)  {
-        cmd.reserved = 1;
+    } else if(cmd.commandType == COMMAND_TYPE_CONTROL)  {
+        cmd.reserved = COMMAND_RESERVED_CONTROL;
         #if SUPPORT_RTOS
             if (deviceCommandQueue == NULL) return;
             if (xQueueSend(deviceCommandQueue, &cmd, pdMS_TO_TICKS(50)) != pdTRUE) {
                   DEVICE_LOG_INFO("[MQTT] Failed to queue device command");
-            } else {
-                 //DEVICE_LOG_INFO("[MQTT] Queued command type=%d value=%d\n", cmd.commandType, cmd.commandValue);
             }
         #else
             MemoryData::GetInstance().deviceCommand_ = &cmd;
-            // DEVICE_LOG_INFO("[MQTT] Queued (non-RTOS) command type=%d value=%d\n", cmd.commandType, cmd.commandValue);
         #endif
         sendMessageInfoPublish(getInfoDevice(sensorValue,statusDevice));
     }
-
-
 }
 
 
-bool parseJsonToSettings(String json) {
-  DEVICE_LOG_INFO("start NetWork_Mqtt::parseJsonToSettings");
-  DeserializationError error = deserializeJson(jsonBufferMqtt, json);
+bool parseJsonToSettings(const String &json) {
+  DynamicJsonDocument document(json.length() + JSON_SMALL_BUFFER_SIZE);
+  DeserializationError error = deserializeJson(document, json);
   if (error) {
-    DEVICE_LOG_INFO(String("[MQTT] Configuration JSON parse failed: ") + error.f_str());
+    DEVICE_LOG_INFO("[MQTT] Settings JSON invalid: " + String(error.c_str()));
     return false;
   }
 
   SYSCFG parsedSettings = {};
-  const long mqttPort = jsonBufferMqtt["mqtt_port"] | 0L;
+  const long mqttPort = document["mqtt_port"] | 0L;
   if (mqttPort <= 0 || mqttPort > 65535 ||
-      !copyMqttSetting(jsonBufferMqtt["mqtt_fingerprint"], parsedSettings.mqtt_fingerprint,
-                       sizeof(parsedSettings.mqtt_fingerprint), false, "mqtt_fingerprint") ||
-      !copyMqttSetting(jsonBufferMqtt["mqtt_host"], parsedSettings.mqtt_host,
+      !copyMqttSetting(document["mqtt_host"], parsedSettings.mqtt_host,
                        sizeof(parsedSettings.mqtt_host), true, "mqtt_host") ||
-      !copyMqttSetting(jsonBufferMqtt["mqtt_client"], parsedSettings.mqtt_client,
+      !copyMqttSetting(document["mqtt_client"], parsedSettings.mqtt_client,
                        sizeof(parsedSettings.mqtt_client), true, "mqtt_client") ||
-      !copyMqttSetting(jsonBufferMqtt["mqtt_user"], parsedSettings.mqtt_user,
+#if ENABLE_MQTT_USER_AUTH
+      !copyMqttSetting(document["mqtt_user"], parsedSettings.mqtt_user,
                        sizeof(parsedSettings.mqtt_user), false, "mqtt_user") ||
-      !copyMqttSetting(jsonBufferMqtt["mqtt_pwd"], parsedSettings.mqtt_pwd,
+      !copyMqttSetting(document["mqtt_pwd"], parsedSettings.mqtt_pwd,
                        sizeof(parsedSettings.mqtt_pwd), false, "mqtt_pwd") ||
-      !copyMqttSetting(jsonBufferMqtt["public_topic"], parsedSettings.public_topic,
+#endif
+      !copyMqttSetting(document["public_topic"], parsedSettings.public_topic,
                        sizeof(parsedSettings.public_topic), true, "public_topic") ||
-      !copyMqttSetting(jsonBufferMqtt["subcribe_topic"], parsedSettings.subcribe_topic,
+      !copyMqttSetting(document["subcribe_topic"], parsedSettings.subcribe_topic,
                        sizeof(parsedSettings.subcribe_topic), true, "subcribe_topic") ||
-      !copyMqttSetting(jsonBufferMqtt["mqtt_grptopic"], parsedSettings.mqtt_grptopic,
-                       sizeof(parsedSettings.mqtt_grptopic), false, "mqtt_grptopic") ||
-      !copyMqttSetting(jsonBufferMqtt["web_password"], parsedSettings.web_password,
-                       sizeof(parsedSettings.web_password), false, "web_password") ||
-      !isPublishTopicValid(parsedSettings.public_topic) ||
-      parsedSettings.subcribe_topic[0] == '\0') {
+      !isPublishTopicValid(parsedSettings.public_topic)) {
     DEVICE_LOG_INFO("[MQTT] Invalid MQTT configuration; connection disabled");
     return false;
   }
 
   parsedSettings.mqtt_port = static_cast<uint16_t>(mqttPort);
   Settings = parsedSettings;
-  DEVICE_LOG_INFO("end NetWork_Mqtt::parseJsonToSettings");
   return true;
 }
 
@@ -811,12 +883,11 @@ void NetWork_Mqtt::setupInfoMQTT()
     mtlsCredentialsLoaded = false;
 #endif
 
-    String payload = Memory::GetInstance()->readString(WIFI_SETUP_JSON);
-    if(!parseJsonToSettings(payload)){
-      DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT skipped due parseJsonToSettings failure");
+    if(!parseJsonToSettings(Memory::GetInstance()->readString(WIFI_SETUP_JSON, WIFI_SETUP_JSON_MAX_LENGTH))){
+      DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT skipped: invalid broker configuration");
       return;
     }
-    
+
     DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT  mqtt_host ==>"+String(Settings.mqtt_host));
     DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT mqtt_port ==>"+String(Settings.mqtt_port));
     DEVICE_LOG_INFO("NetWork_Mqtt::setupInfoMQTT  mqtt_client ==>"+String(Settings.mqtt_client));
@@ -845,22 +916,6 @@ void NetWork_Mqtt::setupInfoMQTT()
     EspClient.setPrivateKey(mtlsPrivateKey.c_str());
     mtlsCredentialsLoaded = true;
     DEVICE_LOG_INFO("[MQTT mTLS] CA, client certificate, and private key loaded");
-#elif ENABLE_TLS_SSL
-    // Dữ liệu tại TLS_SSL_DATA_ADDRESS phải là CA certificate PEM, kết thúc bằng '\0'.
-    // Không dùng setInsecure() khi ENABLE_TLS_SSL để bắt buộc xác thực chứng chỉ server.
-    tlsCaCertificate = Memory::GetInstance()->readLargeString(
-        TLS_SSL_DATA_ADDRESS, TLS_SSL_DATA_MAX_LENGTH);
-    if (tlsCaCertificate.length() == 0) {
-        DEVICE_LOG_INFO("[MQTT TLS] Missing CA certificate in ROM/EEPROM");
-    } else {
-        EspClient.setCACert(tlsCaCertificate.c_str());
-        DEVICE_LOG_INFO("[MQTT TLS] CA certificate loaded from ROM/EEPROM");
-    }
-#elif MQTT_NO_TLS
-    EspClient.setInsecure();
-    if (strlen(Settings.mqtt_fingerprint) > 0) {
-        EspClient.setCACert(Settings.mqtt_fingerprint);
-    }
 #endif
 
 #if ENABLE_MESSAGE_AUTHENTICATION
@@ -877,23 +932,17 @@ void NetWork_Mqtt::setupInfoMQTT()
     }
 #endif
     MqttClient.setServer(Settings.mqtt_host, Settings.mqtt_port);
-    if (!MqttClient.setBufferSize(MQTT_PAYLOAD_SIZE)) {
+    if (!MqttClient.setBufferSize(MQTT_PACKET_SIZE)) {
         DEVICE_LOG_INFO("[MQTT] Failed to enlarge packet buffer for capture commands");
     }
     MqttClient.setCallback(MqttDataCallback);
     mqttConfigurationReady = true;
-    //if (MqttClient.connect(Settings.mqtt_client, Settings.mqtt_user, Settings.mqtt_pwd, Settings.subcribe_topic, 1, true, "")) {
-
-    //}
     DEVICE_LOG_INFO("end NetWork_Mqtt::setupInfoMQTT");
 }
 
 
 void NetWork_Mqtt::getAllDataSetup(){
-   DEVICE_LOG_INFO("start NetWork_Mqtt::getAllDataSetup");
-   DEVICE_LOG_INFO("end NetWork_Mqtt::getAllDataSetup");
 }
-
 
 
 void NetWork_Mqtt::disconnetMqtt(){
@@ -912,34 +961,47 @@ void NetWork_Mqtt::connectMqtt(){
     return;
   }
 #endif
+  if (MqttClient.connected()) {
+    return;
+  }
+#if ENABLE_MQTT_CONNECT_RATE_LIMIT
+  if (!connectAttemptAllowed()) {
+    DEVICE_LOG_INFO("[MQTT] Connection deferred: broker brute-force limit");
+    return;
+  }
+#endif
   if (!ensureBrokerClockSynced()) {
     DEVICE_LOG_INFO("[MQTT TLS] Connection blocked: system clock synchronization failed");
     return;
   }
-  MqttClient.setCallback(MqttDataCallback);
-  MqttClient.setServer(Settings.mqtt_host, Settings.mqtt_port);
-  if (!MqttClient.connected())
-  {
-         DEVICE_LOG_INFO("Attempting MQTT connection...");
-        if (MqttClient.connect(Settings.mqtt_client)) {
-            DEVICE_LOG_INFO("connected");
-             if (!MqttClient.subscribe(Settings.subcribe_topic, MQTT_PUBLISH_QOS)) {
-                 DEVICE_LOG_INFO("[MQTT] Subscribe failed; closing connection");
-                 MqttClient.disconnect();
-                 return;
-             }
-#if ENABLE_ASCON_AEAD128
-             sendMessageInfoPublish(buildAsconHandshakePayload());
+  DEVICE_LOG_INFO("Attempting MQTT connection...");
+#if ENABLE_MQTT_USER_AUTH
+  bool connected = MqttClient.connect(Settings.mqtt_client, Settings.mqtt_user, Settings.mqtt_pwd);
 #else
-            this->sendMessageInfo("{\"test\":\"mqtt connect\"}");
+  // With mTLS the broker identifies the device by clientId + certificate.
+  bool connected = MqttClient.connect(Settings.mqtt_client);
 #endif
-        } else {
-             DEVICE_LOG_INFO("failed, rc="+String(MqttClient.state()));
-             DEVICE_LOG_INFO(" try again in 5 seconds");
-        }
+#if ENABLE_MQTT_CONNECT_RATE_LIMIT
+  recordConnectResult(connected);
+#endif
+  if (!connected) {
+    DEVICE_LOG_INFO("failed, rc="+String(MqttClient.state()));
+    return;
   }
-
-
+  DEVICE_LOG_INFO("connected");
+  if (!MqttClient.subscribe(Settings.subcribe_topic, MQTT_PUBLISH_QOS)) {
+    DEVICE_LOG_INFO("[MQTT] Subscribe rejected (check mqtt_acl.json); closing connection");
+    MqttClient.disconnect();
+    return;
+  }
+#if ENABLE_ASCON_AEAD128
+  // Re-announce on every connect: the server may have lost the session key.
+  if (!announceAsconKey()) {
+    DEVICE_LOG_INFO("[ASCON] Handshake publish failed");
+  }
+#else
+  publishSecured("{\"test\":\"mqtt connect\"}");
+#endif
   DEVICE_LOG_INFO("end NetWork_Mqtt::connectMqtt");
 }
 
@@ -947,35 +1009,12 @@ void NetWork_Mqtt::connectMqtt(){
 unsigned char  NetWork_Mqtt::checkStatusMqtt(){
   return (MqttClient.connected() ? 1 : 0);
 }
+
 void NetWork_Mqtt::sendMessageInfo(char * data){
-  String payload = String(data);
-#if ENABLE_ASCON_AEAD128
-  payload = maybeEncryptPayload(payload);
-#endif
-  if (!addBrokerReplayMetadata(payload)) {
-    return;
+  if (data != NULL) {
+    publishSecured(String(data));
   }
-#if ENABLE_MESSAGE_AUTHENTICATION
-  if (!messageAuthenticationLoaded) {
-    DEVICE_LOG_INFO("[MQTT Auth] Publish blocked: credentials are not loaded");
-    return;
-  }
-  String signedData;
-  if (!signMqttPayload(payload, signedData)) {
-    return;
-  }
-  payload = signedData;
-#endif
-  char *p = new char[payload.length() + 1];
-  strcpy(p, payload.c_str());
-  if (!MqttClient.publish(Settings.public_topic, p, 1)) {
-    DEVICE_LOG_INFO("[MQTT] Publish failed");
-  }
-  delete[] p;
-  DEVICE_LOG_INFO("end NetWork_Mqtt::sendMessageInfo");
 }
-
-
 
 void NetWork_Mqtt::MqttSubscribe(char *topic)
 {
@@ -984,21 +1023,10 @@ void NetWork_Mqtt::MqttSubscribe(char *topic)
 }
 
 void NetWork_Mqtt::lisenMqtt(){
-  MqttClient.loop(); 
+  MqttClient.loop();
 }
 
 void NetWork_Mqtt::MqttReconnect()
 {
-  DEVICE_LOG_INFO("start NetWork_Mqtt::MqttReconnect");
-/*
-  EspClient.stop();
-  if (!EspClient.connect(Settings.mqtt_host, Settings.mqtt_port)) {
-    return;
-  }
-
-  EspClient.stop();
-  yield();*/
-  
   this->connectMqtt();
-  DEVICE_LOG_INFO("end NetWork_Mqtt::MqttReconnect");
 }
