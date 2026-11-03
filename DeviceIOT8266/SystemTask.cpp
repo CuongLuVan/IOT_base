@@ -24,6 +24,8 @@ struct StoredSchedules {
     uint32_t checksum;
     SystemControlSchedule rules[SYSTEM_TASK_SCHEDULE_MAX_RULES];
 };
+static_assert(sizeof(StoredSchedules) <= SYSTEM_TASK_SCHEDULE_STORAGE_SIZE,
+              "Schedules overflow their EEPROM region");
 
 SystemTaskSnapshot latestSnapshot = {};
 SystemControlSchedule schedules[SYSTEM_TASK_SCHEDULE_MAX_RULES] = {};

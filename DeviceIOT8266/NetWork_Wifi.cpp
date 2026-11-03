@@ -8,6 +8,7 @@
 #include "DebugInfo.h"
 #include "Memory.h"
 #include "MemoryData.h"
+#include "NetWork_Mqtt.h"
 #include "NetWork_RF.h"
 #include "define_All.h"
 
@@ -20,6 +21,33 @@ extern QueueHandle_t deviceCommandQueue;
 #endif
 
 namespace {
+// Device info sent to the mobile app is Ascon-encrypted like MQTT data.
+String httpInfoPayload() {
+#if ENABLE_ASCON_AEAD128
+    return getAsconEncryptedPayload(getInfoDevice(sensorValue, statusDevice));
+#else
+    return getInfoDevice(sensorValue, statusDevice);
+#endif
+}
+
+// Keeps only the fields NetWork_Mqtt reads, so the stored JSON fits
+// WIFI_SETUP_JSON_MAX_LENGTH (config.html also sends unused fields).
+bool compactMqttSettings(const JsonDocument& input, String& output) {
+    static const char* const kKeys[] = {
+        "mqtt_host", "mqtt_port", "mqtt_client", "mqtt_user", "mqtt_pwd",
+        "public_topic", "subcribe_topic"
+    };
+    StaticJsonDocument<JSON_BUFFER_SIZE> compact;
+    for (const char* key : kKeys) {
+        if (input.containsKey(key)) {
+            compact[key] = input[key];
+        }
+    }
+    output = String();
+    return serializeJson(compact, output) > 0 && !compact.overflowed() &&
+           output.length() <= WIFI_SETUP_JSON_MAX_LENGTH;
+}
+
 DeviceWebServer* webServer = nullptr;
 String configuredSsid;
 String configuredPassword;
@@ -146,7 +174,12 @@ void NetWork_Wifi::handleSetUp() {
         sendJson(400, F("{\"error\":\"invalid JSON\"}"));
         return;
     }
-    Memory::GetInstance()->writeString(WIFI_SETUP_JSON, data);
+    String settings;
+    if (!compactMqttSettings(document, settings)) {
+        sendJson(400, F("{\"error\":\"MQTT settings too large\"}"));
+        return;
+    }
+    Memory::GetInstance()->writeString(WIFI_SETUP_JSON, settings);
     sendJson(HTTP_STATUS_OK, F("{\"saved\":true}"));
 }
 
@@ -205,11 +238,11 @@ void NetWork_Wifi::handleControl() {
     pendingCommand = command;
     MemoryData::GetInstance().deviceCommand_ = &pendingCommand;
 #endif
-    sendJson(HTTP_STATUS_OK, getInfoDevice(sensorValue, statusDevice));
+    sendJson(HTTP_STATUS_OK, httpInfoPayload());
 }
 
 void NetWork_Wifi::handleUpdate() {
-    sendJson(HTTP_STATUS_OK, getInfoDevice(sensorValue, statusDevice));
+    sendJson(HTTP_STATUS_OK, httpInfoPayload());
 }
 
 void NetWork_Wifi::handleLoraGet() {

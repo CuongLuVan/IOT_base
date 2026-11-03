@@ -15,3 +15,9 @@ public:
     void lisenMqtt();
     void MqttReconnect();
 };
+
+#if ENABLE_ASCON_AEAD128
+// Encrypts with the current MQTT session key for the HTTP API.
+// Fails closed until the first key exists.
+String getAsconEncryptedPayload(const String& payload);
+#endif

@@ -2,10 +2,9 @@
 
 #include <Arduino.h>
 
-#define WIFI_SSSID 50
-#define WIFI_PASS 100
-#define WIFI_SETUP_JSON 150
-#define VERSJON_SETUP_JSON 1250
+// EEPROM addresses (WIFI_SSSID, WIFI_PASS, WIFI_SETUP_JSON, ...) live in the
+// layout block of define_All.h.
+#include "define_All.h"
 
 class Memory {
 private:

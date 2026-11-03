@@ -127,8 +127,30 @@ String Memory::readString(int address, int maxLength) {
     return value;
 }
 
+// Measures first and allocates once, so a PEM does not fragment the heap by
+// growing the String byte by byte.
 String Memory::readLargeString(int address, int maxLength) {
-    return readString(address, maxLength);
+    if (address < 0 || maxLength <= 0 || address >= size_) {
+        return String();
+    }
+    const int available = size_ - address;
+    const int limit = maxLength < available ? maxLength : available;
+    int length = 0;
+    while (length < limit) {
+        const uint8_t character = EEPROM.read(address + length);
+        if (character == '\0' || character == 0xFF) {
+            break;
+        }
+        ++length;
+    }
+    String value;
+    if (length == 0 || !value.reserve(length)) {
+        return value;
+    }
+    for (int index = 0; index < length; ++index) {
+        value += static_cast<char>(EEPROM.read(address + index));
+    }
+    return value;
 }
 
 void Memory::writeChar(int address, char value) {
@@ -171,8 +193,8 @@ void Memory::saveWiFiCredentials(int ssidAddress, int passwordAddress,
 
 void Memory::getWiFiCredentials(int ssidAddress, int passwordAddress,
                                 String& ssid, String& password) {
-    ssid = readString(ssidAddress, 33);
-    password = readString(passwordAddress, 64);
+    ssid = readString(ssidAddress, WIFI_SSID_MAX_LENGTH);
+    password = readString(passwordAddress, WIFI_PASS_MAX_LENGTH);
 }
 
 uint64_t Memory::getTimeStamp() {
