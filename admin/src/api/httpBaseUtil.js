@@ -181,6 +181,9 @@ export const setDataApproved = (data) => {
 export const setDataApprovedCompany = (data) => {
   return  httpPostData(API_URL + 'users/set_approved_company' ,data);
 }
+export const saveCertificateMqtt = (data) => {
+  return  httpPostData(API_URL + 'document/saveCertificateMqtt' ,data);
+}
 
 export const  addOneDataToTable = async (table, data)  =>  {
   return await httpPostData(API_URL + 'users/manager_add', Object.assign({}, data, { table }));

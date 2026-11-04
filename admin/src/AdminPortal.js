@@ -58,6 +58,7 @@ const ReportSpecial = lazyResource(() => import(/* webpackChunkName: "admin-repo
 const MachineMonitoring = lazyResource(() => import(/* webpackChunkName: "admin-machine-monitoring" */ './container/pages/MachineMonitoring'));
 const OeeDashboard = lazyResource(() => import(/* webpackChunkName: "admin-oee-dashboard" */ './container/pages/OeeDashboard'));
 const LineOeeDashboard = lazyResource(() => import(/* webpackChunkName: "admin-line-oee" */ './container/pages/LineOeeDashboard'));
+const DeviceCertificateSetup = lazyResource(() => import(/* webpackChunkName: "admin-device-certificate" */ './container/manager/mqtt/DeviceCertificateSetup'));
 const adminDataProvider = jsonServerProvider(HOST_HTTP);
 const adminReducers = { chatBoxData };
 const AdminLayout = (props) => <Layout {...props} menu={TreeMenu} appBar={MenuHeader} />;
@@ -82,6 +83,7 @@ const AdminPortal = ({ onSwitchPortal }) => {
       <Resource name="mqtt" options={{ label: 'Quản lý mqtt', isMenuParent: true }} icon={BuildIcon} list={LockScreen} />
       <Resource name="mqtt_microservice" options={{ label: 'Tạo microservice', menuParent: 'mqtt' }} icon={BuildIcon} list={NomalTable} />
       <Resource name="mqtt_user" options={{ label: 'mqtt khách hàng', menuParent: 'mqtt' }} icon={SupervisorAccountIcon} list={NomalTable} />
+      <Resource name="mqtt_device_certificate" options={{ label: 'Chứng chỉ device', menuParent: 'mqtt' }} icon={BuildIcon} list={DeviceCertificateSetup} />
       <Resource name="machine_monitoring" options={{ label: 'Machine Monitor', menuParent: 'mqtt' }} icon={BuildIcon} list={MachineMonitoring} />
       <Resource name="oee_dashboard" options={{ label: 'OEE Dashboard', menuParent: 'mqtt' }} icon={BuildIcon} list={OeeDashboard} />
       <Resource name="line_oee" options={{ label: 'Line OEE Overview', menuParent: 'mqtt' }} icon={BuildIcon} list={LineOeeDashboard} />
