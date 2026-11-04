@@ -662,10 +662,83 @@ function saveBrokerSettings(brokerDir, mqttId, config) {
     }
 }
 
+// Names already used by the broker PKI in MQTT_CERTS.
+const RESERVED_CERT_NAMES = ["ca", "server", "pki"];
+// Device EEPROM regions (define_All.h: MTLS_*_MAX_LENGTH, without the '\0').
+const MTLS_LIMITS = {caCertificate: 703, certificate: 767, deviceKey: 255};
+
+// Keeps only the requested PEM block, so the files and the API response hold
+// no openssl text such as "Bag Attributes" or EC PARAMETERS.
+function cleanPem(text, label) {
+    const pattern = new RegExp("-----BEGIN " + label + "-----[\\s\\S]+?-----END " + label + "-----");
+    const block = String(text).match(pattern);
+    if (!block) {
+        throw new Error("No " + label + " PEM block found.");
+    }
+    return block[0].split(/\r?\n/).map(function(line) { return line.trim(); })
+        .filter(Boolean).join("\n") + "\n";
+}
+
+function getCertificatePaths(certDirectory, mqttId) {
+    return {
+        caCertificate: path.join(certDirectory, "ca.crt"),
+        caPrivateKey: path.join(certDirectory, "ca.key"),
+        certificate: path.join(certDirectory, mqttId + ".crt"),
+        privateKey: path.join(certDirectory, mqttId + ".key"),
+        deviceKey: path.join(certDirectory, mqttId + ".esp.key"),
+        csr: path.join(certDirectory, mqttId + ".csr"),
+        ext: path.join(certDirectory, mqttId + ".ext"),
+    };
+}
+
+function readCertificateFiles(paths) {
+    const labels = {
+        caCertificate: "CERTIFICATE",
+        certificate: "CERTIFICATE",
+        privateKey: "PRIVATE KEY",
+        deviceKey: "EC PRIVATE KEY",
+    };
+    const files = {};
+    Object.keys(labels).forEach(function(key) {
+        // Certificates made by generate_ecdsa_certs.ps1 may lack <id>.esp.key.
+        const raw = key === "deviceKey" && !fs.existsSync(paths.deviceKey) ?
+            runOpenSSL(["ec", "-in", paths.privateKey, "-no_public"]) :
+            fs.readFileSync(paths[key], "utf8");
+        const content = cleanPem(raw, labels[key]);
+        files[key] = {
+            name: path.basename(paths[key]),
+            size: Buffer.byteLength(content),
+            maxSize: MTLS_LIMITS[key] || null,
+            content,
+        };
+    });
+    return files;
+}
+
+function writePem(filePath, content, flag) {
+    fs.writeFileSync(filePath, content, {encoding: "ascii", flag: flag || "w", mode: 0o600});
+}
+
+function certificateResponse(files) {
+    return {
+        files,
+        caCertificate: files.caCertificate.content,
+        certificate: files.certificate.content,
+        privateKey: files.privateKey.content,
+        deviceKey: files.deviceKey.content,
+        client_dir: files.certificate.content,
+    };
+}
+
 documentCtrl.saveCertificateMqtt  = async function(req,res) {
+    const createdFiles = [];
+    let paths = null;
     try {
         const body = req.body || {};
         const mqttId = getMqttIdentity(body);
+        if (RESERVED_CERT_NAMES.includes(mqttId.toLowerCase())) {
+            throw new Error("mqtt_id is reserved: " + mqttId);
+        }
         const requiredFields = ["content", "mqtt_pub", "mqtt_sub", "mqtt_user", "mqtt_pass"];
         const config = {};
         requiredFields.forEach(function(field) {
@@ -685,14 +758,9 @@ documentCtrl.saveCertificateMqtt  = async function(req,res) {
         }
         const certDirectory = path.resolve(certDir);
         const brokerDir = path.dirname(certDirectory);
-        const privateKeyPath = path.join(certDirectory, mqttId + ".key");
-        const csrPath = path.join(certDirectory, mqttId + ".csr");
-        const certificatePath = path.join(certDirectory, mqttId + ".crt");
-        const extPath = path.join(certDirectory, mqttId + ".cnf");
-        const caCertificatePath = path.join(certDirectory, "ca.crt");
-        const caPrivateKeyPath = path.join(certDirectory, "ca.key");
+        paths = getCertificatePaths(certDirectory, mqttId);
 
-        if ([privateKeyPath, csrPath, certificatePath, extPath].some(fs.existsSync)) {
+        if ([paths.certificate, paths.privateKey, paths.deviceKey].some(fs.existsSync)) {
             throw new Error("An MQTT certificate already exists for this mqtt_id.");
         }
         const existing = await knex("mqtt_microservice")
@@ -702,41 +770,44 @@ documentCtrl.saveCertificateMqtt  = async function(req,res) {
             throw new Error("An active MQTT record already exists for this mqtt_id.");
         }
 
-        fs.writeFileSync(extPath, [
+        writePem(paths.ext, [
             "basicConstraints=critical,CA:FALSE",
             "keyUsage=critical,digitalSignature",
             "extendedKeyUsage=clientAuth",
             "subjectKeyIdentifier=hash",
             "authorityKeyIdentifier=keyid,issuer",
             "",
-        ].join("\n"), {
-            encoding: "ascii",
-            flag: "wx",
-            mode: 0o600,
-        });
-        runOpenSSL([
-            // ECDSA P-256: required by the broker (enableECDSA) and small
-            // enough for the device EEPROM layout.
+        ].join("\n"));
+        createdFiles.push(paths.privateKey);
+        writePem(paths.privateKey, cleanPem(runOpenSSL([
             "genpkey", "-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:P-256",
-            "-pkeyopt", "ec_param_enc:named_curve", "-out", privateKeyPath,
-        ]);
-        fs.chmodSync(privateKeyPath, 0o600);
+            "-pkeyopt", "ec_param_enc:named_curve",
+        ]), "PRIVATE KEY"), "wx");
+        // SEC1 key without the public key: the smallest form, for the device EEPROM.
+        createdFiles.push(paths.deviceKey);
+        writePem(paths.deviceKey, cleanPem(runOpenSSL([
+            "ec", "-in", paths.privateKey, "-no_public",
+        ]), "EC PRIVATE KEY"), "wx");
         runOpenSSL([
-            "req", "-new", "-key", privateKeyPath, "-out", csrPath,
+            "req", "-new", "-key", paths.privateKey, "-out", paths.csr,
             "-subj", "/CN=" + mqttId,
         ]);
-        runOpenSSL([
-            "x509", "-req", "-in", csrPath, "-CA", caCertificatePath,
-            "-CAkey", caPrivateKeyPath, "-set_serial",
-            "0x" + crypto.randomBytes(16).toString("hex"), "-out", certificatePath,
-            "-days", "3650", "-sha256", "-extfile", extPath,
-        ]);
+        createdFiles.push(paths.certificate);
+        writePem(paths.certificate, cleanPem(runOpenSSL([
+            "x509", "-req", "-in", paths.csr, "-CA", paths.caCertificate,
+            "-CAkey", paths.caPrivateKey, "-set_serial",
+            "0x" + crypto.randomBytes(16).toString("hex"),
+            "-days", "3650", "-sha256", "-extfile", paths.ext,
+        ]), "CERTIFICATE"), "wx");
 
-        const certificateDer = runOpenSSL([
-            "x509", "-in", certificatePath, "-outform", "DER",
-        ]);
-        config.fingerprint256 = crypto.createHash("sha256").update(certificateDer)
-            .digest("hex").toUpperCase().match(/.{2}/g).join(":");
+        const files = readCertificateFiles(paths);
+        Object.keys(MTLS_LIMITS).forEach(function(key) {
+            if (files[key].size > MTLS_LIMITS[key]) {
+                throw new Error(files[key].name + " is " + files[key].size +
+                    " B; the device region holds " + MTLS_LIMITS[key] + " B.");
+            }
+        });
+        config.fingerprint256 = new crypto.X509Certificate(files.certificate.content).fingerprint256;
         config.messageAuthKey = crypto.randomBytes(32).toString("hex");
 
         const now = knex.fn.now();
@@ -758,22 +829,26 @@ documentCtrl.saveCertificateMqtt  = async function(req,res) {
             saveBrokerSettings(brokerDir, mqttId, config);
             return result;
         });
-        const privateKey = fs.readFileSync(privateKeyPath, "utf8");
-        const certificate = fs.readFileSync(certificatePath, "utf8");
-        const client_dir = certificate;
-        returnOKCustom(res, {
+        createdFiles.length = 0;
+        returnOKCustom(res, Object.assign({
             mqtt_microservice_id: inserted[0],
             mqtt_id: mqttId,
             fingerprint256: config.fingerprint256,
             mqtt_message_key: config.messageAuthKey,
-            requiresBrokerRestart: true,
-            privateKey,
-            certificate,
-            client_dir,
-        });
+            // The broker re-reads its JSON files on every connection.
+            requiresBrokerRestart: false,
+        }, certificateResponse(files)));
     } catch (error) {
+        createdFiles.forEach(function(filePath) {
+            fs.rmSync(filePath, {force: true});
+        });
         console.error("Failed to save MQTT certificate/configuration:", error.message);
         returnFalse(res, "Unable to save MQTT certificate/configuration.", WarningInfo.ERROR_SERVER);
+    } finally {
+        if (paths) {
+            fs.rmSync(paths.csr, {force: true});
+            fs.rmSync(paths.ext, {force: true});
+        }
     }
 }
 
@@ -784,10 +859,8 @@ documentCtrl.getCertificateMqtt  = async function(req,res) {
         if (!certDir) {
             throw new Error("MQTT_CERTS is not configured.");
         }
-        const privateKey = fs.readFileSync(path.join(certDir, mqttId + ".key"), "utf8");
-        const certificate = fs.readFileSync(path.join(certDir, mqttId + ".crt"), "utf8");
-        const client_dir = certificate;
-        returnOKCustom(res, {privateKey, certificate, client_dir});
+        const files = readCertificateFiles(getCertificatePaths(path.resolve(certDir), mqttId));
+        returnOKCustom(res, Object.assign({mqtt_id: mqttId}, certificateResponse(files)));
     } catch (error) {
         console.error("Failed to read MQTT certificate:", error.message);
         returnFalse(res, "Unable to read MQTT certificate.", WarningInfo.ERROR_SERVER);

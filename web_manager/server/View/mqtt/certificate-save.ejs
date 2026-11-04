@@ -42,7 +42,7 @@
     <section class="card">
       <div class="title">Thông tin client</div>
       <div class="body">
-        <div class="warning">Trang này tạo private key mới và lưu thông tin MQTT vào hệ thống. Hãy lưu private key an toàn; không chia sẻ hoặc gửi qua kênh không bảo mật. Sau khi tạo, cần khởi động lại broker để nạp cấu hình.</div>
+        <div class="warning">Trang này tạo private key mới và lưu thông tin MQTT vào hệ thống. Hãy lưu private key an toàn; không chia sẻ hoặc gửi qua kênh không bảo mật. Broker tự nạp cấu hình mới ở lần kết nối tiếp theo.</div>
         <form id="createForm">
           <div class="grid">
             <div><label for="mqtt_id">MQTT Client ID</label><input id="mqtt_id" name="mqtt_id" maxlength="40" pattern="[A-Za-z0-9_.-]{1,40}" required autocomplete="off"><small>1–40 ký tự: chữ, số, dấu chấm, gạch dưới hoặc gạch ngang.</small></div>
@@ -67,9 +67,11 @@
         <div class="result-item"><label>MQTT Client ID</label><input id="resultId" readonly></div>
         <div class="result-item"><label>SHA-256 fingerprint</label><input id="fingerprint" readonly></div>
         <div class="result-item"><label>Message authentication key (HMAC)</label><textarea id="messageKey" readonly></textarea></div>
+        <div class="result-item"><label>CA certificate (PEM)</label><textarea id="caCertificate" readonly></textarea></div>
         <div class="result-item"><label>Client certificate (PEM)</label><textarea id="certificate" readonly></textarea></div>
-        <div class="result-item"><label>Private key (PEM)</label><textarea id="privateKey" readonly></textarea></div>
-        <div class="actions"><button type="button" class="copy" data-target="certificate">Sao chép certificate</button><button type="button" class="copy" data-target="privateKey">Sao chép private key</button><button type="button" class="copy" data-target="messageKey">Sao chép HMAC key</button></div>
+        <div class="result-item"><label>Device private key (SEC1, nạp vào EEPROM)</label><textarea id="deviceKey" readonly></textarea></div>
+        <div class="result-item"><label>Private key (PKCS#8, cho client Node.js)</label><textarea id="privateKey" readonly></textarea></div>
+        <div class="actions"><button type="button" class="copy" data-target="caCertificate">Sao chép CA</button><button type="button" class="copy" data-target="certificate">Sao chép certificate</button><button type="button" class="copy" data-target="deviceKey">Sao chép device key</button><button type="button" class="copy" data-target="privateKey">Sao chép private key</button><button type="button" class="copy" data-target="messageKey">Sao chép HMAC key</button></div>
       </div>
     </section>
   </main>
@@ -116,6 +118,8 @@
         document.getElementById('messageKey').value = data.mqtt_message_key || '';
         document.getElementById('certificate').value = data.certificate || data.client_dir || '';
         document.getElementById('privateKey').value = data.privateKey || '';
+        document.getElementById('caCertificate').value = data.caCertificate || '';
+        document.getElementById('deviceKey').value = data.deviceKey || '';
         document.getElementById('result').style.display = 'block';
         showNotice('Đã tạo certificate và lưu cấu hình. ' + (data.requiresBrokerRestart ? 'Cần khởi động lại MQTT broker để áp dụng.' : ''), false);
       } catch (error) {

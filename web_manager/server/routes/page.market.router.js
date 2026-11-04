@@ -146,6 +146,12 @@ router.get('/mqtt/certificate/create', (req, res) => {
 router.get('/mqtt/certificate/get', (req, res) => {
   res.render('mqtt/certificate-get');
 });
+router.get('/mqtt/device/wifi', (req, res) => {
+  res.render('mqtt/device-wifi');
+});
+router.get('/mqtt/device/control', (req, res) => {
+  res.render('mqtt/device-control');
+});
 
 router.get('/abouttest', (req, res) => {
   let options = {

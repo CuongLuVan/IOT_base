@@ -4,6 +4,7 @@ const router = express.Router();
 const isAuthenticated = require('../middlewares/authenticate.js');
 const isAuthenMutile = require('../middlewares/authenticateMutile');
 const documentCtrl = require('../controllers/document.controller.js');
+const mqttDeviceCtrl = require('../controllers/mqttDevice.controller.js');
 const urlStaticLink=  require('../config/urlSetting.js');
 const files = require('../utils/files.js');
 const { uploadLimiter } = require('../config/rateLimit.js');
@@ -66,6 +67,13 @@ router.route('/test_upload').post((req, res) => {
 
 router.route('/saveCertificateMqtt').post(isAuthenticated,  documentCtrl.saveCertificateMqtt);
 router.route('/getCertificateMqtt').post(isAuthenticated,  documentCtrl.getCertificateMqtt);
+
+// Devices added from the Wi-Fi setup page; admin or customer accounts.
+router.route('/registerDeviceMqtt').post(isAuthenMutile, mqttDeviceCtrl.registerDevice);
+router.route('/listDeviceMqtt').post(isAuthenMutile, mqttDeviceCtrl.listDevices);
+router.route('/deleteDeviceMqtt').post(isAuthenMutile, mqttDeviceCtrl.deleteDevice);
+router.route('/deviceStatusMqtt').post(isAuthenMutile, mqttDeviceCtrl.deviceStatus);
+router.route('/controlDeviceMqtt').post(isAuthenMutile, mqttDeviceCtrl.controlDevice);
 
 
 module.exports =  router;

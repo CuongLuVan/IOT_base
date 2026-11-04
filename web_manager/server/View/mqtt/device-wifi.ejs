@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thêm thiết bị IoT</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0f1923;--card:#16222e;--panel:#101b26;--border:#263746;--text:#dbe7f1;--muted:#8aa2b8;--accent:#00d4aa;--danger:#ff6b81;--ok:#45d483}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 "Segoe UI",Arial,sans-serif}
+    header{padding:15px max(20px,calc((100% - 960px)/2));background:#0b131c;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px}
+    h1{font-size:20px;margin:0}
+    main{max-width:960px;margin:28px auto;padding:0 18px}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:18px;overflow:hidden}
+    .title{background:var(--panel);padding:12px 18px;border-bottom:1px solid var(--border);font-weight:650}
+    .body{padding:20px}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+    label{display:block;color:var(--muted);font-size:13px;margin-bottom:6px}
+    input{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:7px;background:#0c151e;color:var(--text);font:inherit}
+    input:focus{outline:2px solid #00d4aa55;border-color:var(--accent)}
+    small,.hint{color:var(--muted);font-size:12px}
+    .actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+    button,.link{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:7px;padding:9px 15px;background:var(--accent);color:#06231c;font:600 14px "Segoe UI",Arial,sans-serif;text-decoration:none;cursor:pointer}
+    button:disabled{opacity:.6;cursor:wait}
+    button.secondary,.link{background:transparent;border:1px solid var(--border);color:var(--text)}
+    button.danger{background:transparent;border:1px solid var(--danger);color:var(--danger);padding:5px 10px}
+    .notice{display:none;padding:12px 14px;border-radius:7px;margin-top:16px;background:#152c24;color:var(--ok);white-space:pre-wrap;overflow-wrap:anywhere}
+    .notice.error{background:#351b25;color:var(--danger)}
+    table{width:100%;border-collapse:collapse;font-size:14px}
+    th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--border);overflow-wrap:anywhere}
+    th{color:var(--muted);font-weight:600}
+    @media(max-width:650px){.grid{grid-template-columns:1fr}header{padding:14px 18px}}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Thêm thiết bị IoT</h1>
+    <a class="link" href="/mqtt/device/control">Điều khiển thiết bị</a>
+  </header>
+  <main>
+    <section class="card">
+      <div class="title">1. Cài đặt Wi-Fi cho thiết bị</div>
+      <div class="body">
+        <p class="hint">Kết nối điện thoại/máy tính vào Wi-Fi phát ra từ thiết bị, nhập Wi-Fi nhà bạn rồi bấm gửi. Thiết bị trả về ID và topic MQTT; trang sẽ tự đăng ký thiết bị vào tài khoản khi có mạng trở lại.</p>
+        <form id="wifiForm">
+          <div class="grid">
+            <div><label for="device_ip">IP thiết bị</label><input id="device_ip" value="192.168.4.1" maxlength="64" required></div>
+            <div><label for="content">Tên thiết bị (tùy chọn)</label><input id="content" maxlength="40"></div>
+            <div><label for="ssid">Tên Wi-Fi (SSID)</label><input id="ssid" maxlength="32" required autocomplete="off"></div>
+            <div><label for="password">Mật khẩu Wi-Fi</label><input id="password" type="password" maxlength="63" autocomplete="new-password"></div>
+          </div>
+          <div class="actions"><button id="sendWifiBtn" type="submit">Gửi Wi-Fi tới thiết bị</button></div>
+        </form>
+        <div id="wifiNotice" class="notice" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="title">2. Thông tin thiết bị gửi về</div>
+      <div class="body">
+        <p class="hint">Được điền tự động từ phản hồi của thiết bị. Nếu trình duyệt chặn kết nối tới thiết bị, có thể nhập tay rồi bấm "Đăng ký".</p>
+        <form id="deviceForm">
+          <div class="grid">
+            <div><label for="mqtt_id">Device ID</label><input id="mqtt_id" maxlength="40" pattern="[A-Za-z0-9_.-]{1,40}" required autocomplete="off"></div>
+            <div><label for="mqtt_pass">Password device</label><input id="mqtt_pass" type="password" maxlength="40" autocomplete="off"></div>
+            <div><label for="mqtt_pub">MQTT publish</label><input id="mqtt_pub" maxlength="40" required></div>
+            <div><label for="mqtt_sub">MQTT subscribe</label><input id="mqtt_sub" maxlength="40" required></div>
+          </div>
+          <div class="actions"><button type="submit">Đăng ký</button></div>
+        </form>
+        <div id="queueNotice" class="notice" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="title">3. Thiết bị của tôi</div>
+      <div class="body">
+        <table>
+          <thead><tr><th>Tên</th><th>Device ID</th><th>Publish</th><th>Subscribe</th><th></th></tr></thead>
+          <tbody id="deviceList"><tr><td colspan="5" class="hint">Đang tải…</td></tr></tbody>
+        </table>
+        <div class="actions"><button class="secondary" type="button" id="refreshBtn">Tải lại</button></div>
+        <div id="listNotice" class="notice" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+  </main>
+  <script>
+    // Registrations wait here until the API is reachable again: the phone has
+    // no Internet while it is joined to the device's Wi-Fi.
+    const PENDING_KEY = 'mqtt-device-pending';
+    const RETRY_INTERVAL_MS = 10000;
+    // Admin and customer portals keep their access token under these keys.
+    const TOKEN_KEYS = ['token', 'customer_access_token'];
+
+    function authToken() {
+      for (const key of TOKEN_KEYS) {
+        const token = sessionStorage.getItem(key) || localStorage.getItem(key);
+        if (token) return token;
+      }
+      return null;
+    }
+
+    function showNotice(id, message, isError) {
+      const notice = document.getElementById(id);
+      notice.textContent = message;
+      notice.className = 'notice' + (isError ? ' error' : '');
+      notice.style.display = 'block';
+    }
+
+    function readPending() {
+      try {
+        const value = JSON.parse(localStorage.getItem(PENDING_KEY) || '[]');
+        return Array.isArray(value) ? value : [];
+      } catch (error) {
+        return [];
+      }
+    }
+
+    function writePending(list) {
+      try {
+        if (list.length) localStorage.setItem(PENDING_KEY, JSON.stringify(list));
+        else localStorage.removeItem(PENDING_KEY);
+      } catch (error) {
+        // Storage unavailable: the registration is sent only while this page stays open.
+      }
+    }
+
+    // One pending entry per device; a newer reply from the device replaces it.
+    function queueRegistration(device) {
+      const list = readPending().filter(function(item) { return item.mqtt_id !== device.mqtt_id; });
+      list.push(device);
+      writePending(list);
+      showNotice('queueNotice', 'Đã lưu thiết bị ' + device.mqtt_id + '. Trang sẽ tự đăng ký khi có kết nối Internet.', false);
+      processPending();
+    }
+
+    async function api(path, body) {
+      const token = authToken();
+      if (!token) {
+        const error = new Error('Chưa đăng nhập: không tìm thấy token của tài khoản admin hoặc customer.');
+        error.status = 401;
+        throw error;
+      }
+      const response = await fetch('/api/document/' + path, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token},
+        body: JSON.stringify(body || {})
+      });
+      const data = await response.json().catch(function() { return {}; });
+      if (!response.ok) {
+        const message = typeof data.error === 'string' ? data.error : (data.error && data.error.error) || 'HTTP ' + response.status;
+        const error = new Error(message);
+        error.status = response.status;
+        throw error;
+      }
+      return data;
+    }
+
+    let processing = false;
+    async function processPending() {
+      if (processing) return;
+      processing = true;
+      try {
+        for (const device of readPending()) {
+          try {
+            const result = await api('registerDeviceMqtt', device);
+            writePending(readPending().filter(function(item) { return item.mqtt_id !== device.mqtt_id; }));
+            showNotice('queueNotice', (result.action === 'updated' ? 'Đã cập nhật' : 'Đã đăng ký') +
+              ' thiết bị ' + device.mqtt_id + ' vào tài khoản.', false);
+            loadDevices();
+          } catch (error) {
+            if (error.status === 400) {
+              // Invalid data never succeeds; drop it so the queue keeps moving.
+              writePending(readPending().filter(function(item) { return item.mqtt_id !== device.mqtt_id; }));
+              showNotice('queueNotice', 'Thiết bị ' + device.mqtt_id + ' không hợp lệ: ' + error.message, true);
+            } else if (error.status === 401 || error.status === 403) {
+              showNotice('queueNotice', 'Cần đăng nhập lại để đăng ký thiết bị ' + device.mqtt_id + '.', true);
+              return;
+            } else {
+              // Offline or server error: retried by the timer.
+              showNotice('queueNotice', 'Chưa gửi được thiết bị ' + device.mqtt_id + ' (' + error.message +
+                '). Tự thử lại sau ' + RETRY_INTERVAL_MS / 1000 + ' giây.', true);
+              return;
+            }
+          }
+        }
+      } finally {
+        processing = false;
+      }
+    }
+
+    function deviceFromForm() {
+      return {
+        mqtt_id: document.getElementById('mqtt_id').value.trim(),
+        mqtt_pub: document.getElementById('mqtt_pub').value.trim(),
+        mqtt_sub: document.getElementById('mqtt_sub').value.trim(),
+        mqtt_pass: document.getElementById('mqtt_pass').value,
+        content: document.getElementById('content').value.trim()
+      };
+    }
+
+    document.getElementById('wifiForm').addEventListener('submit', async function(event) {
+      event.preventDefault();
+      const ip = document.getElementById('device_ip').value.trim();
+      if (!/^[A-Za-z0-9.-]+(:\d{1,5})?$/.test(ip)) {
+        showNotice('wifiNotice', 'IP thiết bị không hợp lệ.', true);
+        return;
+      }
+      const button = document.getElementById('sendWifiBtn');
+      button.disabled = true;
+      showNotice('wifiNotice', 'Đang gửi Wi-Fi tới thiết bị…', false);
+      try {
+        const wifi = {ssid: document.getElementById('ssid').value.trim(), password: document.getElementById('password').value};
+        const response = await fetch('http://' + ip + '/wifi', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+          body: 'data=' + encodeURIComponent(JSON.stringify(wifi))
+        });
+        const reply = await response.json().catch(function() { return {}; });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        if (!reply.registered || !reply.mqtt_id) {
+          showNotice('wifiNotice', 'Thiết bị đã nhận Wi-Fi nhưng chưa có cấu hình MQTT (chưa được cài đặt xuất xưởng).', true);
+          return;
+        }
+        ['mqtt_id', 'mqtt_pub', 'mqtt_sub', 'mqtt_pass'].forEach(function(field) {
+          document.getElementById(field).value = reply[field] || '';
+        });
+        showNotice('wifiNotice', 'Thiết bị đã nhận Wi-Fi và đang khởi động lại.', false);
+        queueRegistration(deviceFromForm());
+      } catch (error) {
+        showNotice('wifiNotice', 'Không kết nối được tới thiết bị ' + ip + ' (' + error.message + '). ' +
+          'Kiểm tra đã kết nối vào Wi-Fi của thiết bị; trang HTTPS không gọi được thiết bị qua HTTP, khi đó hãy nhập thông tin ở mục 2.', true);
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    document.getElementById('deviceForm').addEventListener('submit', function(event) {
+      event.preventDefault();
+      queueRegistration(deviceFromForm());
+    });
+
+    function cell(text) {
+      const td = document.createElement('td');
+      td.textContent = text == null ? '' : String(text);
+      return td;
+    }
+
+    async function loadDevices() {
+      const tbody = document.getElementById('deviceList');
+      try {
+        const data = await api('listDeviceMqtt');
+        tbody.replaceChildren();
+        if (!data.devices || !data.devices.length) {
+          const row = document.createElement('tr');
+          const td = cell('Chưa có thiết bị.');
+          td.colSpan = 5;
+          td.className = 'hint';
+          row.appendChild(td);
+          tbody.appendChild(row);
+          return;
+        }
+        data.devices.forEach(function(device) {
+          const row = document.createElement('tr');
+          [device.content, device.mqtt_id, device.mqtt_pub, device.mqtt_sub].forEach(function(value) {
+            row.appendChild(cell(value));
+          });
+          const action = document.createElement('td');
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'danger';
+          button.textContent = 'Xóa';
+          button.addEventListener('click', function() { deleteDevice(device); });
+          action.appendChild(button);
+          row.appendChild(action);
+          tbody.appendChild(row);
+        });
+      } catch (error) {
+        tbody.replaceChildren();
+        showNotice('listNotice', 'Không tải được danh sách thiết bị: ' + error.message, true);
+      }
+    }
+
+    async function deleteDevice(device) {
+      if (!confirm('Xóa thiết bị ' + device.mqtt_id + ' khỏi tài khoản?')) return;
+      try {
+        await api('deleteDeviceMqtt', {mqtt_microservice_id: device.mqtt_microservice_id});
+        showNotice('listNotice', 'Đã xóa thiết bị ' + device.mqtt_id + '.', false);
+        loadDevices();
+      } catch (error) {
+        showNotice('listNotice', 'Không xóa được thiết bị: ' + error.message, true);
+      }
+    }
+
+    document.getElementById('refreshBtn').addEventListener('click', loadDevices);
+    window.addEventListener('online', processPending);
+    setInterval(processPending, RETRY_INTERVAL_MS);
+    processPending();
+    loadDevices();
+  </script>
+</body>
+</html>

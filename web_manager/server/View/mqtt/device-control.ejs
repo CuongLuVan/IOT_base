@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Điều khiển thiết bị</title>
+  <style>
+    :root{color-scheme:dark;--bg:#0f1923;--card:#16222e;--panel:#101b26;--border:#263746;--text:#dbe7f1;--muted:#8aa2b8;--accent:#00d4aa;--danger:#ff6b81;--ok:#45d483;--warn:#ffc65c;--off:#5b7083}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 "Segoe UI",Arial,sans-serif}
+    header{padding:15px max(20px,calc((100% - 960px)/2));background:#0b131c;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    h1{font-size:20px;margin:0}
+    h2{font-size:18px;margin:0}
+    main{max-width:960px;margin:24px auto;padding:0 16px}
+    .links{display:flex;gap:8px;flex-wrap:wrap}
+    .link,button{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:1px solid var(--border);border-radius:7px;padding:8px 14px;background:transparent;color:var(--text);font:600 14px "Segoe UI",Arial,sans-serif;text-decoration:none;cursor:pointer}
+    button:disabled{opacity:.6;cursor:wait}
+    .notice{display:none;padding:11px 14px;border-radius:7px;margin-bottom:16px;background:#2c2518;color:var(--warn);overflow-wrap:anywhere}
+    .notice.error{background:#351b25;color:var(--danger)}
+    .notice.ok{background:#152c24;color:var(--ok)}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+    .device{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:left;width:100%;display:block;font-weight:400}
+    .device:hover,.device:focus-visible{border-color:var(--accent);outline:none}
+    .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .name{font-weight:650;font-size:16px;overflow-wrap:anywhere}
+    .meta{color:var(--muted);font-size:13px;overflow-wrap:anywhere}
+    .badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:3px 10px;font-size:13px;font-weight:600;white-space:nowrap}
+    .badge::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor}
+    .badge.on{background:#00d4aa22;color:var(--accent)}
+    .badge.off{background:#5b708333;color:#a9bccd}
+    .badge.unknown{background:#ffc65c22;color:var(--warn)}
+    .online{color:var(--ok)} .offline{color:var(--muted)}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;margin-bottom:16px;overflow:hidden}
+    .card .title{background:var(--panel);padding:12px 18px;border-bottom:1px solid var(--border);font-weight:650}
+    .card .body{padding:18px}
+    dl{display:grid;grid-template-columns:max-content 1fr;gap:8px 18px;margin:0}
+    dt{color:var(--muted)} dd{margin:0;overflow-wrap:anywhere}
+    .power{width:100%;padding:18px;font-size:18px;border-radius:12px;margin-bottom:14px}
+    .power.on{background:var(--accent);border-color:var(--accent);color:#06231c}
+    .power.off{background:#1d2b38}
+    .channels{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+    .channel{display:flex;align-items:center;justify-content:space-between;border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+    .switch{position:relative;width:52px;height:30px;border-radius:999px;padding:0;background:#2a3b4b;border:0}
+    .switch::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#dbe7f1;transition:left .15s}
+    .switch[aria-checked="true"]{background:var(--accent)}
+    .switch[aria-checked="true"]::after{left:25px}
+    .sensors{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
+    .sensor{border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+    .sensor .value{font-size:20px;font-weight:650}
+    .empty{color:var(--muted);padding:30px;text-align:center;border:1px dashed var(--border);border-radius:12px}
+    [hidden]{display:none !important}
+    @media(max-width:650px){header{padding:14px 16px}dl{grid-template-columns:1fr}dt{margin-top:6px}}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Điều khiển thiết bị</h1>
+    <div class="links">
+      <a class="link" href="/mqtt/device/wifi">+ Thêm thiết bị</a>
+      <a class="link" href="/mqtt">MQTT Control Panel</a>
+    </div>
+  </header>
+  <main>
+    <div id="notice" class="notice" role="status" aria-live="polite"></div>
+
+    <section id="listView">
+      <div id="deviceGrid" class="grid"><div class="empty">Đang tải danh sách thiết bị…</div></div>
+    </section>
+
+    <section id="detailView" hidden>
+      <div class="row" style="margin-bottom:16px">
+        <button type="button" id="backBtn">← Danh sách</button>
+        <button type="button" id="refreshBtn">Làm mới trạng thái</button>
+      </div>
+      <div class="card">
+        <div class="title row"><h2 id="detailName"></h2><span id="detailBadge" class="badge"></span></div>
+        <div class="body">
+          <button type="button" id="powerBtn" class="power"></button>
+          <div id="channelBox" class="channels"></div>
+          <p id="controlHint" class="meta"></p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="title">Thông tin thiết bị</div>
+        <div class="body"><dl id="detailInfo"></dl></div>
+      </div>
+      <div class="card">
+        <div class="title">Cảm biến</div>
+        <div class="body"><div id="sensorBox" class="sensors"></div></div>
+      </div>
+    </section>
+  </main>
+  <script>
+    // Admin and customer portals keep their access token under these keys.
+    const TOKEN_KEYS = ['token', 'customer_access_token'];
+    const POLL_INTERVAL_MS = 3000;
+    // A device that has not reported for this long is shown as offline.
+    const ONLINE_WINDOW_MS = 120000;
+
+    let devices = [];
+    let selectedId = null;
+    let sending = false;
+
+    function authToken() {
+      for (const key of TOKEN_KEYS) {
+        const token = sessionStorage.getItem(key) || localStorage.getItem(key);
+        if (token) return token;
+      }
+      return null;
+    }
+
+    function showNotice(message, type) {
+      const notice = document.getElementById('notice');
+      if (!message) {
+        notice.style.display = 'none';
+        return;
+      }
+      notice.textContent = message;
+      notice.className = 'notice' + (type ? ' ' + type : '');
+      notice.style.display = 'block';
+    }
+
+    async function api(path, body) {
+      const token = authToken();
+      if (!token) throw new Error('Chưa đăng nhập: không tìm thấy token của tài khoản admin hoặc customer.');
+      const response = await fetch('/api/document/' + path, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token},
+        body: JSON.stringify(body || {})
+      });
+      const data = await response.json().catch(function() { return {}; });
+      if (!response.ok) {
+        const message = typeof data.error === 'string' ? data.error : (data.error && data.error.error) || 'HTTP ' + response.status;
+        throw new Error(message);
+      }
+      return data;
+    }
+
+    function el(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text != null) node.textContent = String(text);
+      return node;
+    }
+
+    function isOnline(device) {
+      return !!(device.status && Date.now() - new Date(device.status.receivedAt).getTime() < ONLINE_WINDOW_MS);
+    }
+
+    function stateBadge(device) {
+      const on = device.status ? device.status.on : null;
+      const badge = el('span', 'badge ' + (on == null ? 'unknown' : on ? 'on' : 'off'),
+        on == null ? 'Chưa rõ' : on ? 'Đang bật' : 'Đang tắt');
+      return badge;
+    }
+
+    function lastSeenText(device) {
+      if (!device.status) return device.error ? 'Lỗi: ' + device.error : 'Chưa nhận được trạng thái';
+      const time = new Date(device.status.receivedAt);
+      return (isOnline(device) ? 'Trực tuyến' : 'Mất kết nối') + ' · cập nhật ' + time.toLocaleTimeString('vi-VN');
+    }
+
+    function renderList() {
+      const grid = document.getElementById('deviceGrid');
+      grid.replaceChildren();
+      if (!devices.length) {
+        const empty = el('div', 'empty', 'Chưa có thiết bị. ');
+        const link = el('a', null, 'Thêm thiết bị');
+        link.href = '/mqtt/device/wifi';
+        link.style.color = 'var(--accent)';
+        empty.appendChild(link);
+        grid.appendChild(empty);
+        return;
+      }
+      devices.forEach(function(device) {
+        const card = el('button', 'device');
+        card.type = 'button';
+        card.addEventListener('click', function() { openDetail(device.mqtt_microservice_id); });
+        const top = el('div', 'row');
+        top.appendChild(el('span', 'name', device.content || device.mqtt_id));
+        top.appendChild(stateBadge(device));
+        card.appendChild(top);
+        card.appendChild(el('div', 'meta', 'ID: ' + device.mqtt_id));
+        const seen = el('div', 'meta ' + (isOnline(device) ? 'online' : 'offline'), lastSeenText(device));
+        card.appendChild(seen);
+        if (device.status && device.status.sensors.length) {
+          card.appendChild(el('div', 'meta', device.status.sensors.slice(0, 2).map(function(sensor) {
+            return sensor.label + ' ' + sensor.value + sensor.unit;
+          }).join(' · ')));
+        }
+        grid.appendChild(card);
+      });
+    }
+
+    function selectedDevice() {
+      return devices.find(function(device) { return device.mqtt_microservice_id === selectedId; });
+    }
+
+    function renderDetail() {
+      const device = selectedDevice();
+      if (!device) {
+        closeDetail();
+        return;
+      }
+      const status = device.status;
+      const channels = status ? status.channels : 1;
+      const port = status && status.port != null ? status.port : 0;
+      const allMask = (1 << channels) - 1;
+
+      document.getElementById('detailName').textContent = device.content || device.mqtt_id;
+      const badge = stateBadge(device);
+      const detailBadge = document.getElementById('detailBadge');
+      detailBadge.className = badge.className;
+      detailBadge.textContent = badge.textContent;
+
+      const power = document.getElementById('powerBtn');
+      const on = status ? status.on : false;
+      power.className = 'power ' + (on ? 'on' : 'off');
+      power.textContent = sending ? 'Đang gửi lệnh…' : on ? '⏻  Đang bật — bấm để tắt' : '⏻  Đang tắt — bấm để bật';
+      power.disabled = sending;
+      power.onclick = function() { sendControl(on ? 0 : allMask); };
+
+      const channelBox = document.getElementById('channelBox');
+      channelBox.replaceChildren();
+      if (channels > 1) {
+        for (let index = 0; index < channels; index++) {
+          const bit = 1 << index;
+          const checked = (port & bit) !== 0;
+          const row = el('div', 'channel');
+          row.appendChild(el('span', null, 'Kênh ' + (index + 1)));
+          const toggle = el('button', 'switch');
+          toggle.type = 'button';
+          toggle.setAttribute('role', 'switch');
+          toggle.setAttribute('aria-checked', String(checked));
+          toggle.setAttribute('aria-label', 'Kênh ' + (index + 1));
+          toggle.disabled = sending;
+          toggle.addEventListener('click', function() { sendControl(port ^ bit); });
+          row.appendChild(toggle);
+          channelBox.appendChild(row);
+        }
+      }
+      document.getElementById('controlHint').textContent = status ? '' :
+        'Chưa nhận được trạng thái từ thiết bị; lệnh vẫn được gửi nhưng trạng thái hiển thị có thể chưa đúng.';
+
+      const info = document.getElementById('detailInfo');
+      info.replaceChildren();
+      [
+        ['Tên', device.content || device.mqtt_id],
+        ['Device ID', device.mqtt_id],
+        ['Loại', status ? status.model : 'Chưa rõ'],
+        ['MQTT publish', device.mqtt_pub],
+        ['MQTT subscribe', device.mqtt_sub],
+        ['Kết nối', lastSeenText(device)],
+        ['Số lệnh đã thực hiện', status && status.commandCount != null ? status.commandCount : '—'],
+        ['Đăng ký lúc', device.updated_at ? new Date(device.updated_at).toLocaleString('vi-VN') : '—'],
+      ].forEach(function(item) {
+        info.appendChild(el('dt', null, item[0]));
+        info.appendChild(el('dd', null, item[1]));
+      });
+
+      const sensorBox = document.getElementById('sensorBox');
+      sensorBox.replaceChildren();
+      if (!status || !status.sensors.length) {
+        sensorBox.appendChild(el('div', 'meta', 'Chưa có dữ liệu cảm biến.'));
+      } else {
+        status.sensors.forEach(function(sensor) {
+          const box = el('div', 'sensor');
+          box.appendChild(el('div', 'meta', sensor.label));
+          box.appendChild(el('div', 'value', sensor.value + (sensor.unit ? ' ' + sensor.unit : '')));
+          sensorBox.appendChild(box);
+        });
+      }
+    }
+
+    function openDetail(id) {
+      selectedId = id;
+      document.getElementById('listView').hidden = true;
+      document.getElementById('detailView').hidden = false;
+      renderDetail();
+      window.scrollTo(0, 0);
+    }
+
+    function closeDetail() {
+      selectedId = null;
+      document.getElementById('detailView').hidden = true;
+      document.getElementById('listView').hidden = false;
+      renderList();
+    }
+
+    async function sendControl(value) {
+      const device = selectedDevice();
+      if (!device || sending) return;
+      sending = true;
+      renderDetail();
+      try {
+        await api('controlDeviceMqtt', {mqtt_microservice_id: device.mqtt_microservice_id, value: value});
+        showNotice('Đã gửi lệnh tới ' + (device.content || device.mqtt_id) + '. Đang chờ thiết bị cập nhật trạng thái…', 'ok');
+        setTimeout(loadStatus, 2000);
+      } catch (error) {
+        showNotice('Không gửi được lệnh: ' + error.message, 'error');
+      } finally {
+        sending = false;
+        renderDetail();
+      }
+    }
+
+    let loading = false;
+    async function loadStatus() {
+      if (loading) return;
+      loading = true;
+      try {
+        const data = await api('deviceStatusMqtt');
+        devices = data.devices || [];
+        if (!data.mqttConnected) showNotice('Máy chủ chưa kết nối MQTT broker: ' + data.mqttError, 'error');
+        else if (document.getElementById('notice').classList.contains('error')) showNotice('');
+        if (selectedId != null) renderDetail();
+        else renderList();
+      } catch (error) {
+        showNotice('Không tải được thiết bị: ' + error.message, 'error');
+      } finally {
+        loading = false;
+      }
+    }
+
+    document.getElementById('backBtn').addEventListener('click', closeDetail);
+    document.getElementById('refreshBtn').addEventListener('click', loadStatus);
+    setInterval(function() { if (!document.hidden) loadStatus(); }, POLL_INTERVAL_MS);
+    loadStatus();
+  </script>
+</body>
+</html>
