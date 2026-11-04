@@ -48,6 +48,28 @@ bool compactMqttSettings(const JsonDocument& input, String& output) {
            output.length() <= WIFI_SETUP_JSON_MAX_LENGTH;
 }
 
+// Reply of /wifi: the MQTT identity stored by /setup, which the web page
+// registers to the user's account (web_manager registerDeviceMqtt).
+String deviceRegistrationPayload() {
+    StaticJsonDocument<JSON_BUFFER_SIZE> stored;
+    const String settings = Memory::GetInstance()->readString(WIFI_SETUP_JSON, WIFI_SETUP_JSON_MAX_LENGTH);
+    StaticJsonDocument<JSON_BUFFER_SIZE> reply;
+    reply["saved"] = true;
+    reply["restart"] = true;
+    reply["success"] = true;
+    reply["registered"] = false;
+    if (!deserializeJson(stored, settings)) {
+        reply["registered"] = true;
+        reply["mqtt_id"] = stored["mqtt_client"] | "";
+        reply["mqtt_pub"] = stored["public_topic"] | "";
+        reply["mqtt_sub"] = stored["subcribe_topic"] | "";
+        reply["mqtt_pass"] = stored["mqtt_pwd"] | "";
+    }
+    String payload;
+    serializeJson(reply, payload);
+    return payload;
+}
+
 DeviceWebServer* webServer = nullptr;
 String configuredSsid;
 String configuredPassword;
@@ -202,7 +224,7 @@ void NetWork_Wifi::handleSetUpWifi() {
     Memory::GetInstance()->saveWiFiCredentials(WIFI_SSSID, WIFI_PASS,
                                                 ssid.c_str(), password.c_str());
     Memory::GetInstance()->writeChar(WIFI_MODE, WIFI_START_CONNECT);
-    sendJson(HTTP_STATUS_OK, F("{\"saved\":true,\"restart\":true}"));
+    sendJson(HTTP_STATUS_OK, deviceRegistrationPayload());
     delay(150);
     ESP.restart();
 }

@@ -102,6 +102,29 @@ bool isPrivateKeyPem(const String &pem)
                          "-----END EC PRIVATE KEY-----");
 }
 
+// Reply of /wifi: the MQTT identity stored by /setup, which the web page
+// registers to the user's account (web_manager registerDeviceMqtt).
+String deviceRegistrationPayload()
+{
+    StaticJsonDocument<JSON_BUFFER_SIZE> stored;
+    const String settings = Memory::GetInstance()->readString(WIFI_SETUP_JSON, WIFI_SETUP_JSON_MAX_LENGTH);
+    StaticJsonDocument<JSON_BUFFER_SIZE> reply;
+    reply["saved"] = true;
+    reply["restart"] = true;
+    reply["success"] = true;
+    reply["registered"] = false;
+    if (!deserializeJson(stored, settings)) {
+        reply["registered"] = true;
+        reply["mqtt_id"] = stored["mqtt_client"] | "";
+        reply["mqtt_pub"] = stored["public_topic"] | "";
+        reply["mqtt_sub"] = stored["subcribe_topic"] | "";
+        reply["mqtt_pass"] = stored["mqtt_pwd"] | "";
+    }
+    String payload;
+    serializeJson(reply, payload);
+    return payload;
+}
+
 void sendSetupError(int statusCode, const char *error)
 {
     String response = "{\"success\":false,\"error\":\"";
@@ -172,10 +195,26 @@ void NetWork_Wifi::handleSetUp(){
         return;
     }
 
+#if ENABLE_MESSAGE_AUTHENTICATION
+    // keyId/secret of mqttBroker/mqtt_message_auth.json (saveCertificateMqtt).
+    const String authKeyId = setupDocument["mqtt_auth_key_id"] | "";
+    const String authSecret = setupDocument["mqtt_auth_secret"] | "";
+    if (authKeyId.length() == 0 || authSecret.length() == 0 ||
+        authKeyId.length() > MESSAGE_AUTH_KEY_ID_MAX_LENGTH ||
+        authSecret.length() > MESSAGE_AUTH_SECRET_MAX_LENGTH) {
+        sendSetupError(400, "invalid_message_auth_credentials");
+        return;
+    }
+#endif
+
     BoundedStringWrite credentials[] = {
         {MTLS_CA_CERT_ADDRESS, caCertificate.c_str(), MTLS_CA_CERT_MAX_LENGTH},
         {MTLS_CLIENT_CERT_ADDRESS, clientCertificate.c_str(), MTLS_CLIENT_CERT_MAX_LENGTH},
-        {MTLS_PRIVATE_KEY_ADDRESS, privateKey.c_str(), MTLS_PRIVATE_KEY_MAX_LENGTH}
+        {MTLS_PRIVATE_KEY_ADDRESS, privateKey.c_str(), MTLS_PRIVATE_KEY_MAX_LENGTH},
+#if ENABLE_MESSAGE_AUTHENTICATION
+        {MESSAGE_AUTH_KEY_ID_ADDRESS, authKeyId.c_str(), MESSAGE_AUTH_KEY_ID_MAX_LENGTH},
+        {MESSAGE_AUTH_SECRET_ADDRESS, authSecret.c_str(), MESSAGE_AUTH_SECRET_MAX_LENGTH},
+#endif
     };
     Memory *memory = Memory::GetInstance();
     if (!memory->writeBoundedStrings(credentials,
@@ -202,15 +241,28 @@ void NetWork_Wifi::handleSetUp(){
 
 void NetWork_Wifi::handleSetUpWifi(){
     DEVICE_LOG_INFO("start NetWork_Wifi::handleSetUpWifi  xxxxxxxxxxxxxxx");
-    String data = webServer->arg("data");
-    deserializeJson(jsonBuffer, data);
-    //Memory::GetInstance()->writeString(WIFI_SETUP_JSON,data);
+    if (!webServer->hasArg("data")) {
+        sendSetupError(400, "missing data");
+        return;
+    }
+    StaticJsonDocument<JSON_SMALL_BUFFER_SIZE> document;
+    if (deserializeJson(document, webServer->arg("data"))) {
+        sendSetupError(400, "invalid JSON");
+        return;
+    }
+    const String ssid = document["ssid"] | "";
+    const String password = document["password"] | "";
+    if (ssid.length() == 0 || ssid.length() > WIFI_SSID_MAX_LENGTH ||
+        password.length() > WIFI_PASS_MAX_LENGTH) {
+        sendSetupError(400, "invalid Wi-Fi credentials");
+        return;
+    }
     //WIFI_BLE_PROVISION  WIFI_SMART_CONFIG
     Memory::GetInstance()->writeChar(WIFI_MODE,WIFI_START_CONNECT);
-    Memory::GetInstance()->writeString(WIFI_SSSID, jsonBuffer["ssid"].as<String>(), WIFI_SSID_MAX_LENGTH);
-    Memory::GetInstance()->writeString(WIFI_PASS, jsonBuffer["password"].as<String>(), WIFI_PASS_MAX_LENGTH);
+    Memory::GetInstance()->writeString(WIFI_SSSID, ssid, WIFI_SSID_MAX_LENGTH);
+    Memory::GetInstance()->writeString(WIFI_PASS, password, WIFI_PASS_MAX_LENGTH);
 
-    webServer->send(200, "application/json", "{'data':true}");
+    webServer->send(200, "application/json", deviceRegistrationPayload());
      DEVICE_LOG_INFO("end NetWork_Wifi::end................................");
     delay(WIFI_WEB_RESPONSE_DELAY_MS);
     ESP.restart();            // Restart ESP
