@@ -1,0 +1,15 @@
+{
+  "name": "aedes-broker",
+  "private": true,
+  "description": "Aedes MQTT broker using the mqttBroker certificates and rule files",
+  "main": "AedesBroker.js",
+  "scripts": {
+    "start": "node AedesBroker.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "aedes": "^1.1.3"
+  }
+}
