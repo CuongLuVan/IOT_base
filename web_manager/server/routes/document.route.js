@@ -74,6 +74,15 @@ router.route('/listDeviceMqtt').post(isAuthenMutile, mqttDeviceCtrl.listDevices)
 router.route('/deleteDeviceMqtt').post(isAuthenMutile, mqttDeviceCtrl.deleteDevice);
 router.route('/deviceStatusMqtt').post(isAuthenMutile, mqttDeviceCtrl.deviceStatus);
 router.route('/controlDeviceMqtt').post(isAuthenMutile, mqttDeviceCtrl.controlDevice);
+// Schedules stored on the device itself (SCHEDULE_* MQTT commands).
+router.route('/scheduleListMqtt').post(isAuthenMutile, mqttDeviceCtrl.listSchedules);
+router.route('/scheduleCommandMqtt').post(isAuthenMutile, mqttDeviceCtrl.sendScheduleCommand);
+// Auto OFF on-timer stored on the device (TIMER_SET / TIMER_GET).
+router.route('/onTimerMqtt').post(isAuthenMutile, mqttDeviceCtrl.onTimerCommand);
+// Countdown auto ON on the device ({"com":4,"value":seconds}).
+router.route('/countdownMqtt').post(isAuthenMutile, mqttDeviceCtrl.countdownCommand);
+// LAN control fallback: manual device IP (commands go to POST http://<ip>/lan).
+router.route('/deviceLanMqtt').post(isAuthenMutile, mqttDeviceCtrl.setDeviceLan);
 
 
 module.exports =  router;

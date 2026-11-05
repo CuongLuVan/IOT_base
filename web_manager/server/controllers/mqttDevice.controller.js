@@ -2,6 +2,7 @@ const knex = require('../config/knex.js');
 const WarningInfo = require("../config/warningInfo.js");
 const {returnFalse, returnOKCustom} = require('../utils/returnResponse.js');
 const deviceStatus = require('../services/mqtt/deviceStatusService.js');
+const deviceSchedule = require('../services/mqtt/deviceScheduleService.js');
 
 // Devices added from the Wi-Fi setup page (View/mqtt/device-wifi.ejs).
 // One active mqtt_microservice row per (account, mqtt_pub, mqtt_sub);
@@ -148,6 +149,14 @@ mqttDeviceCtrl.deleteDevice = async function(req, res) {
     }
 }
 
+// How commands reach a device: "auto" (MQTT, or LAN when the broker or the
+// device's MQTT link is down), "mqtt" or "lan" (POST http://<ip>/lan).
+const TRANSPORT_MODES = ["auto", "mqtt", "lan"];
+
+function readTransport(value) {
+    return TRANSPORT_MODES.includes(value) ? value : "auto";
+}
+
 function findOwnDevice(req, id) {
     return knex(TABLE)
         .select("mqtt_microservice_id", "content", "mqtt_id", "mqtt_pub", "mqtt_sub", "updated_at")
@@ -169,13 +178,26 @@ mqttDeviceCtrl.deviceStatus = async function(req, res) {
         } catch (error) {
             mqttError = error.message;
         }
+        // {mqtt_microservice_id: "auto" | "mqtt" | "lan"} chosen on the page.
+        const transports = (req.body && req.body.transports) || {};
         const result = await Promise.all(devices.map(async function(device) {
-            let error = mqttError;
-            if (!mqttError) {
-                error = await deviceStatus.watch(device.mqtt_pub);
-                deviceStatus.requestStatus(device.mqtt_sub, false);
+            const mode = readTransport(transports[device.mqtt_microservice_id]);
+            const route = deviceStatus.route(device, mode);
+            let error = null;
+            if (route === "mqtt") {
+                error = mqttError || await deviceStatus.watch(device.mqtt_pub);
+            } else if (!mqttError) {
+                // Keep listening on MQTT so "auto" notices when it works again.
+                await deviceStatus.watch(device.mqtt_pub);
             }
-            return Object.assign({}, device, {status: deviceStatus.getStatus(device.mqtt_pub), error});
+            if (!error) {
+                deviceStatus.requestStatus(device, false, route);
+            }
+            const lan = deviceStatus.getLan(device.mqtt_pub);
+            if (route === "lan" && lan.error) {
+                error = lan.error;
+            }
+            return Object.assign({}, device, {status: deviceStatus.getStatus(device.mqtt_pub), error, transport: mode, route, lan});
         }));
         returnOKCustom(res, {devices: result, mqttConnected: !mqttError, mqttError});
     } catch (error) {
@@ -195,21 +217,246 @@ mqttDeviceCtrl.controlDevice = async function(req, res) {
     if (!Number.isInteger(value) || value < 0 || value > 3) {
         return returnBadRequest(res, "value must be an integer from 0 to 3.");
     }
+    const mode = readTransport(body.transport);
+    let route = "mqtt";
     try {
         const device = await findOwnDevice(req, id);
         if (!device) {
             return res.status(404).json({error: "Device not found.", error_code: WarningInfo.ERROR_SERVER});
         }
-        await deviceStatus.ensureConnected();
-        await deviceStatus.watch(device.mqtt_pub);
-        await deviceStatus.control(device.mqtt_sub, value);
-        returnOKCustom(res, {mqtt_microservice_id: id, value, sent: true});
+        route = deviceStatus.route(device, mode);
+        if (route === "mqtt") {
+            await deviceStatus.ensureConnected();
+            await deviceStatus.watch(device.mqtt_pub);
+        }
+        await deviceStatus.control(device, value, route);
+        returnOKCustom(res, {mqtt_microservice_id: id, value, sent: true, route});
     } catch (error) {
         if (error.status === 400) {
             return returnBadRequest(res, error.message);
         }
-        console.error("Failed to control MQTT device:", error.message);
-        res.status(503).json({error: "MQTT: " + error.message, error_code: WarningInfo.ERROR_SERVER});
+        console.error("Failed to control device over " + route + ":", error.message);
+        res.status(503).json({error: (route === "lan" ? "LAN: " : "MQTT: ") + error.message, error_code: WarningInfo.ERROR_SERVER});
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Local schedules stored on the device (firmware docs/Schedule.md). The device
+// is the only copy; every request is answered by the device itself.
+// ---------------------------------------------------------------------------
+const SCHEDULE_MAX_COUNT = 20;
+// Page command name -> firmware "com" (docs/Schedule.md). ENABLE/DISABLE
+// share com 11 with value 1/0.
+const SCHEDULE_COMS = {
+    SCHEDULE_ADD: 8,
+    SCHEDULE_UPDATE: 9,
+    SCHEDULE_DELETE: 10,
+    SCHEDULE_ENABLE: 11,
+    SCHEDULE_DISABLE: 11,
+    SCHEDULE_CLEAR: 12,
+};
+const SCHEDULE_COMMANDS = Object.keys(SCHEDULE_COMS);
+const COMMAND_ON_TIMER = 5;
+
+function readInteger(body, field, min, max, fallback) {
+    const raw = body[field];
+    if ((raw == null || raw === "") && fallback !== undefined) {
+        return fallback;
+    }
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value < min || value > max) {
+        throw new Error(field + " must be an integer from " + min + " to " + max + ".");
+    }
+    return value;
+}
+
+function isValidDate(year, month, day) {
+    const date = new Date(Date.UTC(year, month - 1, day));
+    return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+// Builds the exact firmware command ({"com":8,"id":1,"ho":7,...}) from the
+// page's fields; unknown fields are never forwarded.
+function readScheduleCommand(body) {
+    const cmd = String(body.cmd || "");
+    if (!SCHEDULE_COMMANDS.includes(cmd)) {
+        throw new Error("cmd must be one of " + SCHEDULE_COMMANDS.join(", ") + ".");
+    }
+    const com = SCHEDULE_COMS[cmd];
+    if (cmd === "SCHEDULE_CLEAR") {
+        return {com};
+    }
+    const command = {com, id: readInteger(body, "id", 1, SCHEDULE_MAX_COUNT)};
+    if (cmd === "SCHEDULE_ENABLE" || cmd === "SCHEDULE_DISABLE") {
+        command.value = cmd === "SCHEDULE_ENABLE" ? 1 : 0;
+        return command;
+    }
+    if (cmd === "SCHEDULE_DELETE") {
+        return command;
+    }
+    command.ho = readInteger(body, "hour", 0, 23);
+    command.mi = readInteger(body, "minute", 0, 59);
+    command.we = readInteger(body, "weekday", 0, 127);
+    command.po = readInteger(body, "port_mask", 1, 255);
+    command.pos = readInteger(body, "port_state", 0, 255) & command.po;
+    command.au = readInteger(body, "auto_off", 0, 65535, 0);
+    if (body.enabled === false) {
+        command.en = 0;
+    }
+    if (command.we === 0) {
+        command.ye = readInteger(body, "year", 2024, 2149);
+        command.mo = readInteger(body, "month", 1, 12);
+        command.da = readInteger(body, "day", 1, 31);
+        if (!isValidDate(command.ye, command.mo, command.da)) {
+            throw new Error("year/month/day is not a valid date.");
+        }
+    }
+    return command;
+}
+
+// Returns the device (with .transport = the route to use), or null after
+// answering the request with an error.
+async function prepareScheduleDevice(req, res) {
+    const id = Number((req.body || {}).mqtt_microservice_id);
+    if (!Number.isInteger(id) || id <= 0) {
+        returnBadRequest(res, "mqtt_microservice_id is required.");
+        return null;
+    }
+    const device = await findOwnDevice(req, id);
+    if (!device) {
+        res.status(404).json({error: "Device not found.", error_code: WarningInfo.ERROR_SERVER});
+        return null;
+    }
+    device.transport = deviceStatus.route(device, readTransport((req.body || {}).transport));
+    if (device.transport === "lan") {
+        return device;
+    }
+    await deviceStatus.ensureConnected();
+    const watchError = await deviceStatus.watch(device.mqtt_pub);
+    if (watchError) {
+        res.status(503).json({error: "MQTT: " + watchError, error_code: WarningInfo.ERROR_SERVER});
+        return null;
+    }
+    return device;
+}
+
+function returnScheduleError(res, error, action) {
+    if (error.status === 400) {
+        return returnBadRequest(res, error.message);
+    }
+    if (error.status === 504) {
+        return res.status(504).json({error: error.message, error_code: WarningInfo.ERROR_SERVER});
+    }
+    console.error("Failed to " + action + ":", error.message);
+    res.status(503).json({error: error.message, error_code: WarningInfo.ERROR_SERVER});
+}
+
+mqttDeviceCtrl.listSchedules = async function(req, res) {
+    try {
+        const device = await prepareScheduleDevice(req, res);
+        if (!device) return;
+        const result = await deviceSchedule.list(device, device.transport);
+        returnOKCustom(res, Object.assign({mqtt_microservice_id: device.mqtt_microservice_id}, result));
+    } catch (error) {
+        returnScheduleError(res, error, "list device schedules");
+    }
+}
+
+// The device's verdict (SUCCESS, CONFLICT, INVALID, ...) is returned as is.
+mqttDeviceCtrl.sendScheduleCommand = async function(req, res) {
+    let command;
+    try {
+        command = readScheduleCommand(req.body || {});
+    } catch (error) {
+        return returnBadRequest(res, error.message);
+    }
+    try {
+        const device = await prepareScheduleDevice(req, res);
+        if (!device) return;
+        // The reply is the device's status report, so "set" is already updated.
+        const ack = await deviceSchedule.send(device, command, device.transport);
+        returnOKCustom(res, Object.assign({mqtt_microservice_id: device.mqtt_microservice_id, cmd: req.body.cmd, id: command.id || 0}, ack));
+    } catch (error) {
+        returnScheduleError(res, error, "send schedule command");
+    }
+}
+
+// Auto OFF on-timer stored on the device, independent of schedules: a channel
+// on for "sec" seconds is switched off. Without "sec" the value is only read.
+const ON_TIMER_MAX_SECONDS = 86400;
+
+mqttDeviceCtrl.onTimerCommand = async function(req, res) {
+    const body = req.body || {};
+    // {"com":5} reads, {"com":5,"value":sec} sets (0 = off).
+    const command = {com: COMMAND_ON_TIMER};
+    if (body.sec != null && body.sec !== "") {
+        try {
+            command.value = readInteger(body, "sec", 0, ON_TIMER_MAX_SECONDS);
+        } catch (error) {
+            return returnBadRequest(res, error.message);
+        }
+    }
+    try {
+        const device = await prepareScheduleDevice(req, res);
+        if (!device) return;
+        // The reply is the device's status report ("tim"), also kept by the status service.
+        const ack = await deviceSchedule.onTimer(device, command, device.transport);
+        returnOKCustom(res, Object.assign({mqtt_microservice_id: device.mqtt_microservice_id}, ack));
+    } catch (error) {
+        returnScheduleError(res, error, "send on-timer command");
+    }
+}
+
+// Countdown auto ON, independent of schedules: the device switches the "mask"
+// channels on once after "sec" seconds; sec 0 cancels, no "sec" only reads.
+// Firmware command {"com":4,"value":sec,"mask":mask}; lost on device reboot.
+const COMMAND_COUNTDOWN = 4;
+const COUNTDOWN_MAX_SECONDS = 86400;
+
+mqttDeviceCtrl.countdownCommand = async function(req, res) {
+    const body = req.body || {};
+    const command = {com: COMMAND_COUNTDOWN};
+    try {
+        if (body.sec != null && body.sec !== "") {
+            command.value = readInteger(body, "sec", 0, COUNTDOWN_MAX_SECONDS);
+            if (command.value > 0 && body.mask != null && body.mask !== "") {
+                command.mask = readInteger(body, "mask", 1, 255);
+            }
+        }
+    } catch (error) {
+        return returnBadRequest(res, error.message);
+    }
+    try {
+        const device = await prepareScheduleDevice(req, res);
+        if (!device) return;
+        const ack = await deviceSchedule.countdown(device, command, device.transport);
+        returnOKCustom(res, Object.assign({mqtt_microservice_id: device.mqtt_microservice_id}, ack));
+    } catch (error) {
+        returnScheduleError(res, error, "send countdown command");
+    }
+}
+
+// LAN address used for LAN control. Without "ip" (or ip "") the address the
+// device reports in its status is used again.
+mqttDeviceCtrl.setDeviceLan = async function(req, res) {
+    const body = req.body || {};
+    const id = Number(body.mqtt_microservice_id);
+    if (!Number.isInteger(id) || id <= 0) {
+        return returnBadRequest(res, "mqtt_microservice_id is required.");
+    }
+    try {
+        const device = await findOwnDevice(req, id);
+        if (!device) {
+            return res.status(404).json({error: "Device not found.", error_code: WarningInfo.ERROR_SERVER});
+        }
+        deviceStatus.setLanIp(device.mqtt_pub, String(body.ip || "").trim());
+        returnOKCustom(res, {mqtt_microservice_id: id, lan: deviceStatus.getLan(device.mqtt_pub)});
+    } catch (error) {
+        if (error.status === 400) {
+            return returnBadRequest(res, error.message);
+        }
+        console.error("Failed to save device LAN address:", error.message);
+        returnFalse(res, "Unable to save the device LAN address.", WarningInfo.ERROR_SERVER);
     }
 }
 

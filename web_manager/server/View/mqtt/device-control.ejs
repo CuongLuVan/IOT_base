@@ -48,8 +48,36 @@
     .sensor{border:1px solid var(--border);border-radius:10px;padding:10px 12px}
     .sensor .value{font-size:20px;font-weight:650}
     .empty{color:var(--muted);padding:30px;text-align:center;border:1px dashed var(--border);border-radius:12px}
+    .primary{background:var(--accent);border-color:var(--accent);color:#06231c}
+    .danger{color:var(--danger)}
+    .small{padding:5px 10px;font-size:13px}
+    .schedule-list{display:flex;flex-direction:column;gap:10px}
+    .schedule{display:flex;align-items:center;gap:14px;border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+    .schedule.disabled{opacity:.55}
+    .schedule .time{font-size:22px;font-weight:650;font-variant-numeric:tabular-nums;min-width:68px}
+    .schedule .what{flex:1;min-width:0}
+    .schedule .actions{display:flex;align-items:center;gap:8px}
+    dialog{width:min(520px,calc(100% - 32px));max-height:calc(100% - 32px);padding:0;border:1px solid var(--border);border-radius:14px;background:var(--card);color:var(--text)}
+    dialog::backdrop{background:#000a}
+    dialog form{display:flex;flex-direction:column;gap:16px;padding:20px}
+    .field{display:flex;flex-direction:column;gap:6px}
+    .field>label,.field>.label{color:var(--muted);font-size:13px;font-weight:600}
+    input,select{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:7px;padding:8px 10px;font:15px "Segoe UI",Arial,sans-serif}
+    input[type=time]{font-size:24px;font-weight:650;width:150px}
+    .segmented{display:flex;gap:6px;flex-wrap:wrap}
+    .chip{min-width:44px;padding:6px 10px;border-radius:999px}
+    .chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:#06231c}
+    .inline{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .check{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+    .dialog-error{display:none;padding:10px 12px;border-radius:7px;background:#351b25;color:var(--danger);overflow-wrap:anywhere}
+    .dialog-actions{display:flex;justify-content:flex-end;gap:8px}
+    .duration{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap}
+    .duration .field input{width:84px;font-size:20px;font-weight:650;font-variant-numeric:tabular-nums}
+    .duration .actions{display:flex;gap:8px;margin-left:auto}
+    .countdown-running{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+    .countdown-left{font-size:32px;font-weight:650;color:var(--accent);font-variant-numeric:tabular-nums}
     [hidden]{display:none !important}
-    @media(max-width:650px){header{padding:14px 16px}dl{grid-template-columns:1fr}dt{margin-top:6px}}
+    @media(max-width:650px){header{padding:14px 16px}dl{grid-template-columns:1fr}dt{margin-top:6px}.schedule{flex-wrap:wrap}.schedule .actions{width:100%;justify-content:flex-end}}
   </style>
 </head>
 <body>
@@ -81,6 +109,101 @@
         </div>
       </div>
       <div class="card">
+        <div class="title row">
+          <span>Kết nối</span>
+          <span id="routeBadge" class="badge unknown">Chưa rõ</span>
+        </div>
+        <div class="body">
+          <div class="segmented" role="radiogroup" aria-label="Đường gửi lệnh">
+            <button type="button" class="chip" data-transport="auto" aria-pressed="true">Tự động</button>
+            <button type="button" class="chip" data-transport="mqtt" aria-pressed="false">MQTT</button>
+            <button type="button" class="chip" data-transport="lan" aria-pressed="false">LAN</button>
+          </div>
+          <p id="transportHint" class="meta"></p>
+          <form id="lanIpForm" class="inline" novalidate>
+            <label for="lanIpInput" class="meta">IP trong mạng LAN</label>
+            <input type="text" id="lanIpInput" inputmode="decimal" placeholder="192.168.1.20" autocomplete="off" style="width:160px">
+            <button type="submit" id="lanIpSaveBtn" class="small">Lưu IP</button>
+            <button type="button" id="lanIpAutoBtn" class="small">Dùng IP thiết bị báo</button>
+          </form>
+          <p id="lanHint" class="meta" style="margin-bottom:0"></p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="title row">
+          <span>Hẹn giờ tự tắt</span>
+          <span id="onTimerBadge" class="badge unknown">Chưa rõ</span>
+        </div>
+        <div class="body">
+          <p class="meta" style="margin-top:0">Kênh nào bật liên tục đủ khoảng thời gian này sẽ tự tắt, dù được bật trên web, bằng nút nhấn hay theo lịch. Độc lập với lập lịch; lưu trên thiết bị. Từ 1 giây đến 24 giờ.</p>
+          <form id="onTimerForm" novalidate>
+            <div class="duration">
+              <div class="field"><label for="onTimerHours">Giờ</label><input type="number" id="onTimerHours" min="0" max="24" step="1" value="0" inputmode="numeric"></div>
+              <div class="field"><label for="onTimerMinutes">Phút</label><input type="number" id="onTimerMinutes" min="0" max="59" step="1" value="30" inputmode="numeric"></div>
+              <div class="field"><label for="onTimerSeconds">Giây</label><input type="number" id="onTimerSeconds" min="0" max="59" step="1" value="0" inputmode="numeric"></div>
+              <div class="actions">
+                <button type="button" id="onTimerOffBtn">Tắt hẹn giờ</button>
+                <button type="submit" id="onTimerSaveBtn" class="primary">Lưu</button>
+              </div>
+            </div>
+            <div class="segmented" style="margin-top:12px">
+              <button type="button" class="small" data-on-timer="300">5 phút</button>
+              <button type="button" class="small" data-on-timer="900">15 phút</button>
+              <button type="button" class="small" data-on-timer="1800">30 phút</button>
+              <button type="button" class="small" data-on-timer="3600">1 giờ</button>
+              <button type="button" class="small" data-on-timer="7200">2 giờ</button>
+            </div>
+          </form>
+          <p id="onTimerHint" class="meta" style="margin-bottom:0"></p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="title row">
+          <span>Đếm ngược tự bật</span>
+          <span id="countdownBadge" class="badge unknown">Chưa rõ</span>
+        </div>
+        <div class="body">
+          <p class="meta" style="margin-top:0">Thiết bị tự bật sau khoảng thời gian đã chọn, một lần. Độc lập với lập lịch. Mất điện hoặc khởi động lại thì đếm ngược bị hủy. Từ 1 giây đến 24 giờ.</p>
+          <div id="countdownRunning" class="countdown-running" hidden>
+            <div id="countdownLeft" class="countdown-left" aria-live="polite"></div>
+            <div id="countdownTarget" class="meta"></div>
+          </div>
+          <form id="countdownForm" novalidate>
+            <div class="duration">
+              <div class="field"><label for="countdownHours">Giờ</label><input type="number" id="countdownHours" min="0" max="24" step="1" value="0" inputmode="numeric"></div>
+              <div class="field"><label for="countdownMinutes">Phút</label><input type="number" id="countdownMinutes" min="0" max="59" step="1" value="10" inputmode="numeric"></div>
+              <div class="field"><label for="countdownSeconds">Giây</label><input type="number" id="countdownSeconds" min="0" max="59" step="1" value="0" inputmode="numeric"></div>
+              <div class="actions">
+                <button type="button" id="countdownCancelBtn">Hủy đếm ngược</button>
+                <button type="submit" id="countdownStartBtn" class="primary">Bắt đầu</button>
+              </div>
+            </div>
+            <div id="countdownChannels" class="segmented" style="margin-top:12px"></div>
+            <div class="segmented" style="margin-top:12px">
+              <button type="button" class="small" data-countdown="60">1 phút</button>
+              <button type="button" class="small" data-countdown="300">5 phút</button>
+              <button type="button" class="small" data-countdown="600">10 phút</button>
+              <button type="button" class="small" data-countdown="1800">30 phút</button>
+              <button type="button" class="small" data-countdown="3600">1 giờ</button>
+            </div>
+          </form>
+          <p id="countdownHint" class="meta" style="margin-bottom:0"></p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="title row">
+          <span>Lập lịch <span id="scheduleCount" class="meta"></span></span>
+          <span class="links">
+            <button type="button" id="scheduleReloadBtn" class="small">Tải lại</button>
+            <button type="button" id="scheduleAddBtn" class="small primary">+ Thêm lịch</button>
+          </span>
+        </div>
+        <div class="body">
+          <p id="scheduleHint" class="meta" style="margin-top:0">Lịch được lưu và tự chạy trên thiết bị, kể cả khi mất Internet. Giờ tính theo múi giờ cấu hình trong firmware.</p>
+          <div id="scheduleList" class="schedule-list"></div>
+        </div>
+      </div>
+      <div class="card">
         <div class="title">Thông tin thiết bị</div>
         <div class="body"><dl id="detailInfo"></dl></div>
       </div>
@@ -90,6 +213,63 @@
       </div>
     </section>
   </main>
+
+  <dialog id="scheduleDialog" aria-labelledby="scheduleDialogTitle">
+    <form id="scheduleForm" method="dialog" novalidate>
+      <h2 id="scheduleDialogTitle">Thêm lịch</h2>
+      <div id="scheduleError" class="dialog-error" role="alert"></div>
+
+      <div class="field">
+        <label for="scheduleTime">Thời gian</label>
+        <input type="time" id="scheduleTime" required>
+      </div>
+
+      <div class="field">
+        <span class="label">Lặp lại</span>
+        <div class="segmented" role="radiogroup">
+          <label class="check"><input type="radio" name="repeat" value="weekly" checked> Theo tuần</label>
+          <label class="check"><input type="radio" name="repeat" value="once"> Một lần</label>
+        </div>
+        <div id="weeklyBox" class="field">
+          <div id="dayChips" class="segmented"></div>
+          <div class="segmented">
+            <button type="button" class="small" data-days="127">Hằng ngày</button>
+            <button type="button" class="small" data-days="31">Thứ 2 – Thứ 6</button>
+            <button type="button" class="small" data-days="96">Cuối tuần</button>
+          </div>
+        </div>
+        <div id="onceBox" class="field" hidden>
+          <input type="date" id="scheduleDate" aria-label="Ngày chạy">
+        </div>
+      </div>
+
+      <div class="field">
+        <span class="label">Hành động</span>
+        <div id="channelActions" class="field"></div>
+      </div>
+
+      <div class="field">
+        <label class="check"><input type="checkbox" id="autoOffEnabled"> Tự động tắt sau</label>
+        <div class="inline">
+          <input type="number" id="autoOffValue" min="1" step="1" value="10" style="width:110px" aria-label="Thời gian tự tắt">
+          <select id="autoOffUnit" aria-label="Đơn vị">
+            <option value="1">giây</option>
+            <option value="60" selected>phút</option>
+            <option value="3600">giờ</option>
+          </select>
+          <span class="meta">tối đa 18 giờ 12 phút</span>
+        </div>
+      </div>
+
+      <label class="check"><input type="checkbox" id="scheduleEnabled" checked> Kích hoạt lịch</label>
+
+      <div class="dialog-actions">
+        <button type="button" id="scheduleCancelBtn">Hủy</button>
+        <button type="submit" id="scheduleSaveBtn" class="primary">Lưu</button>
+      </div>
+    </form>
+  </dialog>
+
   <script>
     // Admin and customer portals keep their access token under these keys.
     const TOKEN_KEYS = ['token', 'customer_access_token'];
@@ -160,6 +340,17 @@
       return (isOnline(device) ? 'Trực tuyến' : 'Mất kết nối') + ' · cập nhật ' + time.toLocaleTimeString('vi-VN');
     }
 
+    // Times of the active schedules from the device's "set" status field,
+    // already ordered by time, e.g. "3 lịch: 07:30 · 08:20 · 18:00".
+    function describeSettings(device) {
+      const settings = device.status && device.status.settings;
+      if (!settings) return '';
+      if (!settings.length) return 'Không có lịch';
+      const times = settings.map(function(setting) { return pad2(setting.hour) + ':' + pad2(setting.minute); });
+      const shown = times.slice(0, 4).join(' · ') + (times.length > 4 ? ' …' : '');
+      return settings.length + ' lịch: ' + shown;
+    }
+
     function renderList() {
       const grid = document.getElementById('deviceGrid');
       grid.replaceChildren();
@@ -183,10 +374,19 @@
         card.appendChild(el('div', 'meta', 'ID: ' + device.mqtt_id));
         const seen = el('div', 'meta ' + (isOnline(device) ? 'online' : 'offline'), lastSeenText(device));
         card.appendChild(seen);
+        if (device.route === 'lan') card.appendChild(el('div', 'meta', '🔌 Qua ' + routeText(device)));
         if (device.status && device.status.sensors.length) {
           card.appendChild(el('div', 'meta', device.status.sensors.slice(0, 2).map(function(sensor) {
             return sensor.label + ' ' + sensor.value + sensor.unit;
           }).join(' · ')));
+        }
+        const settingsText = describeSettings(device);
+        if (settingsText) card.appendChild(el('div', 'meta', '⏰ ' + settingsText));
+        if (device.status && device.status.onTimer > 0) {
+          card.appendChild(el('div', 'meta', '⏱ Tự tắt sau ' + formatDuration(device.status.onTimer)));
+        }
+        if (device.status && device.status.countdown > 0) {
+          card.appendChild(el('div', 'meta', '⏳ ' + describeCountdown(device)));
         }
         grid.appendChild(card);
       });
@@ -251,7 +451,12 @@
         ['MQTT publish', device.mqtt_pub],
         ['MQTT subscribe', device.mqtt_sub],
         ['Kết nối', lastSeenText(device)],
+        ['Đường gửi lệnh', (routeText(device) || '—') + ' (' + TRANSPORT_LABELS[currentTransport(device.mqtt_microservice_id)] + ')'],
+        ['IP trong mạng LAN', (device.lan && device.lan.ip) || (device.status && device.status.ip) || '—'],
         ['Số lệnh đã thực hiện', status && status.commandCount != null ? status.commandCount : '—'],
+        ['Lịch đang hoạt động', describeSettings(device) || '—'],
+        ['Hẹn giờ tự tắt', describeOnTimer(currentOnTimer(device))],
+        ['Đếm ngược tự bật', describeCountdown(device) || 'Chưa rõ'],
         ['Đăng ký lúc', device.updated_at ? new Date(device.updated_at).toLocaleString('vi-VN') : '—'],
       ].forEach(function(item) {
         info.appendChild(el('dt', null, item[0]));
@@ -270,6 +475,10 @@
           sensorBox.appendChild(box);
         });
       }
+      renderTransport();
+      renderOnTimer();
+      if (!countdownState.busy && !countdownState.loading) syncCountdownFromStatus(device);
+      renderCountdown();
     }
 
     function openDetail(id) {
@@ -277,14 +486,961 @@
       document.getElementById('listView').hidden = true;
       document.getElementById('detailView').hidden = false;
       renderDetail();
+      resetSchedules();
+      loadSchedules();
+      resetOnTimer();
+      loadOnTimer();
+      resetCountdown();
+      loadCountdown();
       window.scrollTo(0, 0);
     }
 
     function closeDetail() {
       selectedId = null;
+      const dialog = document.getElementById('scheduleDialog');
+      if (dialog.open) dialog.close();
       document.getElementById('detailView').hidden = true;
       document.getElementById('listView').hidden = false;
       renderList();
+    }
+
+    // ---- Schedules: stored and run on the device (firmware docs/Schedule.md) ----
+    // Weekday bits: bit0 = Monday ... bit6 = Sunday; 0 = once on a date.
+    const DAY_LABELS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+    const DAY_NAMES = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ nhật'];
+    const MAX_AUTO_OFF_SECONDS = 65535;
+
+    const schedules = {items: [], max: 20, clockValid: null, loading: false, error: null};
+    let scheduleBusy = false;
+    let editingScheduleId = null;  // null while adding
+    let dialogDays = 0;
+
+    function pad2(value) {
+      return String(value).padStart(2, '0');
+    }
+
+    function channelCount() {
+      const device = selectedDevice();
+      return device && device.status ? device.status.channels : 1;
+    }
+
+    function channelName(index, channels) {
+      return channels > 1 ? 'kênh ' + (index + 1) : 'thiết bị';
+    }
+
+    function formatDuration(seconds) {
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const rest = seconds % 60;
+      return [hours ? hours + ' giờ' : '', minutes ? minutes + ' phút' : '', rest ? rest + ' giây' : '']
+        .filter(Boolean).join(' ');
+    }
+
+    function describeDays(schedule) {
+      if (schedule.weekday === 0) {
+        const parts = schedule.date.split('-');
+        return 'Một lần · ' + (parts.length === 3 ? parts[2] + '/' + parts[1] + '/' + parts[0] : '—');
+      }
+      if (schedule.weekday === 127) return 'Hằng ngày';
+      if (schedule.weekday === 31) return 'Thứ 2 – Thứ 6';
+      if (schedule.weekday === 96) return 'Cuối tuần';
+      return DAY_LABELS.filter(function(label, index) { return schedule.weekday & (1 << index); }).join(', ');
+    }
+
+    function describeAction(schedule) {
+      const channels = channelCount();
+      const parts = [];
+      for (let index = 0; index < 8; index++) {
+        const bit = 1 << index;
+        if (!(schedule.portMask & bit)) continue;
+        parts.push(((schedule.portState & bit) ? 'Bật ' : 'Tắt ') + channelName(index, channels));
+      }
+      if (schedule.autoOff > 0) parts.push('tự tắt sau ' + formatDuration(schedule.autoOff));
+      return parts.join(' · ');
+    }
+
+    function describePorts(mask) {
+      const channels = channelCount();
+      const names = [];
+      for (let index = 0; index < 8; index++) {
+        if (mask & (1 << index)) names.push(channelName(index, channels));
+      }
+      return names.join(', ') || 'cùng kênh';
+    }
+
+    // Turns the device's SCHEDULE_ACK into a message; null means success.
+    function ackError(ack) {
+      switch (ack.status) {
+        case 'SUCCESS': return null;
+        case 'CONFLICT':
+          return 'Trùng với lịch #' + ack.conflictId + ' trên ' + describePorts(ack.conflictPorts) +
+            ': cùng giờ, cùng ngày nhưng hành động khác. Lịch cũ được giữ nguyên.';
+        case 'INVALID': return 'Thiết bị từ chối lịch: ' + (ack.message || 'dữ liệu không hợp lệ');
+        case 'NOT_FOUND': return 'Lịch không còn trên thiết bị; hãy tải lại danh sách.';
+        case 'ID_EXISTS': return 'Mã lịch đã được dùng; hãy tải lại danh sách.';
+        case 'NOT_READY': return 'Bộ lập lịch của thiết bị chưa sẵn sàng.';
+        default: return ack.message || 'Thiết bị trả lời không rõ: ' + ack.status;
+      }
+    }
+
+    function resetSchedules() {
+      schedules.items = [];
+      schedules.clockValid = null;
+      schedules.error = null;
+      renderSchedules();
+    }
+
+    async function loadSchedules() {
+      const device = selectedDevice();
+      if (!device || schedules.loading) return;
+      const id = device.mqtt_microservice_id;
+      schedules.loading = true;
+      schedules.error = null;
+      renderSchedules();
+      try {
+        const data = await api('scheduleListMqtt', deviceBody(id));
+        if (selectedId !== id) return;
+        schedules.items = data.schedules || [];
+        schedules.max = data.max || 20;
+        schedules.clockValid = data.clockValid;
+      } catch (error) {
+        if (selectedId === id) schedules.error = error.message;
+      } finally {
+        schedules.loading = false;
+        if (selectedId === id) renderSchedules();
+      }
+    }
+
+    async function sendSchedule(command) {
+      const device = selectedDevice();
+      if (!device) throw new Error('Chưa chọn thiết bị.');
+      return api('scheduleCommandMqtt', deviceBody(device.mqtt_microservice_id, command));
+    }
+
+    function renderSchedules() {
+      const list = document.getElementById('scheduleList');
+      list.replaceChildren();
+      document.getElementById('scheduleCount').textContent =
+        schedules.loading && !schedules.items.length ? '' : '(' + schedules.items.length + '/' + schedules.max + ')';
+      const full = schedules.items.length >= schedules.max;
+      const addBtn = document.getElementById('scheduleAddBtn');
+      addBtn.disabled = schedules.loading || scheduleBusy || full || schedules.error != null;
+      addBtn.title = full ? 'Thiết bị đã lưu đủ ' + schedules.max + ' lịch' : '';
+      document.getElementById('scheduleReloadBtn').disabled = schedules.loading || scheduleBusy;
+
+      if (schedules.clockValid === false) {
+        list.appendChild(el('div', 'notice', 'Thiết bị chưa đồng bộ giờ (NTP): lịch được lưu nhưng chỉ chạy khi thiết bị có giờ chính xác.'));
+        list.lastChild.style.display = 'block';
+      }
+      if (schedules.loading && !schedules.items.length) {
+        list.appendChild(el('div', 'meta', 'Đang đọc lịch từ thiết bị…'));
+        return;
+      }
+      if (schedules.error) {
+        list.appendChild(el('div', 'meta danger', 'Không đọc được lịch: ' + schedules.error));
+        return;
+      }
+      if (!schedules.items.length) {
+        list.appendChild(el('div', 'empty', 'Chưa có lịch nào. Bấm “+ Thêm lịch” để tạo.'));
+        return;
+      }
+
+      schedules.items.slice().sort(function(a, b) {
+        return (a.hour * 60 + a.minute) - (b.hour * 60 + b.minute) || a.id - b.id;
+      }).forEach(function(schedule) {
+        const active = schedule.enabled && !schedule.done;
+        const row = el('div', 'schedule' + (active ? '' : ' disabled'));
+        row.appendChild(el('div', 'time', pad2(schedule.hour) + ':' + pad2(schedule.minute)));
+        const what = el('div', 'what');
+        what.appendChild(el('div', 'name', describeDays(schedule)));
+        what.appendChild(el('div', 'meta', describeAction(schedule) +
+          (schedule.done ? ' · đã chạy' : !schedule.enabled ? ' · đang tắt' : '')));
+        row.appendChild(what);
+
+        const actions = el('div', 'actions');
+        const toggle = el('button', 'switch');
+        toggle.type = 'button';
+        toggle.setAttribute('role', 'switch');
+        toggle.setAttribute('aria-checked', String(schedule.enabled));
+        toggle.setAttribute('aria-label', 'Kích hoạt lịch ' + pad2(schedule.hour) + ':' + pad2(schedule.minute));
+        toggle.disabled = scheduleBusy || schedule.done;
+        toggle.title = schedule.done ? 'Lịch một lần đã chạy; sửa ngày để dùng lại' : '';
+        toggle.addEventListener('click', function() { toggleSchedule(schedule); });
+        actions.appendChild(toggle);
+        const edit = el('button', 'small', 'Sửa');
+        edit.type = 'button';
+        edit.disabled = scheduleBusy;
+        edit.addEventListener('click', function() { openScheduleDialog(schedule); });
+        actions.appendChild(edit);
+        const remove = el('button', 'small danger', 'Xóa');
+        remove.type = 'button';
+        remove.disabled = scheduleBusy;
+        remove.addEventListener('click', function() { deleteSchedule(schedule); });
+        actions.appendChild(remove);
+        row.appendChild(actions);
+        list.appendChild(row);
+      });
+    }
+
+    async function runScheduleAction(command, successMessage) {
+      if (scheduleBusy) return;
+      scheduleBusy = true;
+      renderSchedules();
+      try {
+        const message = ackError(await sendSchedule(command));
+        if (message) showNotice(message, 'error');
+        else showNotice(successMessage, 'ok');
+      } catch (error) {
+        showNotice('Không gửi được lệnh lịch: ' + error.message, 'error');
+      } finally {
+        scheduleBusy = false;
+        renderSchedules();
+        loadSchedules();
+      }
+    }
+
+    function toggleSchedule(schedule) {
+      runScheduleAction({cmd: schedule.enabled ? 'SCHEDULE_DISABLE' : 'SCHEDULE_ENABLE', id: schedule.id},
+        schedule.enabled ? 'Đã tắt lịch.' : 'Đã bật lịch.');
+    }
+
+    function deleteSchedule(schedule) {
+      const label = pad2(schedule.hour) + ':' + pad2(schedule.minute) + ' (' + describeDays(schedule) + ')';
+      if (!confirm('Xóa lịch ' + label + ' khỏi thiết bị?')) return;
+      runScheduleAction({cmd: 'SCHEDULE_DELETE', id: schedule.id}, 'Đã xóa lịch.');
+    }
+
+    // ---- Schedule popup ----
+    function todayText() {
+      const now = new Date();
+      return now.getFullYear() + '-' + pad2(now.getMonth() + 1) + '-' + pad2(now.getDate());
+    }
+
+    function showDialogError(message) {
+      const box = document.getElementById('scheduleError');
+      box.textContent = message || '';
+      box.style.display = message ? 'block' : 'none';
+    }
+
+    function renderDayChips() {
+      document.querySelectorAll('#dayChips .chip').forEach(function(chip, index) {
+        chip.setAttribute('aria-pressed', String((dialogDays & (1 << index)) !== 0));
+      });
+    }
+
+    function renderRepeat() {
+      const once = document.querySelector('input[name="repeat"]:checked').value === 'once';
+      document.getElementById('weeklyBox').hidden = once;
+      document.getElementById('onceBox').hidden = !once;
+    }
+
+    function renderAutoOff() {
+      const enabled = document.getElementById('autoOffEnabled').checked;
+      document.getElementById('autoOffValue').disabled = !enabled;
+      document.getElementById('autoOffUnit').disabled = !enabled;
+    }
+
+    function renderChannelActions(schedule) {
+      const channels = channelCount();
+      const box = document.getElementById('channelActions');
+      box.replaceChildren();
+      for (let index = 0; index < channels; index++) {
+        const bit = 1 << index;
+        const row = el('div', 'inline');
+        const label = el('label', null, channels > 1 ? 'Kênh ' + (index + 1) : 'Thiết bị');
+        label.htmlFor = 'channelAction' + index;
+        label.style.minWidth = '80px';
+        const select = el('select');
+        select.id = 'channelAction' + index;
+        select.dataset.bit = String(bit);
+        // With one output "keep" would make an empty schedule.
+        const options = channels > 1 ? [['keep', 'Không đổi'], ['on', 'Bật'], ['off', 'Tắt']] : [['on', 'Bật'], ['off', 'Tắt']];
+        options.forEach(function(option) {
+          const node = el('option', null, option[1]);
+          node.value = option[0];
+          select.appendChild(node);
+        });
+        let value = index === 0 ? 'on' : 'keep';
+        if (schedule) value = (schedule.portMask & bit) ? ((schedule.portState & bit) ? 'on' : 'off') : 'keep';
+        if (channels === 1 && value === 'keep') value = 'on';
+        select.value = value;
+        row.appendChild(label);
+        row.appendChild(select);
+        box.appendChild(row);
+      }
+    }
+
+    function openScheduleDialog(schedule) {
+      editingScheduleId = schedule ? schedule.id : null;
+      document.getElementById('scheduleDialogTitle').textContent = schedule
+        ? 'Sửa lịch #' + schedule.id : 'Thêm lịch';
+      document.getElementById('scheduleTime').value = schedule
+        ? pad2(schedule.hour) + ':' + pad2(schedule.minute) : '07:00';
+      const once = schedule ? schedule.weekday === 0 : false;
+      document.querySelector('input[name="repeat"][value="' + (once ? 'once' : 'weekly') + '"]').checked = true;
+      dialogDays = schedule && !once ? schedule.weekday : 127;
+      document.getElementById('scheduleDate').value = once && schedule.date ? schedule.date : todayText();
+      renderChannelActions(schedule);
+
+      const autoOff = schedule ? schedule.autoOff : 0;
+      document.getElementById('autoOffEnabled').checked = autoOff > 0;
+      const unit = autoOff > 0 && autoOff % 3600 === 0 ? 3600 : autoOff > 0 && autoOff % 60 !== 0 ? 1 : 60;
+      document.getElementById('autoOffUnit').value = String(unit);
+      document.getElementById('autoOffValue').value = autoOff > 0 ? String(autoOff / unit) : '10';
+      document.getElementById('scheduleEnabled').checked = schedule ? schedule.enabled : true;
+
+      showDialogError('');
+      renderDayChips();
+      renderRepeat();
+      renderAutoOff();
+      document.getElementById('scheduleDialog').showModal();
+      document.getElementById('scheduleTime').focus();
+    }
+
+    function nextFreeScheduleId() {
+      const used = new Set(schedules.items.map(function(schedule) { return schedule.id; }));
+      for (let id = 1; id <= schedules.max; id++) {
+        if (!used.has(id)) return id;
+      }
+      return null;
+    }
+
+    // Reads the popup into a firmware command; throws a message for the user.
+    function readScheduleForm() {
+      const time = document.getElementById('scheduleTime').value;
+      if (!/^\d{2}:\d{2}$/.test(time)) throw new Error('Chọn thời gian.');
+      const command = {
+        cmd: editingScheduleId ? 'SCHEDULE_UPDATE' : 'SCHEDULE_ADD',
+        id: editingScheduleId || nextFreeScheduleId(),
+        hour: Number(time.slice(0, 2)),
+        minute: Number(time.slice(3, 5)),
+        enabled: document.getElementById('scheduleEnabled').checked,
+      };
+      if (!command.id) throw new Error('Thiết bị đã lưu đủ ' + schedules.max + ' lịch.');
+
+      if (document.querySelector('input[name="repeat"]:checked').value === 'once') {
+        const date = document.getElementById('scheduleDate').value;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Chọn ngày chạy.');
+        command.weekday = 0;
+        command.year = Number(date.slice(0, 4));
+        command.month = Number(date.slice(5, 7));
+        command.day = Number(date.slice(8, 10));
+      } else {
+        if (!dialogDays) throw new Error('Chọn ít nhất một ngày trong tuần.');
+        command.weekday = dialogDays;
+      }
+
+      command.port_mask = 0;
+      command.port_state = 0;
+      document.querySelectorAll('#channelActions select').forEach(function(select) {
+        const bit = Number(select.dataset.bit);
+        if (select.value === 'keep') return;
+        command.port_mask |= bit;
+        if (select.value === 'on') command.port_state |= bit;
+      });
+      if (!command.port_mask) throw new Error('Chọn ít nhất một kênh cần bật hoặc tắt.');
+
+      command.auto_off = 0;
+      if (document.getElementById('autoOffEnabled').checked) {
+        const seconds = Number(document.getElementById('autoOffValue').value) *
+          Number(document.getElementById('autoOffUnit').value);
+        if (!Number.isInteger(seconds) || seconds < 1 || seconds > MAX_AUTO_OFF_SECONDS) {
+          throw new Error('Thời gian tự tắt phải từ 1 giây đến ' + formatDuration(MAX_AUTO_OFF_SECONDS) + '.');
+        }
+        if (!command.port_state) throw new Error('Tự động tắt chỉ dùng khi lịch bật ít nhất một kênh.');
+        command.auto_off = seconds;
+      }
+      return command;
+    }
+
+    function setDialogBusy(busy) {
+      scheduleBusy = busy;
+      const save = document.getElementById('scheduleSaveBtn');
+      save.disabled = busy;
+      save.textContent = busy ? 'Đang chờ thiết bị xác nhận…' : 'Lưu';
+      document.getElementById('scheduleCancelBtn').disabled = busy;
+      renderSchedules();
+    }
+
+    async function submitSchedule(event) {
+      event.preventDefault();
+      if (scheduleBusy) return;
+      let command;
+      try {
+        command = readScheduleForm();
+      } catch (error) {
+        showDialogError(error.message);
+        return;
+      }
+      showDialogError('');
+      setDialogBusy(true);
+      try {
+        const message = ackError(await sendSchedule(command));
+        if (message) {
+          showDialogError(message);
+        } else {
+          document.getElementById('scheduleDialog').close();
+          showNotice(command.cmd === 'SCHEDULE_ADD' ? 'Đã thêm lịch vào thiết bị.' : 'Đã cập nhật lịch.', 'ok');
+        }
+      } catch (error) {
+        showDialogError('Không gửi được lịch: ' + error.message);
+      } finally {
+        setDialogBusy(false);
+        loadSchedules();
+      }
+    }
+
+    function setupScheduleDialog() {
+      const chips = document.getElementById('dayChips');
+      DAY_LABELS.forEach(function(label, index) {
+        const chip = el('button', 'chip', label);
+        chip.type = 'button';
+        chip.title = DAY_NAMES[index];
+        chip.addEventListener('click', function() {
+          dialogDays ^= 1 << index;
+          renderDayChips();
+        });
+        chips.appendChild(chip);
+      });
+      document.querySelectorAll('#weeklyBox [data-days]').forEach(function(button) {
+        button.addEventListener('click', function() {
+          dialogDays = Number(button.dataset.days);
+          renderDayChips();
+        });
+      });
+      document.querySelectorAll('input[name="repeat"]').forEach(function(radio) {
+        radio.addEventListener('change', renderRepeat);
+      });
+      document.getElementById('autoOffEnabled').addEventListener('change', renderAutoOff);
+      document.getElementById('scheduleForm').addEventListener('submit', submitSchedule);
+      const dialog = document.getElementById('scheduleDialog');
+      document.getElementById('scheduleCancelBtn').addEventListener('click', function() { dialog.close(); });
+      // Esc must not close the popup while the device has not answered yet.
+      dialog.addEventListener('cancel', function(event) { if (scheduleBusy) event.preventDefault(); });
+      document.getElementById('scheduleAddBtn').addEventListener('click', function() { openScheduleDialog(null); });
+      document.getElementById('scheduleReloadBtn').addEventListener('click', loadSchedules);
+    }
+
+    // ---- Auto OFF on-timer: stored on the device, independent of schedules ----
+    const MAX_ON_TIMER_SECONDS = 86400;
+    // seconds: last value confirmed by TIMER_ACK (null = not read yet).
+    const onTimer = {seconds: null, loading: false, busy: false, error: null, edited: false};
+
+    // The status poll ("tim") also reports the value, e.g. after a change
+    // made from another browser.
+    function currentOnTimer(device) {
+      if (device && device.status && device.status.onTimer != null) return device.status.onTimer;
+      return onTimer.seconds;
+    }
+
+    function describeOnTimer(seconds) {
+      if (seconds == null) return 'Chưa rõ';
+      return seconds > 0 ? 'Tự tắt sau ' + formatDuration(seconds) : 'Không dùng';
+    }
+
+    function fillOnTimerInputs(seconds) {
+      document.getElementById('onTimerHours').value = String(Math.floor(seconds / 3600));
+      document.getElementById('onTimerMinutes').value = String(Math.floor((seconds % 3600) / 60));
+      document.getElementById('onTimerSeconds').value = String(seconds % 60);
+      onTimer.edited = false;
+    }
+
+    function readOnTimerInputs() {
+      const parts = ['onTimerHours', 'onTimerMinutes', 'onTimerSeconds'].map(function(id) {
+        const text = document.getElementById(id).value.trim();
+        return text === '' ? 0 : Number(text);
+      });
+      if (!parts.every(function(part) { return Number.isInteger(part) && part >= 0; }) ||
+          parts[1] > 59 || parts[2] > 59) {
+        throw new Error('Nhập số nguyên: giờ, phút 0–59, giây 0–59.');
+      }
+      const seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+      if (seconds < 1 || seconds > MAX_ON_TIMER_SECONDS) {
+        throw new Error('Thời gian hẹn giờ phải từ 1 giây đến 24 giờ.');
+      }
+      return seconds;
+    }
+
+    function renderOnTimer() {
+      const seconds = currentOnTimer(selectedDevice());
+      const badge = document.getElementById('onTimerBadge');
+      badge.className = 'badge ' + (seconds == null ? 'unknown' : seconds > 0 ? 'on' : 'off');
+      badge.textContent = seconds == null ? 'Chưa rõ' : seconds > 0 ? formatDuration(seconds) : 'Đang tắt';
+      // Inputs follow the device until the user starts typing.
+      if (seconds > 0 && !onTimer.edited && !onTimer.busy) fillOnTimerInputs(seconds);
+
+      const hint = document.getElementById('onTimerHint');
+      hint.className = 'meta' + (onTimer.error ? ' danger' : '');
+      hint.textContent = onTimer.error ? onTimer.error
+        : onTimer.busy ? 'Đang chờ thiết bị xác nhận…'
+        : onTimer.loading && seconds == null ? 'Đang đọc cài đặt từ thiết bị…'
+        : seconds > 0 ? 'Đang dùng: kênh bật quá ' + formatDuration(seconds) + ' sẽ tự tắt.'
+        : seconds === 0 ? 'Hẹn giờ đang tắt: kênh bật sẽ giữ nguyên đến khi có lệnh tắt.' : '';
+      const disabled = onTimer.busy || onTimer.loading;
+      document.getElementById('onTimerSaveBtn').disabled = disabled;
+      document.getElementById('onTimerOffBtn').disabled = disabled || seconds === 0;
+      document.querySelectorAll('[data-on-timer]').forEach(function(button) { button.disabled = disabled; });
+    }
+
+    function resetOnTimer() {
+      onTimer.seconds = null;
+      onTimer.error = null;
+      onTimer.edited = false;
+      renderOnTimer();
+    }
+
+    // Returns null when the user has left this device meanwhile.
+    async function onTimerRequest(body) {
+      const device = selectedDevice();
+      const id = device.mqtt_microservice_id;
+      const data = await api('onTimerMqtt', deviceBody(id, body));
+      if (selectedId !== id) return null;
+      if (data.seconds != null) {
+        onTimer.seconds = data.seconds;
+        // Shown at once; the next status poll carries the same value.
+        const current = selectedDevice();
+        if (current && current.status) current.status.onTimer = data.seconds;
+      }
+      return data;
+    }
+
+    async function loadOnTimer() {
+      if (!selectedDevice() || onTimer.loading) return;
+      onTimer.loading = true;
+      onTimer.error = null;
+      renderOnTimer();
+      try {
+        const data = await onTimerRequest({});
+        if (data && data.seconds > 0 && !onTimer.edited) fillOnTimerInputs(data.seconds);
+      } catch (error) {
+        onTimer.error = 'Không đọc được hẹn giờ: ' + error.message;
+      } finally {
+        onTimer.loading = false;
+        if (selectedId != null) renderOnTimer();
+      }
+    }
+
+    async function saveOnTimer(seconds) {
+      if (!selectedDevice() || onTimer.busy) return;
+      onTimer.busy = true;
+      onTimer.error = null;
+      renderOnTimer();
+      try {
+        const data = await onTimerRequest({sec: seconds});
+        if (!data) return;
+        if (data.status !== 'SUCCESS') {
+          onTimer.error = 'Thiết bị từ chối: ' + (data.message || data.status);
+        } else {
+          if (seconds > 0) fillOnTimerInputs(seconds);
+          showNotice(seconds > 0 ? 'Đã lưu hẹn giờ tự tắt sau ' + formatDuration(seconds) + '.' : 'Đã tắt hẹn giờ tự tắt.', 'ok');
+        }
+      } catch (error) {
+        onTimer.error = 'Không lưu được hẹn giờ: ' + error.message;
+      } finally {
+        onTimer.busy = false;
+        if (selectedId != null) renderOnTimer();
+      }
+    }
+
+    function setupOnTimer() {
+      document.getElementById('onTimerForm').addEventListener('submit', function(event) {
+        event.preventDefault();
+        let seconds;
+        try {
+          seconds = readOnTimerInputs();
+        } catch (error) {
+          onTimer.error = error.message;
+          renderOnTimer();
+          return;
+        }
+        saveOnTimer(seconds);
+      });
+      ['onTimerHours', 'onTimerMinutes', 'onTimerSeconds'].forEach(function(id) {
+        document.getElementById(id).addEventListener('input', function() {
+          onTimer.edited = true;
+          if (onTimer.error) {
+            onTimer.error = null;
+            renderOnTimer();
+          }
+        });
+      });
+      document.querySelectorAll('[data-on-timer]').forEach(function(button) {
+        button.addEventListener('click', function() {
+          const seconds = Number(button.dataset.onTimer);
+          fillOnTimerInputs(seconds);
+          saveOnTimer(seconds);
+        });
+      });
+      document.getElementById('onTimerOffBtn').addEventListener('click', function() {
+        if (confirm('Tắt hẹn giờ tự tắt? Kênh đang bật sẽ giữ nguyên trạng thái.')) saveOnTimer(0);
+      });
+    }
+
+    // ---- Countdown auto ON: once, kept only in the device's RAM ----
+    const MAX_COUNTDOWN_SECONDS = 86400;
+    const countdownState = {
+      remaining: null,   // seconds left when fetchedAt was taken; null = unknown
+      mask: null,        // channels that will switch on
+      fetchedAt: 0,
+      lastSeconds: null, // last countdown started on the device
+      loading: false, busy: false, error: null, edited: false,
+    };
+
+    // Seconds left now: the last device value aged by the local clock.
+    function countdownLeft() {
+      if (countdownState.remaining == null) return null;
+      if (countdownState.remaining === 0) return 0;
+      return Math.max(0, countdownState.remaining - Math.floor((Date.now() - countdownState.fetchedAt) / 1000));
+    }
+
+    function formatClock(seconds) {
+      const hours = Math.floor(seconds / 3600);
+      return (hours ? hours + ':' : '') + pad2(Math.floor((seconds % 3600) / 60)) + ':' + pad2(seconds % 60);
+    }
+
+    function describeCountdown(device) {
+      const status = device && device.status;
+      if (!status || status.countdown == null) return null;
+      return status.countdown > 0 ? 'Tự bật sau ' + formatClock(status.countdown) : 'Không chạy';
+    }
+
+    // Takes the polled status unless a newer device reply is already shown.
+    function syncCountdownFromStatus(device) {
+      if (!device || !device.status || device.status.countdown == null) return;
+      countdownState.remaining = device.status.countdown;
+      if (device.status.countdownMask) countdownState.mask = device.status.countdownMask;
+      countdownState.fetchedAt = Date.now();
+    }
+
+    function fillCountdownInputs(seconds) {
+      document.getElementById('countdownHours').value = String(Math.floor(seconds / 3600));
+      document.getElementById('countdownMinutes').value = String(Math.floor((seconds % 3600) / 60));
+      document.getElementById('countdownSeconds').value = String(seconds % 60);
+    }
+
+    function readCountdownInputs() {
+      const parts = ['countdownHours', 'countdownMinutes', 'countdownSeconds'].map(function(id) {
+        const text = document.getElementById(id).value.trim();
+        return text === '' ? 0 : Number(text);
+      });
+      if (!parts.every(function(part) { return Number.isInteger(part) && part >= 0; }) ||
+          parts[1] > 59 || parts[2] > 59) {
+        throw new Error('Nhập số nguyên: giờ, phút 0–59, giây 0–59.');
+      }
+      const seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+      if (seconds < 1 || seconds > MAX_COUNTDOWN_SECONDS) {
+        throw new Error('Thời gian đếm ngược phải từ 1 giây đến 24 giờ.');
+      }
+      return seconds;
+    }
+
+    function renderCountdownChannels() {
+      const channels = channelCount();
+      const box = document.getElementById('countdownChannels');
+      if (box.dataset.channels === String(channels)) return;
+      box.dataset.channels = String(channels);
+      box.replaceChildren();
+      box.hidden = channels < 2;
+      if (channels < 2) return;
+      box.appendChild(el('span', 'meta', 'Kênh sẽ bật:'));
+      for (let index = 0; index < channels; index++) {
+        const label = el('label', 'check');
+        const input = el('input');
+        input.type = 'checkbox';
+        input.checked = true;
+        input.dataset.bit = String(1 << index);
+        label.appendChild(input);
+        label.appendChild(document.createTextNode(' Kênh ' + (index + 1)));
+        box.appendChild(label);
+      }
+    }
+
+    function readCountdownMask() {
+      const channels = channelCount();
+      if (channels < 2) return 1;
+      let mask = 0;
+      document.querySelectorAll('#countdownChannels input[type=checkbox]').forEach(function(input) {
+        if (input.checked) mask |= Number(input.dataset.bit);
+      });
+      if (!mask) throw new Error('Chọn ít nhất một kênh sẽ bật.');
+      return mask;
+    }
+
+    function describeMask(mask) {
+      const channels = channelCount();
+      if (channels < 2 || !mask) return 'thiết bị';
+      const names = [];
+      for (let index = 0; index < channels; index++) {
+        if (mask & (1 << index)) names.push('kênh ' + (index + 1));
+      }
+      return names.join(', ');
+    }
+
+    function renderCountdown() {
+      renderCountdownChannels();
+      const left = countdownLeft();
+      const running = left > 0;
+      const badge = document.getElementById('countdownBadge');
+      badge.className = 'badge ' + (left == null ? 'unknown' : running ? 'on' : 'off');
+      badge.textContent = left == null ? 'Chưa rõ' : running ? 'Đang đếm' : 'Không chạy';
+
+      document.getElementById('countdownRunning').hidden = !running;
+      if (running) {
+        document.getElementById('countdownLeft').textContent = formatClock(left);
+        const at = new Date(Date.now() + left * 1000);
+        document.getElementById('countdownTarget').textContent =
+          'Bật ' + describeMask(countdownState.mask) + ' lúc ' + at.toLocaleTimeString('vi-VN');
+      }
+
+      const hint = document.getElementById('countdownHint');
+      hint.className = 'meta' + (countdownState.error ? ' danger' : '');
+      hint.textContent = countdownState.error ? countdownState.error
+        : countdownState.busy ? 'Đang chờ thiết bị xác nhận…'
+        : countdownState.loading && left == null ? 'Đang đọc trạng thái từ thiết bị…'
+        : running ? 'Gửi thời gian mới để đếm lại từ đầu.' : '';
+      const disabled = countdownState.busy || countdownState.loading;
+      const start = document.getElementById('countdownStartBtn');
+      start.disabled = disabled;
+      start.textContent = running ? 'Đếm lại' : 'Bắt đầu';
+      document.getElementById('countdownCancelBtn').disabled = disabled || !running;
+      document.querySelectorAll('[data-countdown]').forEach(function(button) { button.disabled = disabled; });
+    }
+
+    function resetCountdown() {
+      countdownState.remaining = null;
+      countdownState.mask = null;
+      countdownState.lastSeconds = null;
+      countdownState.error = null;
+      countdownState.edited = false;
+      document.getElementById('countdownChannels').dataset.channels = '';
+      syncCountdownFromStatus(selectedDevice());
+      renderCountdown();
+    }
+
+    // Returns null when the user has left this device meanwhile.
+    async function countdownRequest(body) {
+      const id = selectedDevice().mqtt_microservice_id;
+      const data = await api('countdownMqtt', deviceBody(id, body));
+      if (selectedId !== id) return null;
+      if (data.remaining != null) {
+        countdownState.remaining = data.remaining;
+        countdownState.mask = data.mask || null;
+        countdownState.fetchedAt = Date.now();
+        const device = selectedDevice();
+        if (device && device.status) {
+          device.status.countdown = data.remaining;
+          device.status.countdownMask = data.mask || null;
+        }
+      }
+      if (data.seconds) {
+        countdownState.lastSeconds = data.seconds;
+        if (!countdownState.edited) fillCountdownInputs(data.seconds);
+      }
+      return data;
+    }
+
+    async function loadCountdown() {
+      if (!selectedDevice() || countdownState.loading) return;
+      countdownState.loading = true;
+      countdownState.error = null;
+      renderCountdown();
+      try {
+        await countdownRequest({});
+      } catch (error) {
+        countdownState.error = 'Không đọc được đếm ngược: ' + error.message;
+      } finally {
+        countdownState.loading = false;
+        if (selectedId != null) renderCountdown();
+      }
+    }
+
+    async function sendCountdown(seconds, mask) {
+      if (!selectedDevice() || countdownState.busy) return;
+      countdownState.busy = true;
+      countdownState.error = null;
+      renderCountdown();
+      try {
+        const data = await countdownRequest(seconds > 0 ? {sec: seconds, mask: mask} : {sec: 0});
+        if (!data) return;
+        if (data.status !== 'SUCCESS') {
+          countdownState.error = 'Thiết bị từ chối: ' + (data.message || data.status);
+        } else {
+          countdownState.edited = false;
+          showNotice(seconds > 0 ? 'Đã bắt đầu đếm ngược: tự bật sau ' + formatDuration(seconds) + '.' : 'Đã hủy đếm ngược.', 'ok');
+        }
+      } catch (error) {
+        countdownState.error = 'Không gửi được đếm ngược: ' + error.message;
+      } finally {
+        countdownState.busy = false;
+        if (selectedId != null) renderCountdown();
+      }
+    }
+
+    function startCountdown(seconds) {
+      let mask;
+      try {
+        mask = readCountdownMask();
+      } catch (error) {
+        countdownState.error = error.message;
+        renderCountdown();
+        return;
+      }
+      sendCountdown(seconds, mask);
+    }
+
+    function setupCountdown() {
+      document.getElementById('countdownForm').addEventListener('submit', function(event) {
+        event.preventDefault();
+        let seconds;
+        try {
+          seconds = readCountdownInputs();
+        } catch (error) {
+          countdownState.error = error.message;
+          renderCountdown();
+          return;
+        }
+        startCountdown(seconds);
+      });
+      ['countdownHours', 'countdownMinutes', 'countdownSeconds'].forEach(function(id) {
+        document.getElementById(id).addEventListener('input', function() {
+          countdownState.edited = true;
+          if (countdownState.error) {
+            countdownState.error = null;
+            renderCountdown();
+          }
+        });
+      });
+      document.querySelectorAll('[data-countdown]').forEach(function(button) {
+        button.addEventListener('click', function() {
+          const seconds = Number(button.dataset.countdown);
+          fillCountdownInputs(seconds);
+          startCountdown(seconds);
+        });
+      });
+      document.getElementById('countdownCancelBtn').addEventListener('click', function() {
+        if (confirm('Hủy đếm ngược? Thiết bị sẽ không tự bật.')) sendCountdown(0, 0);
+      });
+      // The remaining time is shown to the second between status polls.
+      setInterval(function() {
+        if (selectedId != null && !document.hidden && countdownState.remaining > 0) renderCountdown();
+      }, 1000);
+    }
+
+    // ---- Transport: MQTT, or LAN (POST http://<ip>/lan) when the broker or
+    // the Internet is down. The choice is kept per device in this browser.
+    const TRANSPORT_KEY = 'deviceTransport:';
+    const TRANSPORT_LABELS = {auto: 'Tự động', mqtt: 'MQTT', lan: 'LAN'};
+    let lanBusy = false;
+
+    function deviceTransport(id) {
+      try {
+        const value = localStorage.getItem(TRANSPORT_KEY + id);
+        return TRANSPORT_LABELS[value] ? value : 'auto';
+      } catch (e) {
+        return 'auto';
+      }
+    }
+
+    function saveTransport(id, mode) {
+      try {
+        localStorage.setItem(TRANSPORT_KEY + id, mode);
+      } catch (e) {
+        // Not remembered; the page still uses it until reload.
+      }
+      transportOverrides[id] = mode;
+    }
+
+    const transportOverrides = {};
+    function currentTransport(id) {
+      return transportOverrides[id] || deviceTransport(id);
+    }
+
+    // Body of every command for a device: the server picks MQTT or LAN.
+    function deviceBody(id, extra) {
+      return Object.assign({mqtt_microservice_id: id, transport: currentTransport(id)}, extra || {});
+    }
+
+    function allTransports() {
+      const result = {};
+      devices.forEach(function(device) { result[device.mqtt_microservice_id] = currentTransport(device.mqtt_microservice_id); });
+      return result;
+    }
+
+    function routeText(device) {
+      if (!device || !device.route) return null;
+      return device.route === 'lan' ? 'LAN' + (device.lan && device.lan.ip ? ' · ' + device.lan.ip : '') : 'MQTT';
+    }
+
+    function renderTransport() {
+      const device = selectedDevice();
+      if (!device) return;
+      const mode = currentTransport(device.mqtt_microservice_id);
+      document.querySelectorAll('[data-transport]').forEach(function(button) {
+        button.setAttribute('aria-pressed', String(button.dataset.transport === mode));
+        button.disabled = lanBusy;
+      });
+      const badge = document.getElementById('routeBadge');
+      badge.className = 'badge ' + (device.route === 'lan' ? 'on' : device.route ? 'off' : 'unknown');
+      badge.textContent = device.route ? 'Đang dùng ' + routeText(device) : 'Chưa rõ';
+
+      const lan = device.lan || {};
+      document.getElementById('transportHint').textContent = mode === 'auto'
+        ? 'Tự động: dùng MQTT khi broker và thiết bị đang kết nối; nếu không thì gửi thẳng tới thiết bị trong mạng LAN (cần IP).'
+        : mode === 'lan'
+          ? 'LAN: web_manager gửi lệnh thẳng tới thiết bị qua mạng nội bộ, không cần broker/Internet. Máy chủ web_manager phải cùng mạng LAN với thiết bị.'
+          : 'MQTT: luôn gửi qua broker.';
+      const input = document.getElementById('lanIpInput');
+      if (document.activeElement !== input && !lanBusy) input.value = lan.manualIp || lan.ip || '';
+      document.getElementById('lanIpSaveBtn').disabled = lanBusy;
+      document.getElementById('lanIpAutoBtn').disabled = lanBusy || !lan.manualIp;
+
+      const hint = document.getElementById('lanHint');
+      const lines = [];
+      if (lan.reportedIp) lines.push('Thiết bị báo IP ' + lan.reportedIp + '.');
+      if (lan.manualIp) lines.push('Đang dùng IP nhập tay ' + lan.manualIp + '.');
+      if (!lan.ip) lines.push('Chưa biết IP: thiết bị báo IP khi trả lời qua MQTT (STATUS_GET), hoặc nhập IP.');
+      if (device.route === 'lan' && lan.error) lines.push('Lỗi LAN: ' + lan.error);
+      hint.className = 'meta' + (device.route === 'lan' && lan.error ? ' danger' : '');
+      hint.textContent = lines.join(' ');
+    }
+
+    async function saveLanIp(ip) {
+      const device = selectedDevice();
+      if (!device || lanBusy) return;
+      lanBusy = true;
+      renderTransport();
+      try {
+        const data = await api('deviceLanMqtt', {mqtt_microservice_id: device.mqtt_microservice_id, ip: ip});
+        device.lan = Object.assign({}, device.lan, data.lan);
+        showNotice(ip ? 'Đã lưu IP LAN ' + ip + '.' : 'Đã chuyển về IP thiết bị tự báo.', 'ok');
+      } catch (error) {
+        showNotice('Không lưu được IP: ' + error.message, 'error');
+      } finally {
+        lanBusy = false;
+        renderTransport();
+      }
+    }
+
+    function setupTransport() {
+      document.querySelectorAll('[data-transport]').forEach(function(button) {
+        button.addEventListener('click', function() {
+          const device = selectedDevice();
+          if (!device) return;
+          saveTransport(device.mqtt_microservice_id, button.dataset.transport);
+          renderTransport();
+          loadStatus();
+        });
+      });
+      document.getElementById('lanIpForm').addEventListener('submit', function(event) {
+        event.preventDefault();
+        const ip = document.getElementById('lanIpInput').value.trim();
+        if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) {
+          showNotice('Nhập IPv4 dạng 192.168.1.20.', 'error');
+          return;
+        }
+        saveLanIp(ip);
+      });
+      document.getElementById('lanIpAutoBtn').addEventListener('click', function() { saveLanIp(''); });
     }
 
     async function sendControl(value) {
@@ -293,8 +1449,9 @@
       sending = true;
       renderDetail();
       try {
-        await api('controlDeviceMqtt', {mqtt_microservice_id: device.mqtt_microservice_id, value: value});
-        showNotice('Đã gửi lệnh tới ' + (device.content || device.mqtt_id) + '. Đang chờ thiết bị cập nhật trạng thái…', 'ok');
+        const data = await api('controlDeviceMqtt', deviceBody(device.mqtt_microservice_id, {value: value}));
+        showNotice('Đã gửi lệnh tới ' + (device.content || device.mqtt_id) + (data.route === 'lan' ? ' qua LAN' : '') +
+          '. Đang chờ thiết bị cập nhật trạng thái…', 'ok');
         setTimeout(loadStatus, 2000);
       } catch (error) {
         showNotice('Không gửi được lệnh: ' + error.message, 'error');
@@ -309,9 +1466,13 @@
       if (loading) return;
       loading = true;
       try {
-        const data = await api('deviceStatusMqtt');
+        const data = await api('deviceStatusMqtt', {transports: allTransports()});
         devices = data.devices || [];
-        if (!data.mqttConnected) showNotice('Máy chủ chưa kết nối MQTT broker: ' + data.mqttError, 'error');
+        if (!data.mqttConnected) {
+          const lanCount = devices.filter(function(device) { return device.route === 'lan'; }).length;
+          showNotice('Máy chủ chưa kết nối MQTT broker: ' + data.mqttError +
+            (lanCount ? ' — ' + lanCount + ' thiết bị đang được điều khiển qua LAN.' : ''), lanCount ? null : 'error');
+        }
         else if (document.getElementById('notice').classList.contains('error')) showNotice('');
         if (selectedId != null) renderDetail();
         else renderList();
@@ -324,6 +1485,10 @@
 
     document.getElementById('backBtn').addEventListener('click', closeDetail);
     document.getElementById('refreshBtn').addEventListener('click', loadStatus);
+    setupScheduleDialog();
+    setupOnTimer();
+    setupCountdown();
+    setupTransport();
     setInterval(function() { if (!document.hidden) loadStatus(); }, POLL_INTERVAL_MS);
     loadStatus();
   </script>
