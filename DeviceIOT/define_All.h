@@ -52,20 +52,41 @@
 #define COMMAND_TYPE_CONTROL      0x01
 #define COMMAND_TYPE_OTHER        0x02
 #define COMMAND_TYPE_SCHEDULE_CONTROL 0x03
+// {"com":4,"value":N}: đếm ngược N giây (1..86400) rồi bật cổng; 0 = hủy.
+#define COMMAND_TYPE_COUNTDOWN    0x04
+// Lệnh số (MQTT / LAN), trả lời bằng bản tin trạng thái rút gọn + "rc"/"rs":
+// {"com":5,"value":N} hẹn giờ tự tắt N giây (0 = tắt); lịch: 8 thêm, 9 sửa,
+// 10 xóa, 11 bật/tắt (value 1/0), 12 xóa hết, 13 đọc danh sách.
+// 6 và 7 dành cho Ascon ({"co":6} / {"com":7}).
+#define COMMAND_TYPE_ON_TIMER         5
+#define COMMAND_TYPE_SCHEDULE_ADD     8
+#define COMMAND_TYPE_SCHEDULE_UPDATE  9
+#define COMMAND_TYPE_SCHEDULE_DELETE  10
+#define COMMAND_TYPE_SCHEDULE_ENABLE  11
+#define COMMAND_TYPE_SCHEDULE_CLEAR   12
+#define COMMAND_TYPE_SCHEDULE_LIST    13
 #define COMMAND_TYPE_ASCON_HANDSHAKE  0x07
 
 #define COMMAND_RESERVED_NONE     0x00
 #define COMMAND_RESERVED_CONTROL  0x01
 
-// Scheduler ownership is intentionally limited to the pump output bit.  It
-// cannot address the other device outputs.
+// Output bit toggled by the device button (the pump).
 #define SYSTEM_TASK_SCHEDULE_PORT_MASK 0x01
-#define SYSTEM_TASK_SCHEDULE_MAX_RULES 8
+// Lịch (SCHEDULE_*, spec_v1.txt) dùng múi giờ này để so giờ/ngày.
+// Việt Nam: 7 * 3600.
 #define SYSTEM_TASK_TIMEZONE_OFFSET_SECONDS 0
 
 #if SYSTEM_TASK_SCHEDULE_PORT_MASK != 0x01
-  #error "SystemTask schedules are restricted to the fixed pump output bit (0x01)."
+  #error "The device button is wired to the fixed pump output bit (0x01)."
 #endif
+
+// Lịch cục bộ (ScheduleEngine). Tối đa 20 lịch, id 1..SCHEDULE_MAX_COUNT.
+#define SCHEDULE_MAX_COUNT             20
+// Cổng lịch được phép điều khiển: bit0 = bơm (OUTPUT_PUMP_PIN),
+// bit1 = thiết bị 1 (OUTPUT_DEVICE_1_PIN). Lịch có port_mask ngoài vùng này bị từ chối.
+#define SCHEDULE_ALLOWED_PORT_MASK     0x03
+// Sau khi task bị trễ, chỉ bù tối đa số phút này; lịch lỡ lâu hơn bị bỏ qua.
+#define SCHEDULE_CATCHUP_MINUTES       5
 
 #define SERIAL_BAUD_RATE               115200
 #define TASK_STACK_SIZE                10000
@@ -129,21 +150,46 @@
 #define MESSAGE_AUTH_MAX_FIELDS          24
 
 #define ASCON_PUBLIC_KEYS_ADDRESS        (MESSAGE_AUTH_SECRET_ADDRESS + MESSAGE_AUTH_SECRET_MAX_LENGTH + 1)
+#define ASCON_PUBLIC_KEYS_END            (ASCON_PUBLIC_KEYS_ADDRESS + ASCON_PUBLIC_KEY_COUNT * ASCON_PUBLIC_KEY_ENTRY_LENGTH)
 
-#if ENABLE_ASCON_AEAD128
-#define EEPROM_SIZE                      (ASCON_PUBLIC_KEYS_ADDRESS + ASCON_PUBLIC_KEY_COUNT * ASCON_PUBLIC_KEY_ENTRY_LENGTH)
-#elif ENABLE_MESSAGE_AUTHENTICATION
-#define EEPROM_SIZE                      ASCON_PUBLIC_KEYS_ADDRESS
-#elif ENABLE_mTLS
-#define EEPROM_SIZE                      MESSAGE_AUTH_KEY_ID_ADDRESS
-#else
-#define EEPROM_SIZE                      MTLS_CLIENT_CERT_ADDRESS
+// Lịch cục bộ: đặt sau vùng cuối cùng của layout đầy đủ để không địa chỉ cũ
+// nào bị dịch, dù các cờ bảo mật bật hay tắt.
+//   header   4 B: 'S' 'C' version SCHEDULE_MAX_COUNT
+//   records 20 x 6 B: hour minute weekday port_state auto_off_lo auto_off_hi
+//   meta    20 x 5 B: flags port_mask day_lo day_hi crc8
+// Bản ghi 6 B giữ nguyên định dạng spec_v1 §2; metadata nằm ở vùng riêng.
+#define SCHEDULE_EEPROM_ADDRESS          ASCON_PUBLIC_KEYS_END
+#define SCHEDULE_EEPROM_HEADER_SIZE      4
+#define SCHEDULE_EEPROM_VERSION          1
+#define SCHEDULE_RECORD_SIZE             6
+#define SCHEDULE_META_SIZE               5
+#define SCHEDULE_RECORDS_ADDRESS         (SCHEDULE_EEPROM_ADDRESS + SCHEDULE_EEPROM_HEADER_SIZE)
+#define SCHEDULE_META_ADDRESS            (SCHEDULE_RECORDS_ADDRESS + SCHEDULE_MAX_COUNT * SCHEDULE_RECORD_SIZE)
+#define SCHEDULE_EEPROM_END              (SCHEDULE_META_ADDRESS + SCHEDULE_MAX_COUNT * SCHEDULE_META_SIZE)
+
+// Hẹn giờ tự tắt (OnTimer, độc lập với lịch): 4 B uint32 little-endian, số
+// giây 1..86400 (24 h); 0 = không dùng.
+#define ON_TIMER_EEPROM_ADDRESS          SCHEDULE_EEPROM_END
+#define ON_TIMER_EEPROM_SIZE             4
+#define ON_TIMER_EEPROM_END              (ON_TIMER_EEPROM_ADDRESS + ON_TIMER_EEPROM_SIZE)
+
+// Đếm ngược tự bật (Countdown, độc lập với lịch): 4 B uint32 little-endian,
+// số giây của lần đếm gần nhất 1..86400. Bộ đếm chỉ ở RAM, không nhớ khi mất điện.
+#define COUNTDOWN_EEPROM_ADDRESS         ON_TIMER_EEPROM_END
+#define COUNTDOWN_EEPROM_SIZE            4
+#define COUNTDOWN_EEPROM_END             (COUNTDOWN_EEPROM_ADDRESS + COUNTDOWN_EEPROM_SIZE)
+
+// EEPROM.begin() trên ESP32 mở rộng blob cũ và giữ nguyên dữ liệu, nên tăng
+// EEPROM_SIZE để chứa vùng lịch / hẹn giờ không làm mất cấu hình đã lưu.
+#define EEPROM_SIZE                      COUNTDOWN_EEPROM_END
+
+#if SCHEDULE_EEPROM_ADDRESS < ASCON_PUBLIC_KEYS_END
+  #error "Schedule EEPROM region overlaps the Ascon key region."
 #endif
 
 #if EEPROM_SIZE > 3072
   #error "EEPROM layout exceeds the 3 KB budget."
 #endif
-#define MTLS_PRIVATE_KEY_MAX_LENGTH      (MTLS_PRIVATE_KEY_STORAGE_END - MTLS_PRIVATE_KEY_ADDRESS - 1)
 
 #if MTLS_CA_CERT_ADDRESS + MTLS_CA_CERT_MAX_LENGTH >= MTLS_CLIENT_CERT_ADDRESS
   #error "CA certificate EEPROM region overlaps the client certificate region."
@@ -170,6 +216,18 @@
 #define MQTT_RECONNECT_DELAY_MS        5000
 
 #define WIFI_HTTP_PORT                 80
+// Điều khiển LAN: POST http://<ip>/lan {"data":<lệnh MQTT>} chạy lệnh giống hệt
+// khi nhận qua MQTT (cùng kiểm tra chữ ký / Ascon) và trả
+// {"ip":"...","data":[các bản tin thiết bị lẽ ra publish]}. Dùng khi broker /
+// Internet lỗi. Không có xác thực riêng: mạng LAN không tin cậy thì bật
+// ENABLE_MESSAGE_AUTHENTICATION.
+#define ENABLE_LAN_CONTROL             true
+#define LAN_CONTROL_PATH               "/lan"
+#define LAN_REQUEST_MAX_LENGTH         (MQTT_PACKET_SIZE + 64)
+#define LAN_REPLY_MAX_LENGTH           3072
+// Mỗi lần kết nối MQTT thất bại có thể chặn TaskNetwork vài giây; giãn các lần
+// thử để server LAN vẫn trả lời khi broker không tới được.
+#define MQTT_RETRY_INTERVAL_MS         5000
 #define WIFI_WEB_RESPONSE_DELAY_MS     2000
 #define WIFI_CONFIG_DELAY_MS           100
 #define WIFI_PING_TIMEOUT_MS           2000

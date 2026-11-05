@@ -371,6 +371,16 @@ bool checkNetWorkInConnect(void){
 
 bool checkNetWorkDisconnect(void){
     DEVICE_LOG_INFO("start checkNetWorkDisconnect");
+#if ENABLE_LAN_CONTROL
+    // Only the broker / Internet is down: keep Wi-Fi and the LAN control
+    // server up and keep retrying MQTT instead of dropping the connection.
+    if (netWork_Wifi.checkWifi() == WL_CONNECTED) {
+        processTimeData.numberCheck = 0;
+        processTimeData.state = 4;
+        DEVICE_LOG_INFO("end checkNetWorkDisconnect (Wi-Fi kept for LAN control)");
+        return true;
+    }
+#endif
     netWork_Wifi.disconnetWifi();
     processTimeData.numberCheck = 0;
     processTimeData.state = 2; 
@@ -424,6 +434,14 @@ bool checkMQTTConnect(void){
   DEVICE_LOG_INFO("start checkMQTTConnect");
  
   processTimeData.numberCheck = 0;
+#if ENABLE_LAN_CONTROL
+  static uint32_t lastMqttAttemptMs = 0;
+  const uint32_t nowMs = millis();
+  if (lastMqttAttemptMs != 0 && nowMs - lastMqttAttemptMs < MQTT_RETRY_INTERVAL_MS) {
+    return true;
+  }
+  lastMqttAttemptMs = nowMs;
+#endif
   netWork_Mqtt.MqttReconnect();
   if(netWork_Mqtt.checkStatusMqtt()){
     processTimeData.state=5;
@@ -560,10 +578,20 @@ void TaskNetWork::loopNetWork(void) {
           arrayNetworkFunction[processTimeData.state]();
           lastNetworkPollMs = nowMs;
         } 
+#if ENABLE_LAN_CONTROL
+        // The HTTP server (LAN control) also runs while MQTT is down.
+        if (netWork_Wifi.checkWifi() == WL_CONNECTED) {
+          netWork_Wifi.handerClient();
+        }
+        if(processTimeData.state==5){
+          netWork_Mqtt.lisenMqtt();
+        }
+#else
         if(processTimeData.state==5){
           netWork_Wifi.handerClient();
           netWork_Mqtt.lisenMqtt();
         }
+#endif
         //netWork_Wifi.handerClient();
         //netWork_Mqtt.lisenMqtt();
     } else if(WIFI_BLE_PROVISION==modeStatus){

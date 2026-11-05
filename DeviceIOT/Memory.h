@@ -73,6 +73,9 @@ public:
     bool readBoundedString(int address, size_t maxLength, String &value);
     bool writeBoundedString(int address, const char *value, size_t maxLength);
     bool writeBoundedStrings(const BoundedStringWrite *values, size_t count);
+    // Bounded raw block access; writeBytes commits once for the whole block.
+    bool readBytes(int address, uint8_t *data, size_t length);
+    bool writeBytes(int address, const uint8_t *data, size_t length);
     void writeChar(int address, char value);
     char readChar(int address);
     void saveWiFiCredentials(int ssidAddr, int passAddr, const char* ssid, const char* pass);

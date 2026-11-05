@@ -200,6 +200,31 @@ bool Memory::writeBoundedStrings(const BoundedStringWrite *values, size_t count)
   return EEPROM.commit();
 }
 
+bool Memory::readBytes(int address, uint8_t *data, size_t length) {
+  if (_size <= 0 || data == nullptr || address < 0 ||
+      length > static_cast<size_t>(_size - address)) {
+    return false;
+  }
+  for (size_t i = 0; i < length; ++i) {
+    data[i] = EEPROM.read(address + static_cast<int>(i));
+  }
+  return true;
+}
+
+// EEPROM.write() marks the buffer dirty only for changed bytes and commit()
+// skips clean buffers, so rewriting unchanged data does not wear the flash.
+// The ESP32 EEPROM is one NVS blob: commit() stores old or new data, never half.
+bool Memory::writeBytes(int address, const uint8_t *data, size_t length) {
+  if (_size <= 0 || data == nullptr || address < 0 ||
+      length > static_cast<size_t>(_size - address)) {
+    return false;
+  }
+  for (size_t i = 0; i < length; ++i) {
+    EEPROM.write(address + static_cast<int>(i), data[i]);
+  }
+  return EEPROM.commit();
+}
+
 // Ghi một ký tự
 void  Memory::writeChar(int address, char value) {
   EEPROM.write(address, value);

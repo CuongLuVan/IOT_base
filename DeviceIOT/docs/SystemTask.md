@@ -14,49 +14,20 @@ In cooperative mode the same work is called from `loop()` without blocking.
   retries occur no more than once per 60 seconds.
 - Create a snapshot for `TaskNetWork`, which alone publishes `system.status`
   every 30 seconds while MQTT is connected.
-- Evaluate persisted weekly, monthly, and yearly pump schedules when the clock
-  is valid.  A matching rule is executed once per minute.
+- Evaluate the local schedules (`ScheduleEngine`, see `Schedule.md`) when the
+  clock is valid, then save schedule changes to EEPROM.
 
-`SystemTask` never writes a GPIO directly.  A schedule produces one bounded
-`COMMAND_TYPE_SCHEDULE_CONTROL` command for `TaskDevice`.  The command can
-only change `SYSTEM_TASK_SCHEDULE_PORT_MASK` (default `0x01`, the pump output)
-and has only two actions: `on` or `off`.  It cannot select another port and it
-does not overwrite the state of other output bits.
+`SystemTask` never writes a GPIO directly.  Due schedules produce
+`COMMAND_TYPE_SCHEDULE_CONTROL` commands (port mask, port state, auto OFF) on
+the `ScheduleEngine` queue; `TaskDevice` applies them and owns direct-control
+priority and auto OFF.
 
-Rules are stored in ESP32 Preferences/NVS under `systemtask/rules_v1`, so they
-survive reboot.  The last-fired marker is intentionally RAM-only: an already
-matching rule may run once after a reboot, which is safe because ON/OFF writes
-are idempotent.
-
-## MQTT schedule commands
-
-All configuration uses the existing MQTT command path.  A command containing
-`port` is rejected deliberately.
-
-```json
-{"cmd":"schedule.set","id":0,"period":"weekly","weekday":1,"hour":7,"minute":30,"action":"on"}
-```
-
-`weekday` uses `0 = Sunday` through `6 = Saturday`.
-
-```json
-{"cmd":"schedule.set","id":1,"period":"monthly","day":1,"hour":22,"minute":0,"action":"off"}
-```
-
-```json
-{"cmd":"schedule.set","id":2,"period":"yearly","month":12,"day":31,"hour":23,"minute":55,"action":"off"}
-```
-
-Rules occupy IDs `0` through `SYSTEM_TASK_SCHEDULE_MAX_RULES - 1` (default
-eight).  Use `{"cmd":"schedule.clear","id":2}` to remove one rule and
-`{"cmd":"schedule.status"}` to receive scheduler status.  Replies use
-`schedule.saved`, `schedule.cleared`, `schedule.status`, or `schedule.error`.
-
-Schedules use local time configured by `SYSTEM_TASK_TIMEZONE_OFFSET_SECONDS`.
-The default is `0` (UTC); set it to `7 * 3600` for Vietnam/ICT before building.
-Dates absent from a month simply do not run in that month.
-If multiple rules match in the same minute, the highest rule ID wins and only
-one pump command is queued.
+Schedules are stored in EEPROM (`SCHEDULE_EEPROM_ADDRESS`, up to 20) and
+configured with the schedule MQTT commands (`com` 8..13) described in `Schedule.md`.
+The former NVS pump rules (`schedule.set` / `schedule.clear`,
+`systemtask/rules_v1`) are no longer used; those commands now reply
+`schedule.error`.  `{"cmd":"schedule.status"}` still returns the scheduler
+status.
 
 ## Telemetry and realtime constraints
 
@@ -77,9 +48,9 @@ only when its monitoring interval is delayed by at least a full interval.
 | `TASK_SYSTEM_STACK_SIZE` | 4096 |
 | `SYSTEM_TASK_CHECK_INTERVAL_MS` | 5000 ms |
 | `SYSTEM_TASK_NTP_RETRY_INTERVAL_MS` | 60000 ms |
-| `SYSTEM_TASK_SCHEDULE_MAX_RULES` | 8 |
-| `SYSTEM_TASK_SCHEDULE_PORT_MASK` | `0x01` |
+| `SCHEDULE_MAX_COUNT` | 20 |
+| `SCHEDULE_ALLOWED_PORT_MASK` | `0x03` |
 | `SYSTEM_TASK_TIMEZONE_OFFSET_SECONDS` | 0 (UTC) |
 
-Counters and snapshots are RAM-only and reset at boot.  Schedule definitions
+Counters and snapshots are RAM-only and reset at boot.  Schedules (EEPROM)
 are the only SystemTask state persisted across reboot.

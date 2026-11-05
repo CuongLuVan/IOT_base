@@ -9,6 +9,9 @@
 #include "Memory.h"
 #include "MemoryData.h"
 #include "PlatformCompat.h"
+#include "ScheduleEngine.h"
+#include "OnTimer.h"
+#include "Countdown.h"
 #include "SystemTask.h"
 
 #if ENABLE_TLS_SSL || ENABLE_mTLS
@@ -493,6 +496,22 @@ void recordConnectResult(bool connected) {
 
 bool publishPayload(const String& data, bool encrypt = true);
 
+#if ENABLE_LAN_CONTROL
+// Set while a LAN command runs: replies go into the HTTP response instead of MQTT.
+String* lanReplies = nullptr;
+
+void appendLanReply(const String& payload) {
+    if (lanReplies->length() + payload.length() + 1 > LAN_REPLY_MAX_LENGTH) {
+        DEVICE_LOG_WARNING("[LAN] Reply dropped: response too large");
+        return;
+    }
+    if (lanReplies->length() > 0) {
+        *lanReplies += ',';
+    }
+    *lanReplies += payload;
+}
+#endif
+
 #if ENABLE_ASCON_AEAD128
 // Sends the current key digits in plaintext, rotating the key first if due.
 bool announceAsconKey() {
@@ -506,9 +525,16 @@ bool announceAsconKey() {
 // Order: encrypt -> replay metadata -> sign, so the broker can check the
 // replay fields and signature without the Ascon key.
 bool publishPayload(const String& data, bool encrypt) {
+#if ENABLE_LAN_CONTROL
+    if (lanReplies == nullptr &&
+        (!mqttClient.connected() || settings.publishTopic[0] == '\0')) {
+        return false;
+    }
+#else
     if (!mqttClient.connected() || settings.publishTopic[0] == '\0') {
         return false;
     }
+#endif
     String payload = data;
 #if ENABLE_ASCON_AEAD128
     if (encrypt) {
@@ -526,6 +552,14 @@ bool publishPayload(const String& data, bool encrypt) {
     }
 #else
     (void)encrypt;
+#endif
+#if ENABLE_LAN_CONTROL
+    if (lanReplies != nullptr) {
+        // Replay fields and the signature are for the broker; a LAN reply is
+        // answered directly (encrypted like MQTT when Ascon is on).
+        appendLanReply(payload);
+        return true;
+    }
 #endif
 #if ENABLE_REPLAY_PROTECTION
     if (!addReplayMetadata(payload)) {
@@ -558,79 +592,246 @@ void sendScheduleReply(const char* event) {
     }
 }
 
+void publishStatusReport(int replyTo = 0, int id = 0,
+                         const ScheduleEngine::Result* result = nullptr);
+
+ScheduleEngine::Result invalidSchedule(const char* message) {
+    return ScheduleEngine::Result{ScheduleEngine::STATUS_INVALID, 0, 0, message};
+}
+
+// Reads one integer field; a missing field takes fallback, -1 marks it required.
+bool readScheduleField(JsonDocument& document, const char* key, long fallback,
+                       long minimum, long maximum, long& value) {
+    JsonVariantConst field = document[key];
+    if (field.isNull()) {
+        value = fallback;
+        return fallback >= 0;
+    }
+    if (!field.is<long>()) {
+        return false;
+    }
+    value = field.as<long>();
+    return value >= minimum && value <= maximum;
+}
+
+bool parseScheduleEntry(JsonDocument& document, schedule::Entry& entry,
+                        ScheduleEngine::Result& error) {
+    long hour, minute, weekday, portMask, portState, autoOff;
+    if (!readScheduleField(document, "ho", -1, 0, 23, hour) ||
+        !readScheduleField(document, "mi", -1, 0, 59, minute)) {
+        error = invalidSchedule("ho (0-23) and mi (0-59) are required");
+        return false;
+    }
+    if (!readScheduleField(document, "we", -1, 0, 127, weekday)) {
+        error = invalidSchedule("we bitmask (0-127, 0 = once) is required");
+        return false;
+    }
+    if (!readScheduleField(document, "po", SCHEDULE_ALLOWED_PORT_MASK, 1, 255, portMask) ||
+        !readScheduleField(document, "pos", -1, 0, 255, portState)) {
+        error = invalidSchedule("pos (0-255) is required; po must be 1-255");
+        return false;
+    }
+    if (!readScheduleField(document, "au", 0, 0, 65535, autoOff)) {
+        error = invalidSchedule("au must be 0-65535 seconds");
+        return false;
+    }
+
+    entry = {};
+    entry.hour = static_cast<uint8_t>(hour);
+    entry.minute = static_cast<uint8_t>(minute);
+    entry.weekday = static_cast<uint8_t>(weekday);
+    entry.portMask = static_cast<uint8_t>(portMask);
+    entry.portState = static_cast<uint8_t>(portState);
+    entry.autoOff = static_cast<uint16_t>(autoOff);
+    entry.flags = (document["en"].is<bool>() ? document["en"].as<bool>() : (document["en"] | 1) != 0) ? schedule::kFlagEnabled : 0;
+
+    if (entry.weekday == schedule::kWeekdayOnce) {
+        long year, month, day;
+        if (!readScheduleField(document, "ye", -1, 2024, 2149, year) ||
+            !readScheduleField(document, "mo", -1, 1, 12, month) ||
+            !readScheduleField(document, "da", -1, 1, 31, day) ||
+            !schedule::isValidDate(year, month, day)) {
+            error = invalidSchedule("once schedule (we 0) needs a valid ye/mo/da");
+            return false;
+        }
+        entry.day = static_cast<uint16_t>(schedule::daysFromCivil(year, month, day));
+    }
+    return true;
+}
+
+// Schedule commands (spec_v1.txt §4), numeric "com" and short fields:
+//   {"com":8,"id":1,"ho":7,"mi":30,"we":31,"po":1,"pos":1,"au":600}  add
+//   {"com":9,...same fields...} update, {"com":10,"id":1} delete,
+//   {"com":11,"id":1,"value":1|0} enable/disable, {"com":12} clear,
+//   {"com":13,"fr":1} list (one page, see ScheduleEngine::listJson).
+// Optional: "en":0 (saved disabled), "ye"/"mo"/"da" for a once schedule (we 0).
+// Every command except list is answered with the status report (rc/rs/id).
+// All commands are idempotent, so a QoS 1 redelivery is safe.
+bool handleScheduleEngineCommand(JsonDocument& document) {
+    const int com = document["com"] | 0;
+    if (com < COMMAND_TYPE_SCHEDULE_ADD || com > COMMAND_TYPE_SCHEDULE_LIST) {
+        return false;
+    }
+    if (com == COMMAND_TYPE_SCHEDULE_LIST) {
+        long firstId = 1;
+        if (!readScheduleField(document, "fr", 1, 1, SCHEDULE_MAX_COUNT, firstId)) {
+            firstId = 1;
+        }
+        const String payload = ScheduleEngine::listJson(static_cast<uint8_t>(firstId));
+        if (payload.length() > 0) {
+            (void)publishPayload(payload);
+        }
+        return true;
+    }
+
+    ScheduleEngine::Result result;
+    long id = 0;
+    if (com == COMMAND_TYPE_SCHEDULE_CLEAR) {
+        result = ScheduleEngine::clear();
+    } else {
+        if (!readScheduleField(document, "id", -1, 1, SCHEDULE_MAX_COUNT, id)) {
+            id = 0;  // ScheduleEngine rejects id 0.
+        }
+        const uint8_t scheduleId = static_cast<uint8_t>(id);
+        if (com == COMMAND_TYPE_SCHEDULE_ADD || com == COMMAND_TYPE_SCHEDULE_UPDATE) {
+            schedule::Entry entry;
+            if (parseScheduleEntry(document, entry, result)) {
+                result = com == COMMAND_TYPE_SCHEDULE_ADD ? ScheduleEngine::add(scheduleId, entry)
+                                                          : ScheduleEngine::update(scheduleId, entry);
+            }
+        } else if (com == COMMAND_TYPE_SCHEDULE_DELETE) {
+            result = ScheduleEngine::remove(scheduleId);
+        } else {
+            long enabled = 0;
+            result = readScheduleField(document, "value", -1, 0, 1, enabled)
+                ? ScheduleEngine::setEnabled(scheduleId, enabled == 1)
+                : invalidSchedule("value must be 1 (enable) or 0 (disable)");
+        }
+    }
+    if (result.status != ScheduleEngine::STATUS_SUCCESS) {
+        DEVICE_LOG_INFO(String("[Schedule] com:") + String(com) + " id=" + String(id) + " " + result.message);
+    }
+    publishStatusReport(com, static_cast<int>(id), &result);
+    return true;
+}
+
+// {"com":5,"value":N}: auto OFF on-timer, independent of schedules, N seconds
+// (1-86400, 0 = off); without "value" only reports. Answered with the status
+// report ("tim" = the value in force).
+bool handleOnTimerCommand(JsonDocument& document) {
+    if ((document["com"] | 0) != COMMAND_TYPE_ON_TIMER) {
+        return false;
+    }
+    ScheduleEngine::Result result{ScheduleEngine::STATUS_SUCCESS, 0, 0, "On-timer"};
+    long seconds = 0;
+    if (!document["value"].isNull() &&
+        (!readScheduleField(document, "value", -1, 0, on_timer::kMaxSeconds, seconds) ||
+         !OnTimer::set(static_cast<uint32_t>(seconds)))) {
+        result = invalidSchedule("value must be 0 (off) or 1-86400 seconds");
+        DEVICE_LOG_INFO(String("[OnTimer] ") + result.message);
+    }
+    publishStatusReport(COMMAND_TYPE_ON_TIMER, 0, &result);
+    return true;
+}
+
+// {"com":4,"value":N}: switch the ports on after N seconds (1-86400), once,
+// independent of schedules; value 0 cancels, no value only reports. Optional
+// "mask" (default: every output). Lost on reboot. Reply:
+// {"cmd":"COUNTDOWN_ACK","status":..,"remain":<s left, 0 = idle>,"mask":..,"sec":<last N>,"message":..}
+bool handleCountdownCommand(JsonDocument& document) {
+    if ((document["com"] | 0) != COMMAND_TYPE_COUNTDOWN) {
+        return false;
+    }
+    ScheduleEngine::Status status = ScheduleEngine::STATUS_SUCCESS;
+    const char* message = "Countdown";
+    long seconds = 0;
+    long mask = 0;
+    if (document["value"].isNull()) {
+        // Status request only.
+    } else if (!readScheduleField(document, "value", -1, 0, countdown::kMaxSeconds, seconds) ||
+               !readScheduleField(document, "mask", SCHEDULE_ALLOWED_PORT_MASK, 1, 255, mask) ||
+               (mask & ~SCHEDULE_ALLOWED_PORT_MASK) != 0) {
+        status = ScheduleEngine::STATUS_INVALID;
+        message = "value must be 0 (cancel) or 1-86400 s; mask must only contain output ports";
+    } else if (seconds == 0) {
+        Countdown::cancel();
+        message = "Countdown cancelled";
+    } else if (Countdown::start(static_cast<uint32_t>(seconds), static_cast<uint8_t>(mask))) {
+        message = "Countdown started";
+    } else {
+        status = ScheduleEngine::STATUS_NOT_READY;
+        message = "countdown not ready";
+    }
+    StaticJsonDocument<256> response;
+    response["cmd"] = "COUNTDOWN_ACK";
+    response["status"] = ScheduleEngine::statusName(status);
+    response["remain"] = Countdown::remaining();
+    response["mask"] = Countdown::mask();
+    response["sec"] = Countdown::lastSeconds();
+    response["message"] = message;
+    String payload;
+    serializeJson(response, payload);
+    DEVICE_LOG_INFO(String("[Countdown] ") + payload);
+    (void)publishPayload(payload);
+    return true;
+}
+
+// {"cmd":"STATUS_GET"} and the replies to com:5 / com:8-12:
+// {"se":..,"va":..,"co":..,"set":["8,20,1,4,5",...],"tim":1800,"cd":0,"ip":".."}:
+// the periodic status message plus every active schedule as its 6-byte record
+// "hour,minute,weekday,port_state,auto_off", ordered by time, the on-timer
+// in seconds (0 = off), the countdown seconds left (0 = idle) and the LAN IP.
+// A command reply adds "rc" (the com answered), "rs" (result: 0 ok,
+// 1 conflict, 2 invalid, 3 not found, 4 id exists, 5 not ready), "id" (the
+// schedule) and on conflict "ci"/"cp" (conflicting schedule id / ports). RAM only.
+void publishStatusReport(int replyTo, int id, const ScheduleEngine::Result* result) {
+    // Pool, not text size: 20 "set" strings plus their slots need ~1 KB.
+    DynamicJsonDocument report(MQTT_PAYLOAD_SIZE + 512);
+    if (deserializeJson(report, getInfoDevice(sensorValue, statusDevice)) || !report.is<JsonObject>()) {
+        report.clear();
+    }
+    ScheduleEngine::addSettings(report.createNestedArray("set"));
+    report["tim"] = OnTimer::seconds();
+    report["cd"] = Countdown::remaining();
+    // LAN address, so web_manager can reach the device without the broker.
+    report["ip"] = WiFi.localIP().toString();
+    if (replyTo != 0) {
+        report["rc"] = replyTo;
+        report["rs"] = static_cast<int>(result != nullptr ? result->status : ScheduleEngine::STATUS_SUCCESS);
+        if (id > 0) {
+            report["id"] = id;
+        }
+        if (result != nullptr && result->status == ScheduleEngine::STATUS_CONFLICT) {
+            report["ci"] = result->conflictId;
+            report["cp"] = result->conflictPorts;
+        }
+    }
+    String payload;
+    if (report.overflowed() || serializeJson(report, payload) == 0) {
+        DEVICE_LOG_WARNING("[Status] STATUS report does not fit its buffer");
+        return;
+    }
+    (void)publishPayload(payload);
+}
+
+// STATUS_GET, SCHEDULE_* and the legacy schedule.* commands of the removed
+// pump scheduler.
 bool handleScheduleCommand(JsonDocument& document) {
     const char* command = document["cmd"] | "";
+    if (strcmp(command, "STATUS_GET") == 0) {
+        publishStatusReport();
+        return true;
+    }
     if (strcmp(command, "schedule.status") == 0) {
         sendScheduleReply("schedule.status");
         return true;
     }
-
-    const int slot = document["id"] | -1;
-    if (strcmp(command, "schedule.clear") == 0) {
-        sendScheduleReply(slot >= 0 && slot < SYSTEM_TASK_SCHEDULE_MAX_RULES &&
-                SystemTask::clearSchedule(static_cast<uint8_t>(slot))
-            ? "schedule.cleared" : "schedule.error");
-        return true;
-    }
-    if (strcmp(command, "schedule.set") != 0) {
-        return false;
-    }
-
-    // The schedule has no port/GPIO field: it is permanently bound to the pump.
-    if (document.containsKey("port") || slot < 0 ||
-        slot >= SYSTEM_TASK_SCHEDULE_MAX_RULES) {
+    if (strcmp(command, "schedule.set") == 0 || strcmp(command, "schedule.clear") == 0) {
+        DEVICE_LOG_WARNING("[Schedule] Legacy schedule.* command rejected; use SCHEDULE_*");
         sendScheduleReply("schedule.error");
         return true;
     }
-    const char* period = document["period"] | "";
-    const char* action = document["action"] | "";
-    const int hour = document["hour"] | -1;
-    const int minute = document["minute"] | -1;
-    if (hour < 0 || hour > 23 || minute < 0 || minute > 59 ||
-        (strcmp(action, "on") != 0 && strcmp(action, "off") != 0)) {
-        sendScheduleReply("schedule.error");
-        return true;
-    }
-
-    SystemControlSchedule rule = {};
-    rule.enabled = 1;
-    rule.hour = static_cast<uint8_t>(hour);
-    rule.minute = static_cast<uint8_t>(minute);
-    rule.turnOn = strcmp(action, "on") == 0 ? 1 : 0;
-    if (strcmp(period, "weekly") == 0) {
-        const int weekday = document["weekday"] | -1;
-        if (weekday < 0 || weekday > 6) {
-            sendScheduleReply("schedule.error");
-            return true;
-        }
-        rule.period = SYSTEM_SCHEDULE_WEEKLY;
-        rule.weekday = static_cast<uint8_t>(weekday);
-    } else if (strcmp(period, "monthly") == 0) {
-        const int day = document["day"] | -1;
-        if (day < 1 || day > 31) {
-            sendScheduleReply("schedule.error");
-            return true;
-        }
-        rule.period = SYSTEM_SCHEDULE_MONTHLY;
-        rule.day = static_cast<uint8_t>(day);
-    } else if (strcmp(period, "yearly") == 0) {
-        const int month = document["month"] | -1;
-        const int day = document["day"] | -1;
-        if (month < 1 || month > 12 || day < 1 || day > 31) {
-            sendScheduleReply("schedule.error");
-            return true;
-        }
-        rule.period = SYSTEM_SCHEDULE_YEARLY;
-        rule.month = static_cast<uint8_t>(month);
-        rule.day = static_cast<uint8_t>(day);
-    } else {
-        sendScheduleReply("schedule.error");
-        return true;
-    }
-
-    sendScheduleReply(SystemTask::configureSchedule(static_cast<uint8_t>(slot), rule)
-        ? "schedule.saved" : "schedule.error");
-    return true;
+    return handleScheduleEngineCommand(document);
 }
 
 void mqttCallback(char* topic, byte* data, unsigned int length) {
@@ -660,7 +861,8 @@ void mqttCallback(char* topic, byte* data, unsigned int length) {
     }
 #endif
 
-    if (handleScheduleCommand(document)) {
+    if (handleScheduleCommand(document) || handleOnTimerCommand(document) ||
+        handleCountdownCommand(document)) {
         return;
     }
 
@@ -691,9 +893,18 @@ void mqttCallback(char* topic, byte* data, unsigned int length) {
         return;
     }
 
+    // Optional "mask": only these outputs change (and get direct-control
+    // priority). Without it, value sets every output as before.
+    const int commandMask = document["mask"] | 0;
+    if (commandMask < 0 || commandMask > 0xFF) {
+        DEVICE_LOG_WARNING("[MQTT] Rejected out-of-range control mask");
+        return;
+    }
+
     pendingCommand.commandType = commandType;
     pendingCommand.commandValue = static_cast<uint8_t>(commandValue);
     pendingCommand.reserved = COMMAND_RESERVED_CONTROL;
+    pendingCommand.portMask = static_cast<uint8_t>(commandMask);
 #if SUPPORT_RTOS
     if (deviceCommandQueue == nullptr ||
         xQueueSend(deviceCommandQueue, &pendingCommand, 0) != pdTRUE) {

@@ -70,7 +70,7 @@ Identical to DeviceIOT. Strings are null-terminated; "max" excludes the `'\0'`. 
 | 2 | 32 | SSID | always |
 | 35 | 63 | Wi-Fi password | always |
 | 99 | 15 | Firmware version (OTA) | always |
-| 115 | 112 B | Pump schedules (`StoredSchedules`, 104 B) | always |
+| 115 | 112 B | Reserved (former pump schedules, no longer read) | always |
 | 227 | 447 | Compact MQTT settings JSON | always |
 | 675 | 703 | CA PEM (`ca.crt`, 611 B) | TLS/mTLS |
 | 1379 | 767 | Client certificate PEM (~630 B) | mTLS |
@@ -78,7 +78,8 @@ Identical to DeviceIOT. Strings are null-terminated; "max" excludes the `'\0'`. 
 | 2403 | 32 | HMAC `keyId` (key in `mqtt_message_auth.json`) | HMAC |
 | 2436 | 64 | HMAC secret | HMAC |
 | 2501 | 10 × 33 | Ascon key table, 32 hex chars per key | Ascon |
+| 2831 | 4 + 20 × 6 + 20 × 5 | Local schedules (`ScheduleEngine`, see `Schedule.md`) | always |
 
-`EEPROM_SIZE` is 1379 B with TLS only, **2403 B with mTLS (default)**, 2501 B with HMAC and 2831 B with Ascon; the build fails with `#error` above 3072 B. Every configuration now fits the 4 KB sector of the NON-OS core, so mTLS, HMAC and Ascon work there too.
+`EEPROM_SIZE` is always **3055 B**: the schedule region sits after the Ascon table so that no address moves, which reserves the HMAC/Ascon regions even when those features are off. The build fails with `#error` above 3072 B. This fits the 4 KB sector of the NON-OS core. Growing `EEPROM_SIZE` keeps the stored configuration; the schedule region is formatted on first boot.
 
 `/setup` stores only `mqtt_host`, `mqtt_port`, `mqtt_client`, `mqtt_user`, `mqtt_pwd`, `public_topic` and `subcribe_topic`, and answers 400 if that JSON exceeds 447 B. All addresses changed from earlier layouts (the schedules used to overlap the settings JSON at 700), so re-provision Wi-Fi, MQTT settings, certificates and keys.

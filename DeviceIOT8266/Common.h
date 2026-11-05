@@ -22,8 +22,10 @@ struct InfoDeviceControl {
 
 struct DeviceCommand {
     uint8_t commandType;
-    uint8_t commandValue;
+    uint8_t commandValue;     // Port state bits.
     uint16_t reserved;
+    uint8_t portMask;         // Ports this command changes; 0 = all (legacy com:1).
+    uint16_t autoOffSeconds;  // Schedule commands only; 0 = no auto OFF.
 };
 
 struct ProcessTimeData {

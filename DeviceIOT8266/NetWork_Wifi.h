@@ -19,6 +19,9 @@ public:
     static void handleSetUp();
     static void handleSetUpWifi();
     static void handleControl();
+#if ENABLE_LAN_CONTROL
+    static void handleLan();
+#endif
     static void handleUpdate();
     static void handleLoraGet();
     static void handleLoraPost();

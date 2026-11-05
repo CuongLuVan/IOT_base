@@ -33,7 +33,7 @@ extern NetWork_RF netWork_RF;
 extern String lastLoraPayload;
 
 uint32_t      ip_address[4] ={192,168,0,1};             // 544
-WebServer *webServer;
+WebServer *webServer = nullptr;
 StaticJsonDocument<512> jsonBuffer;
 
 static  String ssid;                        //string variable to store ssid
@@ -277,6 +277,7 @@ void NetWork_Wifi::handleControl(){
    
     cmd.commandType = webServer->arg("com").toInt();
     cmd.commandValue = webServer->arg("value").toInt();
+    cmd.portMask = 0; // Whole byte, as before; cmd is shared with MQTT.
    
     if(cmd.commandType == COMMAND_TYPE_OTHER) {
         cmd.reserved = COMMAND_RESERVED_NONE;
@@ -332,12 +333,62 @@ void NetWork_Wifi::handleLoraPost(){
     webServer->send(200, "application/json", payload);
 }
 
+#if ENABLE_LAN_CONTROL
+static void sendLanError(int status, const char* message)
+{
+    String payload = "{\"ip\":\"" + WiFi.localIP().toString() + "\",\"error\":\"" + message + "\",\"data\":[]}";
+    webServer->send(status, "application/json", payload);
+}
+
+// POST LAN_CONTROL_PATH {"data":<MQTT command object or JSON string>}
+// -> {"ip":"...","data":[replies]}; 422 when the command gave no reply.
+void NetWork_Wifi::handleLan()
+{
+    const String body = webServer->arg("plain");
+    if (body.length() == 0 || body.length() > LAN_REQUEST_MAX_LENGTH) {
+        sendLanError(400, "body must be a JSON object {data: command} within the MQTT packet size");
+        return;
+    }
+    DynamicJsonDocument request(body.length() + MQTT_JSON_DOC_SIZE);
+    if (deserializeJson(request, body) || !request.is<JsonObject>()) {
+        sendLanError(400, "invalid JSON");
+        return;
+    }
+    JsonVariantConst data = request["data"];
+    String command;
+    if (data.is<const char*>()) {
+        command = data.as<const char*>();
+    } else if (data.is<JsonObjectConst>()) {
+        serializeJson(data, command);
+    }
+    if (command.length() == 0) {
+        sendLanError(400, "data must be an MQTT command");
+        return;
+    }
+    const String replies = handleLanCommand(command.c_str(), command.length());
+    if (replies.length() <= 2) {
+        sendLanError(422, "command rejected or unknown");
+        return;
+    }
+    webServer->send(200, "application/json",
+                    "{\"ip\":\"" + WiFi.localIP().toString() + "\",\"data\":" + replies + "}");
+}
+#endif
+
 void NetWork_Wifi::startWebServer()
 {
     DEVICE_LOG_INFO("start NetWork_Wifi::startWebServer");
+    // Called again on every reconnect: free the old server and its port.
+    if (webServer != nullptr) {
+        webServer->close();
+        delete webServer;
+    }
     webServer = new class WebServer(WIFI_HTTP_PORT);
     webServer->enableCORS(true);
     webServer->on("/control", this->handleControl);
+#if ENABLE_LAN_CONTROL
+    webServer->on(LAN_CONTROL_PATH, HTTP_POST, this->handleLan);
+#endif
     webServer->on("/update", this->handleUpdate);
     webServer->on("/lora", HTTP_GET, this->handleLoraGet);
     webServer->on("/lora", HTTP_POST, this->handleLoraPost);
@@ -663,7 +714,9 @@ void NetWork_Wifi::handerHospost(){
 }
 
 void NetWork_Wifi::handerClient(){
-     webServer->handleClient();
+     if (webServer != nullptr) {
+         webServer->handleClient();
+     }
 }
 
 void NetWork_Wifi::startSmartConfig(){

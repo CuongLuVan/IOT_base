@@ -171,8 +171,9 @@ bool Memory::writeBytes(int address, const uint8_t* value, int length) {
     for (int index = 0; index < length; ++index) {
         EEPROM.write(address + index, value[index]);
     }
-    EEPROM.commit();
-    return true;
+    // Unchanged bytes do not mark the buffer dirty, and a clean commit() does
+    // not touch the flash sector.
+    return EEPROM.commit();
 }
 
 bool Memory::readBytes(int address, uint8_t* value, int length) {

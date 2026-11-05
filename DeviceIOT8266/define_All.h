@@ -65,23 +65,45 @@
 #define COMMAND_TYPE_CONTROL 0x01
 #define COMMAND_TYPE_OTHER 0x02
 #define COMMAND_TYPE_SCHEDULE_CONTROL 0x03
+// {"com":4,"value":N}: count down N seconds (1..86400), then switch on; 0 = cancel.
+#define COMMAND_TYPE_COUNTDOWN 0x04
+// Numeric commands (MQTT / LAN), answered with the compact status report
+// plus "rc"/"rs": {"com":5,"value":N} auto OFF on-timer N seconds (0 = off);
+// schedules: 8 add, 9 update, 10 delete, 11 enable/disable (value 1/0),
+// 12 clear, 13 list. 6 and 7 belong to Ascon ({"co":6} / {"com":7}).
+#define COMMAND_TYPE_ON_TIMER 5
+#define COMMAND_TYPE_SCHEDULE_ADD 8
+#define COMMAND_TYPE_SCHEDULE_UPDATE 9
+#define COMMAND_TYPE_SCHEDULE_DELETE 10
+#define COMMAND_TYPE_SCHEDULE_ENABLE 11
+#define COMMAND_TYPE_SCHEDULE_CLEAR 12
+#define COMMAND_TYPE_SCHEDULE_LIST 13
 #define COMMAND_TYPE_ASCON_HANDSHAKE 0x07
 #define COMMAND_RESERVED_NONE 0x00
 #define COMMAND_RESERVED_CONTROL 0x01
 #define DEVICE_OUTPUT_MASK 0x01
 
-// Scheduler rules can only change the single pump output bit.
+// Output bit toggled by the device button (the pump).
 #define SYSTEM_TASK_SCHEDULE_PORT_MASK 0x01
-#define SYSTEM_TASK_SCHEDULE_MAX_RULES 8
+// Schedules (SCHEDULE_*, DeviceIOT/spec_v1.txt) compare local time/date in
+// this timezone. Vietnam: 7 * 3600.
 #define SYSTEM_TASK_TIMEZONE_OFFSET_SECONDS 0
 #if SYSTEM_TASK_SCHEDULE_PORT_MASK != 0x01
-  #error "Schedules must remain limited to the pump output bit (0x01)."
+  #error "The device button is wired to the fixed pump output bit (0x01)."
 #endif
+
+// Local schedules (ScheduleEngine): up to 20, ids 1..SCHEDULE_MAX_COUNT.
+#define SCHEDULE_MAX_COUNT 20
+// Ports a schedule may drive. Only the pump output exists on this board
+// (OUTPUT_DEVICE_1 is disabled), so a port_mask outside it is rejected.
+#define SCHEDULE_ALLOWED_PORT_MASK DEVICE_OUTPUT_MASK
+// After a delayed scheduler cycle, catch up at most this many minutes.
+#define SCHEDULE_CATCHUP_MINUTES 5
 
 // FreeRTOS stack-depth values are intentionally conservative for ESP8266 RAM.
 #define TASK_STACK_SIZE 2048
 #define TASK_NETWORK_STACK_SIZE 4096
-#define TASK_SYSTEM_STACK_SIZE 1536
+#define TASK_SYSTEM_STACK_SIZE 2048  // Schedule evaluation needs ~1 KB of locals.
 #define TASK_CREATE_DELAY_MS 25
 #define TASK_SENSOR_PRIORITY 2
 #define TASK_NETWORK_PRIORITY 2
@@ -128,7 +150,7 @@
 // EEPROM layout (identical to DeviceIOT). Strings are null-terminated and
 // *_MAX_LENGTH excludes the '\0'. EEPROM keeps a RAM copy of the whole area,
 // so EEPROM_SIZE ends at the last enabled region. Every configuration stays
-// below 3 KB (2831 B with everything enabled), inside the 4 KB sector of the
+// below 3 KB (3063 B including the schedule, on-timer and countdown regions), inside the 4 KB sector of the
 // NON-OS core.
 #define MODE_WIFI_ADRESS 1
 #define WIFI_SSSID 2
@@ -137,7 +159,8 @@
 #define WIFI_PASS_MAX_LENGTH 63
 #define VERSJON_SETUP_JSON (WIFI_PASS + WIFI_PASS_MAX_LENGTH + 1)
 #define VERSJON_MAX_LENGTH 15
-// Binary StoredSchedules record of SystemTask.cpp (104 B).
+// Reserved: former StoredSchedules pump rules, no longer read. Kept so that
+// no later address moves; schedules now live at SCHEDULE_EEPROM_ADDRESS.
 #define SYSTEM_TASK_SCHEDULE_STORAGE_ADDRESS (VERSJON_SETUP_JSON + VERSJON_MAX_LENGTH + 1)
 #define SYSTEM_TASK_SCHEDULE_STORAGE_SIZE 112
 // Compact MQTT settings JSON (only the fields NetWork_Mqtt reads).
@@ -176,16 +199,38 @@
 #define ASCON_PUBLIC_KEY_HEX_LENGTH 32
 #define ASCON_PUBLIC_KEY_ENTRY_LENGTH 33
 #define ASCON_PUBLIC_KEYS_ADDRESS (MESSAGE_AUTH_SECRET_ADDRESS + MESSAGE_AUTH_SECRET_MAX_LENGTH + 1)
+#define ASCON_PUBLIC_KEYS_END (ASCON_PUBLIC_KEYS_ADDRESS + ASCON_PUBLIC_KEY_COUNT * ASCON_PUBLIC_KEY_ENTRY_LENGTH)
 
-#if ENABLE_ASCON_AEAD128
-#define EEPROM_SIZE (ASCON_PUBLIC_KEYS_ADDRESS + ASCON_PUBLIC_KEY_COUNT * ASCON_PUBLIC_KEY_ENTRY_LENGTH)
-#elif ENABLE_MESSAGE_AUTHENTICATION
-#define EEPROM_SIZE ASCON_PUBLIC_KEYS_ADDRESS
-#elif ENABLE_mTLS
-#define EEPROM_SIZE MESSAGE_AUTH_KEY_ID_ADDRESS
-#else
-#define EEPROM_SIZE MTLS_CLIENT_CERT_ADDRESS
-#endif
+// Local schedules, after the last region of the full layout so that no older
+// address moves whichever security features are enabled (same as DeviceIOT).
+//   header   4 B: 'S' 'C' version SCHEDULE_MAX_COUNT
+//   records 20 x 6 B: hour minute weekday port_state auto_off_lo auto_off_hi
+//   meta    20 x 5 B: flags port_mask day_lo day_hi crc8
+#define SCHEDULE_EEPROM_ADDRESS ASCON_PUBLIC_KEYS_END
+#define SCHEDULE_EEPROM_HEADER_SIZE 4
+#define SCHEDULE_EEPROM_VERSION 1
+#define SCHEDULE_RECORD_SIZE 6
+#define SCHEDULE_META_SIZE 5
+#define SCHEDULE_RECORDS_ADDRESS (SCHEDULE_EEPROM_ADDRESS + SCHEDULE_EEPROM_HEADER_SIZE)
+#define SCHEDULE_META_ADDRESS (SCHEDULE_RECORDS_ADDRESS + SCHEDULE_MAX_COUNT * SCHEDULE_RECORD_SIZE)
+#define SCHEDULE_EEPROM_END (SCHEDULE_META_ADDRESS + SCHEDULE_MAX_COUNT * SCHEDULE_META_SIZE)
+
+// Auto OFF on-timer (OnTimer, independent of schedules): 4 B uint32
+// little-endian, seconds 1..86400 (24 h); 0 = off.
+#define ON_TIMER_EEPROM_ADDRESS SCHEDULE_EEPROM_END
+#define ON_TIMER_EEPROM_SIZE 4
+#define ON_TIMER_EEPROM_END (ON_TIMER_EEPROM_ADDRESS + ON_TIMER_EEPROM_SIZE)
+
+// Countdown auto ON (Countdown, independent of schedules): 4 B uint32
+// little-endian, seconds of the last countdown 1..86400. The running
+// countdown lives in RAM only and is lost on power loss.
+#define COUNTDOWN_EEPROM_ADDRESS ON_TIMER_EEPROM_END
+#define COUNTDOWN_EEPROM_SIZE 4
+#define COUNTDOWN_EEPROM_END (COUNTDOWN_EEPROM_ADDRESS + COUNTDOWN_EEPROM_SIZE)
+
+// The EEPROM sector keeps its old bytes when EEPROM_SIZE grows, so the stored
+// configuration survives; the new regions are formatted on first boot.
+#define EEPROM_SIZE COUNTDOWN_EEPROM_END
 
 #if EEPROM_SIZE > 3072
   #error "EEPROM layout exceeds the 3 KB budget."
@@ -220,6 +265,15 @@
 #define MQTT_RECONNECT_DELAY_MS 5000UL
 
 #define WIFI_HTTP_PORT 80
+// LAN control: POST http://<ip>/lan {"data":<MQTT command>} runs the command
+// exactly like an MQTT message (same signature / Ascon checks) and answers
+// {"ip":"...","data":[the replies the device would publish]}. For when the
+// broker or the Internet is down. No separate authentication: enable
+// ENABLE_MESSAGE_AUTHENTICATION on an untrusted LAN.
+#define ENABLE_LAN_CONTROL 1
+#define LAN_CONTROL_PATH "/lan"
+#define LAN_REQUEST_MAX_LENGTH (MQTT_PACKET_SIZE + 64)
+#define LAN_REPLY_MAX_LENGTH 2048
 #define HTTP_STATUS_OK 200
 #define WIFI_RECONNECT_DELAY_MS 10000UL
 #define WIFI_CONFIG_PORTAL_AFTER_MS 120000UL

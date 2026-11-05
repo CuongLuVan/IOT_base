@@ -114,6 +114,9 @@ void startServer(bool setupPortal) {
         webServer->on("/wifi", HTTP_POST, NetWork_Wifi::handleSetUpWifi);
     } else {
         webServer->on("/control", HTTP_POST, NetWork_Wifi::handleControl);
+#if ENABLE_LAN_CONTROL
+        webServer->on(LAN_CONTROL_PATH, HTTP_POST, NetWork_Wifi::handleLan);
+#endif
         webServer->on("/update", HTTP_GET, NetWork_Wifi::handleUpdate);
     }
 #if SUPPORT_LORA
@@ -229,6 +232,13 @@ void NetWork_Wifi::handleSetUpWifi() {
     ESP.restart();
 }
 
+#if ENABLE_LAN_CONTROL
+static void sendLanError(int status, const char* message) {
+    sendJson(status, String(F("{\"ip\":\"")) + WiFi.localIP().toString() +
+                     F("\",\"error\":\"") + message + F("\",\"data\":[]}"));
+}
+#endif
+
 void NetWork_Wifi::handleControl() {
     if (webServer == nullptr || !webServer->hasArg("com") ||
         !webServer->hasArg("value")) {
@@ -295,6 +305,46 @@ void NetWork_Wifi::handleLoraPost() {
     sendJson(503, F("{\"error\":\"LoRa disabled\"}"));
 #endif
 }
+
+#if ENABLE_LAN_CONTROL
+// POST LAN_CONTROL_PATH {"data":<MQTT command object or JSON string>}
+// -> {"ip":"...","data":[replies]}; 422 when the command gave no reply.
+void NetWork_Wifi::handleLan() {
+    if (webServer == nullptr) {
+        return;
+    }
+    const String body = webServer->arg("plain");
+    if (body.length() == 0 || body.length() > LAN_REQUEST_MAX_LENGTH) {
+        sendLanError(400, "body must be a JSON object {data: command} within the MQTT packet size");
+        return;
+    }
+    String command;
+    {
+        DynamicJsonDocument request(body.length() + MQTT_JSON_DOC_SIZE);
+        if (deserializeJson(request, body) || !request.is<JsonObject>()) {
+            sendLanError(400, "invalid JSON");
+            return;
+        }
+        JsonVariantConst data = request["data"];
+        if (data.is<const char*>()) {
+            command = data.as<const char*>();
+        } else if (data.is<JsonObjectConst>()) {
+            serializeJson(data, command);
+        }
+    }
+    if (command.length() == 0) {
+        sendLanError(400, "data must be an MQTT command");
+        return;
+    }
+    const String replies = handleLanCommand(command.c_str(), command.length());
+    if (replies.length() <= 2) {
+        sendLanError(422, "command rejected or unknown");
+        return;
+    }
+    sendJson(HTTP_STATUS_OK, String(F("{\"ip\":\"")) + WiFi.localIP().toString() +
+                             F("\",\"data\":") + replies + F("}"));
+}
+#endif
 
 void NetWork_Wifi::startWebServer() {
     startServer(false);

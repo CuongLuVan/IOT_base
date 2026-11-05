@@ -3,6 +3,12 @@
 #include "DebugInfo.h"
 #include "MemoryData.h"
 #include "PlatformCompat.h"
+#include "ScheduleCore.h"
+#include "ScheduleEngine.h"
+#include "OnTimer.h"
+#include "Countdown.h"
+
+#include <time.h>
 
 #if SUPPORT_RTOS
 extern QueueHandle_t deviceCommandQueue;
@@ -12,6 +18,56 @@ extern QueueHandle_t deviceStatusQueue;
 namespace {
 InfoDeviceControl control = {};
 bool statusDirty = true;
+// Direct control priority and schedule auto OFF (spec_v1 §6), see ScheduleCore.h.
+schedule::PortController portController;
+// Auto OFF on-timer, independent of schedules, see OnTimer.h.
+on_timer::Tracker onTimerTracker;
+constexpr time_t kMinimumValidEpoch = 1704067200;
+
+int64_t validEpochOrZero() {
+    const time_t now = time(nullptr);
+    return now >= kMinimumValidEpoch ? static_cast<int64_t>(now) : 0;
+}
+
+void processAutoOff() {
+    uint8_t switchedOff = 0;
+    const uint8_t nextPort = portController.processAutoOff(
+        control.device_port, validEpochOrZero(), switchedOff);
+    if (switchedOff == 0) {
+        return;
+    }
+    control.device_port = nextPort;
+    control.count_info++;
+    statusDirty = true;
+    DEVICE_LOG_INFO(String("[Device] Auto OFF ports=0x") + String(switchedOff, HEX));
+}
+
+void processOnTimer() {
+    const uint32_t seconds = OnTimer::seconds();
+    const uint8_t expired = onTimerTracker.update(control.device_port, seconds, millis());
+    if (expired == 0) {
+        return;
+    }
+    control.device_port &= static_cast<uint8_t>(~expired);
+    control.count_info++;
+    statusDirty = true;
+    DEVICE_LOG_INFO(String("[Device] On-timer OFF ports=0x") + String(expired, HEX) +
+                    " after " + seconds + " s");
+}
+
+// Countdown auto ON, independent of schedules, see Countdown.h. It acts like
+// a direct command, so it also cancels a pending schedule auto OFF.
+void processCountdown() {
+    const uint8_t ports = Countdown::takeExpired() & DEVICE_OUTPUT_MASK;
+    if (ports == 0) {
+        return;
+    }
+    uint8_t cancelled = 0;
+    control.device_port = portController.applyDirect(control.device_port, ports, ports, cancelled);
+    control.count_info++;
+    statusDirty = true;
+    DEVICE_LOG_INFO(String("[Device] Countdown ON ports=0x") + String(ports, HEX));
+}
 
 #if SUPPORT_RTOS
 SemaphoreHandle_t deviceMutex = nullptr;
@@ -66,7 +122,11 @@ void TaskDevice::readButton() {
             control.button_click++;
             statusDirty = true;
             if (duration >= BUTTON_LONG_PRESS_MS) {
-                control.device_port ^= SYSTEM_TASK_SCHEDULE_PORT_MASK;
+                // Long press is direct control: it also cancels a pending auto OFF.
+                uint8_t cancelled = 0;
+                control.device_port = portController.applyDirect(
+                    control.device_port, SYSTEM_TASK_SCHEDULE_PORT_MASK,
+                    control.device_port ^ SYSTEM_TASK_SCHEDULE_PORT_MASK, cancelled);
                 control.count_info++;
                 statusDirty = true;
             }
@@ -88,24 +148,35 @@ void TaskDevice::applyCommand(const DeviceCommand& command) {
     if (command.reserved != COMMAND_RESERVED_CONTROL) {
         return;
     }
+    uint8_t nextPort = control.device_port;
     if (command.commandType == COMMAND_TYPE_SCHEDULE_CONTROL) {
-        const uint8_t nextPort = command.commandValue != 0
-            ? static_cast<uint8_t>(control.device_port | SYSTEM_TASK_SCHEDULE_PORT_MASK)
-            : static_cast<uint8_t>(control.device_port & ~SYSTEM_TASK_SCHEDULE_PORT_MASK);
-        if (control.device_port == nextPort) {
-            return;
+        nextPort = portController.applySchedule(
+            control.device_port, command.portMask & DEVICE_OUTPUT_MASK,
+            command.commandValue, command.autoOffSeconds, validEpochOrZero());
+    } else if (command.commandType == COMMAND_TYPE_CONTROL) {
+        // com:1 without "mask" keeps its legacy meaning: value sets every output.
+        const uint8_t mask = command.portMask != 0 ? command.portMask : 0xFF;
+        uint8_t cancelled = 0;
+        nextPort = portController.applyDirect(
+            control.device_port, mask & DEVICE_OUTPUT_MASK, command.commandValue, cancelled);
+        if (cancelled != 0) {
+            DEVICE_LOG_INFO(String("[Device] Direct control cancels auto OFF, ports=0x") +
+                            String(cancelled, HEX));
         }
-        control.device_port = nextPort;
-        control.count_info++;
-        statusDirty = true;
+    } else {
         return;
     }
-    if (command.commandType == COMMAND_TYPE_CONTROL &&
-        control.device_port != command.commandValue) {
-        control.device_port = command.commandValue & DEVICE_OUTPUT_MASK;
-        control.count_info++;
-        statusDirty = true;
+    DEVICE_LOG_DEBUG(String("[Device] Command type=") + command.commandType +
+                     " mask=0x" + String(command.portMask, HEX) +
+                     " value=0x" + String(command.commandValue, HEX) +
+                     " auto_off=" + command.autoOffSeconds +
+                     " -> port=0x" + String(nextPort, HEX));
+    if (control.device_port == nextPort) {
+        return;
     }
+    control.device_port = nextPort;
+    control.count_info++;
+    statusDirty = true;
 }
 
 void TaskDevice::publishStatus() {
@@ -150,6 +221,12 @@ void TaskDevice::taskRun(void* parameter) {
         }
 #endif
 
+        // Schedule commands first, so a direct command of the same cycle wins.
+        DeviceCommand scheduled = {};
+        while (ScheduleEngine::receiveDeviceCommand(scheduled)) {
+            applyCommand(scheduled);
+        }
+
 #if SUPPORT_RTOS
         if (deviceCommandQueue != nullptr) {
             DeviceCommand command = {};
@@ -165,6 +242,9 @@ void TaskDevice::taskRun(void* parameter) {
         }
 #endif
 
+        processCountdown();
+        processAutoOff();
+        processOnTimer();
         readButton();
         controlOutputs();
         if (statusDirty || control.device_port != control.device_port_last) {
