@@ -24,10 +24,10 @@ priority and auto OFF.
 
 Schedules are stored in EEPROM (`SCHEDULE_EEPROM_ADDRESS`, up to 20) and
 configured with the schedule MQTT commands (`com` 8..13) described in `Schedule.md`.
-The former NVS pump rules (`schedule.set` / `schedule.clear`,
-`systemtask/rules_v1`) are no longer used; those commands now reply
-`schedule.error`.  `{"cmd":"schedule.status"}` still returns the scheduler
-status.
+The former NVS pump rules (`systemtask/rules_v1`) are no longer used.  The
+string commands `{"cmd":"schedule.*"}` were removed together with every
+other `"cmd"` command: the device ignores them.  Schedule state is read with
+`{"com":2}` (status report, `set`) and `{"com":13}` (schedule list).
 
 ## Telemetry and realtime constraints
 

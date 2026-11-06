@@ -1,6 +1,5 @@
 const mqttService = require('./mqttService.js');
 const deviceStatus = require('./deviceStatusService.js');
-const lan = require('./deviceLanService.js');
 
 /**
  * Lịch cục bộ của thiết bị (DeviceIOT / DeviceIOT8266, docs/Schedule.md).
@@ -13,9 +12,8 @@ const lan = require('./deviceLanService.js');
  *   {"com":5,"value":n} (0 = tắt) / {"com":5} -> bản tin trạng thái + "rc":5, "tim"
  * Đếm ngược tự bật (một lần, chỉ trong RAM của thiết bị):
  *   {"com":4,"value":n,"mask":m} (0 = hủy, không value = đọc)
- *                                                  -> {"cmd":"COUNTDOWN_ACK","remain":n,"mask":m,"sec":n}
- * mode ('auto' | 'mqtt' | 'lan'): đường gửi, xem deviceStatusService.route().
- * Qua LAN thiết bị trả lời ngay trong HTTP; bản tin được phát lại như tin MQTT.
+ *                                -> bản tin trạng thái + "rc":4,"rs","cd" (còn lại),"cm" (cổng),"cs" (n gần nhất)
+ * Chỉ qua MQTT; điều khiển LAN do trình duyệt gửi thẳng tới thiết bị.
  */
 const REPLY_TIMEOUT_MS = 8000;
 const COMMAND_SCHEDULE_LIST = 13;
@@ -33,10 +31,7 @@ const MAX_LIST_PAGES = 3;
 
 const waiters = new Set();
 
-mqttService.on('message', resolveWaiters);
-lan.on('message', resolveWaiters);
-
-function resolveWaiters(item) {
+mqttService.on('message', (item) => {
   if (!waiters.size) return;
   let data;
   try {
@@ -52,7 +47,7 @@ function resolveWaiters(item) {
       waiter.resolve(data);
     }
   });
-}
+});
 
 function waitForReply(topic, match) {
   const waiter = { topic, match };
@@ -71,16 +66,25 @@ function waitForReply(topic, match) {
 }
 
 // The waiter is registered before publishing so a fast reply is not missed.
-async function request(device, command, match, mode) {
-  const waiter = waitForReply(device.mqtt_pub, match);
+// A wrong-password reply ({"rc":<com>,"rs":6}) ends the wait with an error.
+async function request(device, command, match) {
+  const com = command.com || 0;
+  const waiter = waitForReply(device.mqtt_pub, (data) =>
+    (deviceStatus.isPasswordRejection(data) && data.rc === com) || match(data));
   try {
-    await deviceStatus.sendCommand(device, command, mode);
+    await deviceStatus.publishCommand(device, command);
   } catch (error) {
     clearTimeout(waiter.timer);
     waiters.delete(waiter);
     throw error;
   }
-  return waiter.promise;
+  const reply = await waiter.promise;
+  if (deviceStatus.isPasswordRejection(reply) && reply.rc === com) {
+    const error = new Error(deviceStatus.PASSWORD_ERROR);
+    error.status = 403;
+    throw error;
+  }
+  return reply;
 }
 
 // Row of {"com":13}: id,ho,mi,we,po,pos,au,en,dn,date.
@@ -109,13 +113,13 @@ function toResult(reply) {
   };
 }
 
-async function list(device, mode) {
+async function list(device) {
   const schedules = [];
   let from = 1;
   let reply = null;
   for (let page = 0; page < MAX_LIST_PAGES; page++) {
     reply = await request(device, { com: COMMAND_SCHEDULE_LIST, fr: from },
-      (data) => data.rc === COMMAND_SCHEDULE_LIST && Array.isArray(data.it), mode);
+      (data) => data.rc === COMMAND_SCHEDULE_LIST && Array.isArray(data.it));
     reply.it.forEach((row) => {
       if (Array.isArray(row) && row.length >= 9) schedules.push(toSchedule(row));
     });
@@ -131,18 +135,18 @@ async function list(device, mode) {
 }
 
 // command: {com:8..12, ...}; the reply carries "rc" = com and "id" (absent for 12).
-async function send(device, command, mode) {
+async function send(device, command) {
   const id = command.id || 0;
   const reply = await request(device, command, (data) =>
-    data.rc === command.com && Number.isInteger(data.rs) && (Number(data.id) || 0) === id, mode);
+    data.rc === command.com && Number.isInteger(data.rs) && (Number(data.id) || 0) === id);
   return toResult(reply);
 }
 
 // command is {com:5} (read) or {com:5, value}; seconds is the device's value
 // after the command ("tim" of the reply).
-async function onTimer(device, command, mode) {
+async function onTimer(device, command) {
   const reply = await request(device, command, (data) =>
-    data.rc === command.com && Number.isInteger(data.rs), mode);
+    data.rc === command.com && Number.isInteger(data.rs));
   const result = toResult(reply);
   return {
     status: result.status,
@@ -152,15 +156,32 @@ async function onTimer(device, command, mode) {
 }
 
 // command is {com:4} (read), {com:4, value:0} (cancel) or {com:4, value, mask}.
-async function countdown(device, command, mode) {
-  const ack = await request(device, command, (data) => data.cmd === 'COUNTDOWN_ACK', mode);
+async function countdown(device, command) {
+  const reply = await request(device, command, (data) =>
+    data.rc === command.com && Number.isInteger(data.rs));
+  const result = toResult(reply);
   return {
-    status: ack.status,
-    message: ack.message,
-    remaining: Number.isInteger(ack.remain) ? ack.remain : null,
-    mask: Number.isInteger(ack.mask) ? ack.mask : 0,
-    seconds: Number.isInteger(ack.sec) ? ack.sec : null,
+    status: result.status,
+    message: result.status === 'INVALID'
+      ? 'thời gian phải từ 1 giây đến 24 giờ, cổng phải là cổng ra của thiết bị'
+      : result.status === 'NOT_READY' ? 'bộ đếm ngược chưa sẵn sàng' : result.message,
+    remaining: Number.isInteger(reply.cd) ? reply.cd : null,
+    mask: Number.isInteger(reply.cm) ? reply.cm : 0,
+    seconds: Number.isInteger(reply.cs) ? reply.cs : null,
   };
 }
 
-module.exports = { list, send, onTimer, countdown };
+// command is {com:14} (read), {com:14,id} or {com:14,id,value}; thresholds is
+// "th" of the reply (both rules).
+async function threshold(device, command) {
+  const reply = await request(device, command, (data) =>
+    data.rc === command.com && Number.isInteger(data.rs));
+  const result = toResult(reply);
+  return {
+    status: result.status,
+    message: result.status === 'INVALID' ? 'cài đặt ngưỡng không hợp lệ (sensor, kênh hoặc cờ)' : result.message,
+    thresholds: Array.isArray(reply.th) ? reply.th : null,
+  };
+}
+
+module.exports = { list, send, onTimer, countdown, threshold };

@@ -49,15 +49,22 @@
 #define ASCON_PUBLIC_KEY_HEX_LENGTH 32
 #define ASCON_PUBLIC_KEY_ENTRY_LENGTH 33
 
+// Mọi lệnh MQTT / LAN là {"com":<số>,...}; mọi trả lời mang "rc" (com được
+// trả lời) và "rs" (kết quả: 0 ok, 1 xung đột, 2 không hợp lệ, 3 không có,
+// 4 id đã có, 5 chưa sẵn sàng, 6 sai mật khẩu, 7 đang bận). Không còn lệnh / trả lời dạng "cmd".
+// {"com":1,"value":<bitmask>[,"mask"]}: điều khiển cổng -> trạng thái ngắn + "rc":1.
 #define COMMAND_TYPE_CONTROL      0x01
+// {"com":2}: đọc trạng thái đầy đủ (thay {"cmd":"STATUS_GET"}) -> bản tin trạng thái + "rc":2.
 #define COMMAND_TYPE_OTHER        0x02
+#define COMMAND_TYPE_STATUS       COMMAND_TYPE_OTHER
 #define COMMAND_TYPE_SCHEDULE_CONTROL 0x03
 // {"com":4,"value":N}: đếm ngược N giây (1..86400) rồi bật cổng; 0 = hủy.
+// Trả lời: bản tin trạng thái + "rc":4, "cd" (giây còn lại), "cm" (cổng), "cs" (N gần nhất).
 #define COMMAND_TYPE_COUNTDOWN    0x04
 // Lệnh số (MQTT / LAN), trả lời bằng bản tin trạng thái rút gọn + "rc"/"rs":
 // {"com":5,"value":N} hẹn giờ tự tắt N giây (0 = tắt); lịch: 8 thêm, 9 sửa,
 // 10 xóa, 11 bật/tắt (value 1/0), 12 xóa hết, 13 đọc danh sách.
-// 6 và 7 dành cho Ascon ({"co":6} / {"com":7}).
+// 7 dành cho Ascon ({"com":7} -> {"rc":7,"rs":0,"ky":"<chữ số chọn khóa>"}).
 #define COMMAND_TYPE_ON_TIMER         5
 #define COMMAND_TYPE_SCHEDULE_ADD     8
 #define COMMAND_TYPE_SCHEDULE_UPDATE  9
@@ -65,7 +72,15 @@
 #define COMMAND_TYPE_SCHEDULE_ENABLE  11
 #define COMMAND_TYPE_SCHEDULE_CLEAR   12
 #define COMMAND_TYPE_SCHEDULE_LIST    13
+// {"com":14,"id":1|2,"value":N}: điều khiển theo ngưỡng sensor (ThresholdControl.h).
+#define COMMAND_TYPE_THRESHOLD        14
+// Số sensor trong "va" mà ngưỡng dùng được: độ ẩm, nhiệt độ, bụi, PM2.5, PM10, PM1.
+#define THRESHOLD_SENSOR_COUNT        6
 #define COMMAND_TYPE_ASCON_HANDSHAKE  0x07
+// {"com":15,"value":<ms>,"mode":1..4,"udp_host":"..","udp_port":n}: thu mẫu tốc
+// độ cao (thay {"cmd":"capture.*"}); value 0 = dừng, không value = đọc trạng thái.
+// mode: 1 ADC 10 kHz, 2 IMU 32 kHz, 3 ADS 100 kHz, 4 tất cả. Trả lời {"rc":15,"rs":n,"act":0|1}.
+#define COMMAND_TYPE_HIGH_SPEED_CAPTURE 15
 
 #define COMMAND_RESERVED_NONE     0x00
 #define COMMAND_RESERVED_CONTROL  0x01
@@ -181,7 +196,12 @@
 
 // EEPROM.begin() trên ESP32 mở rộng blob cũ và giữ nguyên dữ liệu, nên tăng
 // EEPROM_SIZE để chứa vùng lịch / hẹn giờ không làm mất cấu hình đã lưu.
-#define EEPROM_SIZE                      COUNTDOWN_EEPROM_END
+// Điều khiển theo ngưỡng sensor: 2 x 4 B (ThresholdControl.h).
+#define THRESHOLD_EEPROM_ADDRESS         COUNTDOWN_EEPROM_END
+#define THRESHOLD_EEPROM_SIZE            8
+#define THRESHOLD_EEPROM_END             (THRESHOLD_EEPROM_ADDRESS + THRESHOLD_EEPROM_SIZE)
+
+#define EEPROM_SIZE                      THRESHOLD_EEPROM_END
 
 #if SCHEDULE_EEPROM_ADDRESS < ASCON_PUBLIC_KEYS_END
   #error "Schedule EEPROM region overlaps the Ascon key region."
@@ -219,9 +239,17 @@
 // Điều khiển LAN: POST http://<ip>/lan {"data":<lệnh MQTT>} chạy lệnh giống hệt
 // khi nhận qua MQTT (cùng kiểm tra chữ ký / Ascon) và trả
 // {"ip":"...","data":[các bản tin thiết bị lẽ ra publish]}. Dùng khi broker /
-// Internet lỗi. Không có xác thực riêng: mạng LAN không tin cậy thì bật
-// ENABLE_MESSAGE_AUTHENTICATION.
+// Internet lỗi. Lệnh vẫn phải có mật khẩu "pa" (ENABLE_COMMAND_PASSWORD); mạng
+// LAN không tin cậy thì bật thêm ENABLE_MESSAGE_AUTHENTICATION.
 #define ENABLE_LAN_CONTROL             true
+// Mật khẩu lệnh: mọi lệnh (MQTT, LAN, /control) phải có "pa" bằng mật khẩu
+// thiết bị ("mqtt_pwd" đã lưu khi cài đặt = "mqtt_pass" của web_manager).
+// Sai -> từ chối, trả {"rc":<com>,"rs":6}. Thiết bị chưa có mật khẩu nhận
+// lệnh không có "pa".
+#define ENABLE_COMMAND_PASSWORD        true
+#define COMMAND_RESULT_WRONG_PASSWORD  6
+// "rs" khi thiết bị đang bận (vd. đang thu mẫu tốc độ cao).
+#define COMMAND_RESULT_BUSY            7
 #define LAN_CONTROL_PATH               "/lan"
 #define LAN_REQUEST_MAX_LENGTH         (MQTT_PACKET_SIZE + 64)
 #define LAN_REPLY_MAX_LENGTH           3072

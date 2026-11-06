@@ -50,7 +50,7 @@ Outgoing messages are processed in the order encrypt, add `timestamp`/`nonce`, s
 
 Ascon protocol:
 
-- The session key is the XOR of the table keys chosen by 5 random digits. The device announces the digits with `{"co":6,"va":"<digits>"}` after each MQTT connect, after each key rotation (`ASCON_KEY_ROTATION_MS`, default 24 h), and when it receives `{"com":7}`.
+- The session key is the XOR of the table keys chosen by 5 random digits. The device announces the digits with `{"rc":7,"rs":0,"ky":"<digits>"}` (formerly `{"co":6,"va":...}`) after each MQTT connect, after each key rotation (`ASCON_KEY_ROTATION_MS`, default 24 h), and when it receives `{"com":7}`.
 - Encrypted messages in both directions use `{"com":1,"value":"<hex nonce(16) | ciphertext | tag(16)>"}` with no associated data. The decrypted value must be a JSON object.
 - The HTTP info endpoints return the same envelope, or `{"error":"ascon_key_not_ready"}` before the first key exists.
 

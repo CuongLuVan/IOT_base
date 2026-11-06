@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 const mqttService = require('./mqttService.js');
-const lan = require('./deviceLanService.js');
 
 /**
  * Trạng thái thiết bị cho trang điều khiển (View/mqtt/device-control.ejs).
@@ -9,44 +8,43 @@ const lan = require('./deviceLanService.js');
  * của từng thiết bị và gửi lệnh tới topic subscribe của nó.
  *
  * Firmware (DeviceIOT / DeviceIOT8266):
- *   lệnh   {"com":1,"value":<bitmask kênh>}   {"cmd":"STATUS_GET"} = yêu cầu trạng thái
+ *   Mọi lệnh là {"com":<số>,...}; mọi trả lời mang "rc" (com được trả lời) và "rs" (kết quả).
+ *   lệnh   {"com":1,"value":<bitmask kênh>}   {"com":2} = yêu cầu trạng thái đầy đủ
  *   trạng thái {"va":"<cảm biến>","co":"device_port,button_click,button_status,count_info",
- *               "set":["giờ,phút,weekday,port_state,auto_off", ...],"tim":<giây>,"cd":<giây>}
- *   "set" (lịch đang hoạt động, sắp theo giờ), "tim" (hẹn giờ tự tắt, 0 = tắt)
- *   và "cd" (đếm ngược tự bật còn lại, 0 = không đếm) chỉ có trong trả lời
- *   STATUS_GET và trong trả lời các lệnh com 5, 8..12 (cùng bản tin, thêm
- *   "rc"/"rs"); COUNTDOWN_ACK cũng mang "cd".
- *   "ip" (STATUS_GET) là địa chỉ LAN, dùng khi gửi lệnh qua LAN.
- *
- * Đường gửi lệnh (mode): 'mqtt', 'lan' (deviceLanService) hoặc 'auto' = MQTT
- * khi broker và thiết bị đều đang trả lời qua MQTT, ngược lại LAN nếu đã biết IP.
+ *               "set":["giờ,phút,weekday,port_state,auto_off", ...],"tim":<giây>,"cd":<giây>,
+ *               "cm":<cổng đếm ngược>,"cs":<giây đếm ngược gần nhất>}
+ *   "set" (lịch đang hoạt động, sắp theo giờ), "tim" (hẹn giờ tự tắt, 0 = tắt),
+ *   "cd" (đếm ngược tự bật còn lại, 0 = không đếm), "cm" và "cs" chỉ có trong
+ *   trả lời com 2, 4, 5, 8..12, 14 (cùng bản tin đầy đủ, thêm "rc"/"rs");
+ *   trả lời com 1 là bản tin ngắn + "rc":1.
+ *   Mọi lệnh mang "pa" = mật khẩu thiết bị (mqtt_pass); sai mật khẩu thiết bị
+ *   trả {"rc":<com>,"rs":6} và không chạy lệnh.
+ *   "ip" (bản tin đầy đủ) là địa chỉ LAN của thiết bị.
+ *   "th":[n,n] là 2 cài đặt điều khiển theo ngưỡng sensor (4 byte gộp, 0 = trống). Server chỉ chuyển nó cho
+ *   trang; điều khiển LAN do trình duyệt gửi thẳng tới thiết bị, không qua server.
  */
 const COMMAND_CONTROL = 1;
-const STATUS_REQUEST = { cmd: 'STATUS_GET' };
+const COMMAND_STATUS = 2;
+const STATUS_REQUEST = { com: COMMAND_STATUS };
 const STATUS_REQUEST_INTERVAL_MS = 15000;
-// A LAN status request is one HTTP call to the device; the page polls every 3 s.
-const LAN_STATUS_REQUEST_INTERVAL_MS = 5000;
-// 'auto' keeps MQTT while the device answered over MQTT this recently.
-const MQTT_FRESH_MS = 60000;
 // The firmware replies to a command before its device task applies it.
 const STATUS_AFTER_CONTROL_MS = 1500;
 const SUBSCRIBE_RETRY_MS = 60000;
 const ON_TIMER_MAX_SECONDS = 86400;
+const RESULT_WRONG_PASSWORD = 6;
+// A wrong-password reply is shown on the page this long.
+const PASSWORD_ERROR_MS = 60000;
+const PASSWORD_ERROR = 'Thiết bị từ chối lệnh: sai mật khẩu thiết bị (mqtt_pass của web_manager khác mật khẩu đã cài trên thiết bị).';
 
 const statuses = new Map();          // topic -> { data, receivedAt }
 const watchedTopics = new Set();
 const subscribeErrors = new Map();   // topic -> { message, at }
 const lastStatusRequest = new Map(); // topic -> ms
-const lanErrors = new Map();         // topic -> last LAN error message
+const passwordRejections = new Map(); // publish topic -> ms of the last wrong-password reply
 let connecting = null;
 
 mqttService.on('message', (item) => {
-  if (watchedTopics.has(item.topic)) handleMessage(item);
-});
-// Replies of LAN commands (deviceLanService), same format as MQTT messages.
-lan.on('message', handleMessage);
-
-function handleMessage(item) {
+  if (!watchedTopics.has(item.topic)) return;
   let data;
   try {
     data = JSON.parse(item.payload);
@@ -54,29 +52,46 @@ function handleMessage(item) {
     return;
   }
   if (!data || typeof data !== 'object') return;
-  if (lan.isLanIp(data.ip)) lan.rememberIp(item.topic, data.ip);
-  const previous = statuses.get(item.topic);
-  if (data.cmd === 'COUNTDOWN_ACK') {
-    if (previous && isOnTimerSeconds(data.remain)) {
-      previous.countdown = { remaining: data.remain, mask: Number.isInteger(data.mask) ? data.mask : null, at: Date.now() };
-    }
+  if (isPasswordRejection(data)) {
+    passwordRejections.set(item.topic, Date.now());
     return;
   }
+  const previous = statuses.get(item.topic);
   if (data.va === undefined && data.co === undefined) return;
   // Status messages the device sends on its own (e.g. after a button press)
-  // carry no "set"/"tim"; keep the values of the last STATUS_GET reply.
+  // and the reply to com:1 carry no "set"/"tim"; keep the values of the last full report.
   const settings = Array.isArray(data.set) ? data.set : previous ? previous.settings : null;
   const onTimer = isOnTimerSeconds(data.tim) ? data.tim : previous ? previous.onTimer : null;
   // "cd" counts down on the device; "at" lets describeStatus() age it.
   let countdown = previous ? previous.countdown : null;
   if (isOnTimerSeconds(data.cd)) {
-    const mask = countdown && data.cd > 0 ? countdown.mask : null;
+    // "cm": ports the countdown switches on (full report); older data keeps the last known mask.
+    let mask = Number.isInteger(data.cm) ? data.cm : countdown ? countdown.mask : null;
+    if (data.cd === 0) mask = null;
     countdown = { remaining: data.cd, mask, at: Date.now() };
   }
-  const ip = lan.isLanIp(data.ip) ? data.ip : previous ? previous.ip : null;
-  const via = item.via === 'lan' ? 'lan' : 'mqtt';
-  const mqttAt = via === 'mqtt' ? Date.now() : previous ? previous.mqttAt : null;
-  statuses.set(item.topic, { data, settings, onTimer, countdown, ip, via, mqttAt, receivedAt: item.time });
+  const ip = isLanIp(data.ip) ? data.ip : previous ? previous.ip : null;
+  const thresholds = isThresholdList(data.th) ? data.th : previous ? previous.thresholds : null;
+  statuses.set(item.topic, { data, settings, onTimer, countdown, ip, thresholds, receivedAt: item.time });
+});
+
+// "th": the device's two threshold rules, each a 4-byte value (0 = empty).
+function isThresholdList(value) {
+  return Array.isArray(value) && value.every((item) => Number.isInteger(item) && item >= 0 && item <= 0x7FFFFFFF);
+}
+
+function isPasswordRejection(data) {
+  return data.rs === RESULT_WRONG_PASSWORD && data.va === undefined && data.co === undefined;
+}
+
+// Private IPv4 only (10.x, 172.16-31.x, 192.168.x).
+function isLanIp(ip) {
+  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(String(ip || ''));
+  if (!match) return false;
+  const bytes = match.slice(1).map(Number);
+  if (bytes.some((b) => b > 255)) return false;
+  return bytes[0] === 10 || (bytes[0] === 172 && bytes[1] >= 16 && bytes[1] <= 31) ||
+    (bytes[0] === 192 && bytes[1] === 168);
 }
 
 function isOnTimerSeconds(value) {
@@ -144,69 +159,42 @@ async function watch(topic) {
   }
 }
 
-function publishCommand(topic, command) {
+// Adds the device password ("pa") the firmware checks on every command.
+function withPassword(device, command) {
+  return device.mqtt_pass ? Object.assign({}, command, { pa: device.mqtt_pass }) : command;
+}
+
+function publishCommand(device, command) {
+  const topic = device.mqtt_sub;
   if (!isAllowedByAcl('publish', topic)) {
     const error = new Error('Broker không cho web_manager gửi lệnh tới topic ' + topic + ' (mqtt_acl.json)');
     error.status = 400;
     return Promise.reject(error);
   }
-  return mqttService.publish(topic, JSON.stringify(command));
+  return mqttService.publish(topic, JSON.stringify(withPassword(device, command)));
 }
 
-function clientId() {
-  return (mqttService.options && mqttService.options.clientId) || process.env.MQTT_CLIENT_ID || 'web_manager';
-}
-
-// Which way a command for this device goes: 'mqtt' or 'lan'.
-function route(device, mode) {
-  if (mode === 'lan' || mode === 'mqtt') return mode;
-  const hasIp = !!lan.getIp(device.mqtt_pub);
-  if (!hasIp) return 'mqtt';
-  if (!mqttService.isConnected()) return 'lan';
-  const entry = statuses.get(device.mqtt_pub);
-  return entry && entry.mqttAt && Date.now() - entry.mqttAt < MQTT_FRESH_MS ? 'mqtt' : 'lan';
-}
-
-/**
- * Sends a command (the same JSON for both ways). Over LAN the device's
- * replies arrive as messages on device.mqtt_pub before this resolves; over
- * MQTT they arrive later. Resolves with the route used.
- */
-async function sendCommand(device, command, mode) {
-  const way = route(device, mode);
-  if (way === 'lan') {
-    watchedTopics.add(device.mqtt_pub);
-    try {
-      await lan.request(device, command, clientId());
-      lanErrors.delete(device.mqtt_pub);
-    } catch (error) {
-      lanErrors.set(device.mqtt_pub, error.message);
-      throw error;
-    }
-  } else {
-    await publishCommand(device.mqtt_sub, command);
-  }
-  return way;
-}
-
-async function requestStatus(device, force, mode) {
-  const way = route(device, mode);
-  const topic = device.mqtt_pub;
-  const interval = way === 'lan' ? LAN_STATUS_REQUEST_INTERVAL_MS : STATUS_REQUEST_INTERVAL_MS;
+async function requestStatus(device, force) {
+  const topic = device.mqtt_sub;
   const last = lastStatusRequest.get(topic) || 0;
-  if (!force && Date.now() - last < interval) return;
+  if (!force && Date.now() - last < STATUS_REQUEST_INTERVAL_MS) return;
   lastStatusRequest.set(topic, Date.now());
   try {
-    await sendCommand(device, STATUS_REQUEST, way);
+    await publishCommand(device, STATUS_REQUEST);
   } catch (e) {
-    // The status stays unknown; the page shows the MQTT or LAN error.
+    // The status stays unknown; the page shows the subscribe/publish error.
   }
 }
 
-async function control(device, value, mode) {
-  const way = await sendCommand(device, { com: COMMAND_CONTROL, value }, mode);
-  setTimeout(() => { requestStatus(device, true, way); }, STATUS_AFTER_CONTROL_MS);
-  return way;
+async function control(device, value) {
+  await publishCommand(device, { com: COMMAND_CONTROL, value });
+  setTimeout(() => { requestStatus(device, true); }, STATUS_AFTER_CONTROL_MS);
+}
+
+// Error text while the device recently refused a command for its password.
+function getPasswordError(publishTopic) {
+  const at = passwordRejections.get(publishTopic);
+  return at && Date.now() - at < PASSWORD_ERROR_MS ? PASSWORD_ERROR : null;
 }
 
 function toNumbers(text) {
@@ -223,15 +211,15 @@ function parseSettings(settings) {
 }
 
 // DeviceIOT sends 7 sensor values and drives 2 outputs; DeviceIOT8266 sends
-// humidity/temperature in hundredths plus an ADC value and drives 1 output.
+// 3 and drives 1 output. Both send humidity/temperature in hundredths.
 function describeStatus(entry) {
   if (!entry) return null;
   const va = toNumbers(entry.data.va);
   const co = toNumbers(entry.data.co);
   const esp32 = va.length >= 7;
   const sensors = esp32 ? [
-    { label: 'Độ ẩm', value: va[0], unit: '%' },
-    { label: 'Nhiệt độ', value: va[1], unit: '°C' },
+    { label: 'Độ ẩm', value: va[0] / 100, unit: '%' },
+    { label: 'Nhiệt độ', value: va[1] / 100, unit: '°C' },
     { label: 'Bụi', value: va[2], unit: '' },
     { label: 'PM2.5', value: va[3], unit: 'µg/m³' },
     { label: 'PM10', value: va[4], unit: 'µg/m³' },
@@ -251,16 +239,17 @@ function describeStatus(entry) {
     buttonStatus: Number.isFinite(co[2]) ? co[2] : null,
     commandCount: Number.isFinite(co[3]) ? co[3] : null,
     sensors: sensors.filter((sensor) => Number.isFinite(sensor.value)),
-    // Active schedules from STATUS_GET; null until the device has answered one.
+    // Active schedules from the full status report ({"com":2}); null until the device has answered one.
     settings: parseSettings(entry.settings),
     // Auto OFF on-timer in seconds (0 = off); null until the device reported it.
     onTimer: entry.onTimer == null ? null : entry.onTimer,
     // Countdown auto ON: seconds left now (0 = idle), null until reported.
     countdown: describeCountdown(entry.countdown),
     countdownMask: entry.countdown && entry.countdown.mask ? entry.countdown.mask : null,
-    // LAN address the device reported; how the last status arrived.
+    // LAN address the device reported (used by the page for LAN control).
     ip: entry.ip || null,
-    via: entry.via || 'mqtt',
+    // Threshold rules [rule 1, rule 2] (4-byte values), null until reported.
+    thresholds: entry.thresholds || null,
     receivedAt: entry.receivedAt,
   };
 }
@@ -275,12 +264,7 @@ function getStatus(topic) {
   return describeStatus(statuses.get(topic));
 }
 
-// LAN details for the page: known address and the last LAN error.
-function getLan(topic) {
-  return Object.assign(lan.describe(topic), { error: lanErrors.get(topic) || null });
-}
-
 module.exports = {
-  ensureConnected, watch, publishCommand, route, sendCommand, requestStatus, control, getStatus, getLan,
-  setLanIp: lan.setManualIp,
+  ensureConnected, watch, publishCommand, requestStatus, control, getStatus, getPasswordError,
+  isPasswordRejection, PASSWORD_ERROR,
 };

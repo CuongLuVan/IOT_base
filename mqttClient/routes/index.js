@@ -4,6 +4,7 @@ const historyRoutes = require("./history.route.js");
 const commentRoutes = require('./commentBlog.js');
 const historyComment = require('./historyCommentBlog.js');
 const cronRoutes = require('./cron.route.js')
+const contextRoutes = require('./context.route.js');
 const router = express.Router();
 
 router.use("/chat", chatRoutes);
@@ -11,6 +12,8 @@ router.use("/history", historyRoutes);
 router.use("/comment", commentRoutes);
 router.use("/history_comment", historyComment);
 router.use("/cron", cronRoutes);
+// Contexts (automation) of mqttClient: app/context/.
+router.use("/context", contextRoutes);
 
 
 module.exports = router;

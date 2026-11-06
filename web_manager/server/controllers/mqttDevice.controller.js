@@ -149,17 +149,10 @@ mqttDeviceCtrl.deleteDevice = async function(req, res) {
     }
 }
 
-// How commands reach a device: "auto" (MQTT, or LAN when the broker or the
-// device's MQTT link is down), "mqtt" or "lan" (POST http://<ip>/lan).
-const TRANSPORT_MODES = ["auto", "mqtt", "lan"];
-
-function readTransport(value) {
-    return TRANSPORT_MODES.includes(value) ? value : "auto";
-}
-
+// mqtt_pass is the device password sent as "pa" with every command.
 function findOwnDevice(req, id) {
     return knex(TABLE)
-        .select("mqtt_microservice_id", "content", "mqtt_id", "mqtt_pub", "mqtt_sub", "updated_at")
+        .select("mqtt_microservice_id", "content", "mqtt_id", "mqtt_pub", "mqtt_sub", "mqtt_pass", "updated_at")
         .where({mqtt_microservice_id: id, mqtt_user: getAccountKey(req), deleteflag: 0})
         .first();
 }
@@ -168,8 +161,10 @@ function findOwnDevice(req, id) {
 // every device for a fresh state (rate limited in deviceStatusService).
 mqttDeviceCtrl.deviceStatus = async function(req, res) {
     try {
+        // mqtt_pass goes to the owner's page too: LAN commands are sent from
+        // the browser and need it as "pa".
         const devices = await knex(TABLE)
-            .select("mqtt_microservice_id", "content", "mqtt_id", "mqtt_pub", "mqtt_sub", "updated_at")
+            .select("mqtt_microservice_id", "content", "mqtt_id", "mqtt_pub", "mqtt_sub", "mqtt_pass", "updated_at")
             .where({mqtt_user: getAccountKey(req), deleteflag: 0})
             .orderBy("updated_at", "desc");
         let mqttError = null;
@@ -178,26 +173,15 @@ mqttDeviceCtrl.deviceStatus = async function(req, res) {
         } catch (error) {
             mqttError = error.message;
         }
-        // {mqtt_microservice_id: "auto" | "mqtt" | "lan"} chosen on the page.
-        const transports = (req.body && req.body.transports) || {};
+        // LAN control does not go through here: the page sends it straight to
+        // the device IP (status.ip) from the user's browser.
         const result = await Promise.all(devices.map(async function(device) {
-            const mode = readTransport(transports[device.mqtt_microservice_id]);
-            const route = deviceStatus.route(device, mode);
-            let error = null;
-            if (route === "mqtt") {
-                error = mqttError || await deviceStatus.watch(device.mqtt_pub);
-            } else if (!mqttError) {
-                // Keep listening on MQTT so "auto" notices when it works again.
-                await deviceStatus.watch(device.mqtt_pub);
+            let error = mqttError;
+            if (!mqttError) {
+                error = await deviceStatus.watch(device.mqtt_pub) || deviceStatus.getPasswordError(device.mqtt_pub);
+                deviceStatus.requestStatus(device, false);
             }
-            if (!error) {
-                deviceStatus.requestStatus(device, false, route);
-            }
-            const lan = deviceStatus.getLan(device.mqtt_pub);
-            if (route === "lan" && lan.error) {
-                error = lan.error;
-            }
-            return Object.assign({}, device, {status: deviceStatus.getStatus(device.mqtt_pub), error, transport: mode, route, lan});
+            return Object.assign({}, device, {status: deviceStatus.getStatus(device.mqtt_pub), error});
         }));
         returnOKCustom(res, {devices: result, mqttConnected: !mqttError, mqttError});
     } catch (error) {
@@ -217,26 +201,21 @@ mqttDeviceCtrl.controlDevice = async function(req, res) {
     if (!Number.isInteger(value) || value < 0 || value > 3) {
         return returnBadRequest(res, "value must be an integer from 0 to 3.");
     }
-    const mode = readTransport(body.transport);
-    let route = "mqtt";
     try {
         const device = await findOwnDevice(req, id);
         if (!device) {
             return res.status(404).json({error: "Device not found.", error_code: WarningInfo.ERROR_SERVER});
         }
-        route = deviceStatus.route(device, mode);
-        if (route === "mqtt") {
-            await deviceStatus.ensureConnected();
-            await deviceStatus.watch(device.mqtt_pub);
-        }
-        await deviceStatus.control(device, value, route);
-        returnOKCustom(res, {mqtt_microservice_id: id, value, sent: true, route});
+        await deviceStatus.ensureConnected();
+        await deviceStatus.watch(device.mqtt_pub);
+        await deviceStatus.control(device, value);
+        returnOKCustom(res, {mqtt_microservice_id: id, value, sent: true});
     } catch (error) {
         if (error.status === 400) {
             return returnBadRequest(res, error.message);
         }
-        console.error("Failed to control device over " + route + ":", error.message);
-        res.status(503).json({error: (route === "lan" ? "LAN: " : "MQTT: ") + error.message, error_code: WarningInfo.ERROR_SERVER});
+        console.error("Failed to control MQTT device:", error.message);
+        res.status(503).json({error: "MQTT: " + error.message, error_code: WarningInfo.ERROR_SERVER});
     }
 }
 
@@ -314,8 +293,7 @@ function readScheduleCommand(body) {
     return command;
 }
 
-// Returns the device (with .transport = the route to use), or null after
-// answering the request with an error.
+// Returns the device, or null after answering the request with an error.
 async function prepareScheduleDevice(req, res) {
     const id = Number((req.body || {}).mqtt_microservice_id);
     if (!Number.isInteger(id) || id <= 0) {
@@ -326,10 +304,6 @@ async function prepareScheduleDevice(req, res) {
     if (!device) {
         res.status(404).json({error: "Device not found.", error_code: WarningInfo.ERROR_SERVER});
         return null;
-    }
-    device.transport = deviceStatus.route(device, readTransport((req.body || {}).transport));
-    if (device.transport === "lan") {
-        return device;
     }
     await deviceStatus.ensureConnected();
     const watchError = await deviceStatus.watch(device.mqtt_pub);
@@ -344,18 +318,18 @@ function returnScheduleError(res, error, action) {
     if (error.status === 400) {
         return returnBadRequest(res, error.message);
     }
-    if (error.status === 504) {
-        return res.status(504).json({error: error.message, error_code: WarningInfo.ERROR_SERVER});
+    if (error.status === 504 || error.status === 403) {
+        return res.status(error.status).json({error: error.message, error_code: WarningInfo.ERROR_SERVER});
     }
     console.error("Failed to " + action + ":", error.message);
-    res.status(503).json({error: error.message, error_code: WarningInfo.ERROR_SERVER});
+    res.status(503).json({error: "MQTT: " + error.message, error_code: WarningInfo.ERROR_SERVER});
 }
 
 mqttDeviceCtrl.listSchedules = async function(req, res) {
     try {
         const device = await prepareScheduleDevice(req, res);
         if (!device) return;
-        const result = await deviceSchedule.list(device, device.transport);
+        const result = await deviceSchedule.list(device);
         returnOKCustom(res, Object.assign({mqtt_microservice_id: device.mqtt_microservice_id}, result));
     } catch (error) {
         returnScheduleError(res, error, "list device schedules");
@@ -374,7 +348,7 @@ mqttDeviceCtrl.sendScheduleCommand = async function(req, res) {
         const device = await prepareScheduleDevice(req, res);
         if (!device) return;
         // The reply is the device's status report, so "set" is already updated.
-        const ack = await deviceSchedule.send(device, command, device.transport);
+        const ack = await deviceSchedule.send(device, command);
         returnOKCustom(res, Object.assign({mqtt_microservice_id: device.mqtt_microservice_id, cmd: req.body.cmd, id: command.id || 0}, ack));
     } catch (error) {
         returnScheduleError(res, error, "send schedule command");
@@ -400,7 +374,7 @@ mqttDeviceCtrl.onTimerCommand = async function(req, res) {
         const device = await prepareScheduleDevice(req, res);
         if (!device) return;
         // The reply is the device's status report ("tim"), also kept by the status service.
-        const ack = await deviceSchedule.onTimer(device, command, device.transport);
+        const ack = await deviceSchedule.onTimer(device, command);
         returnOKCustom(res, Object.assign({mqtt_microservice_id: device.mqtt_microservice_id}, ack));
     } catch (error) {
         returnScheduleError(res, error, "send on-timer command");
@@ -429,34 +403,38 @@ mqttDeviceCtrl.countdownCommand = async function(req, res) {
     try {
         const device = await prepareScheduleDevice(req, res);
         if (!device) return;
-        const ack = await deviceSchedule.countdown(device, command, device.transport);
+        const ack = await deviceSchedule.countdown(device, command);
         returnOKCustom(res, Object.assign({mqtt_microservice_id: device.mqtt_microservice_id}, ack));
     } catch (error) {
         returnScheduleError(res, error, "send countdown command");
     }
 }
 
-// LAN address used for LAN control. Without "ip" (or ip "") the address the
-// device reports in its status is used again.
-mqttDeviceCtrl.setDeviceLan = async function(req, res) {
+// Sensor threshold control (firmware ThresholdControl.h): rule "id" 1..2,
+// "value" = the 4 bytes packed by the page (0 deletes). Without "value" the
+// rules are only read.
+const COMMAND_THRESHOLD = 14;
+const THRESHOLD_RULE_COUNT = 2;
+const THRESHOLD_MAX_VALUE = 0x7FFFFFFF;
+
+mqttDeviceCtrl.thresholdCommand = async function(req, res) {
     const body = req.body || {};
-    const id = Number(body.mqtt_microservice_id);
-    if (!Number.isInteger(id) || id <= 0) {
-        return returnBadRequest(res, "mqtt_microservice_id is required.");
+    const command = {com: COMMAND_THRESHOLD};
+    try {
+        if (body.value != null && body.value !== "") {
+            command.id = readInteger(body, "id", 1, THRESHOLD_RULE_COUNT);
+            command.value = readInteger(body, "value", 0, THRESHOLD_MAX_VALUE);
+        }
+    } catch (error) {
+        return returnBadRequest(res, error.message);
     }
     try {
-        const device = await findOwnDevice(req, id);
-        if (!device) {
-            return res.status(404).json({error: "Device not found.", error_code: WarningInfo.ERROR_SERVER});
-        }
-        deviceStatus.setLanIp(device.mqtt_pub, String(body.ip || "").trim());
-        returnOKCustom(res, {mqtt_microservice_id: id, lan: deviceStatus.getLan(device.mqtt_pub)});
+        const device = await prepareScheduleDevice(req, res);
+        if (!device) return;
+        const ack = await deviceSchedule.threshold(device, command);
+        returnOKCustom(res, Object.assign({mqtt_microservice_id: device.mqtt_microservice_id}, ack));
     } catch (error) {
-        if (error.status === 400) {
-            return returnBadRequest(res, error.message);
-        }
-        console.error("Failed to save device LAN address:", error.message);
-        returnFalse(res, "Unable to save the device LAN address.", WarningInfo.ERROR_SERVER);
+        returnScheduleError(res, error, "send threshold command");
     }
 }
 

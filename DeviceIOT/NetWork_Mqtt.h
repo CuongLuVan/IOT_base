@@ -16,6 +16,11 @@ class NetWork_Mqtt {
         void MqttReconnect();
 };
 
+#if ENABLE_COMMAND_PASSWORD
+// true when received equals the device password (constant time).
+bool commandPasswordMatches(const char* received);
+#endif
+
 #if ENABLE_LAN_CONTROL
 // LAN control (POST LAN_CONTROL_PATH): runs json exactly like an MQTT
 // message on the subscribe topic and returns, as a JSON array, the replies

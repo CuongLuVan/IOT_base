@@ -62,15 +62,23 @@
 
 #define SERIAL_BAUD_RATE 115200
 
+// Every MQTT / LAN command is {"com":<number>,...}; every reply carries "rc"
+// (the com answered) and "rs" (result: 0 ok, 1 conflict, 2 invalid, 3 not
+// found, 4 id exists, 5 not ready, 6 wrong password, 7 busy). No "cmd" commands or replies.
+// {"com":1,"value":<bitmask>[,"mask"]}: set outputs -> short status + "rc":1.
 #define COMMAND_TYPE_CONTROL 0x01
+// {"com":2}: full status (replaces {"cmd":"STATUS_GET"}) -> status report + "rc":2.
 #define COMMAND_TYPE_OTHER 0x02
+#define COMMAND_TYPE_STATUS COMMAND_TYPE_OTHER
 #define COMMAND_TYPE_SCHEDULE_CONTROL 0x03
 // {"com":4,"value":N}: count down N seconds (1..86400), then switch on; 0 = cancel.
+// Reply: status report + "rc":4, "cd" (seconds left), "cm" (ports), "cs" (last N).
 #define COMMAND_TYPE_COUNTDOWN 0x04
 // Numeric commands (MQTT / LAN), answered with the compact status report
 // plus "rc"/"rs": {"com":5,"value":N} auto OFF on-timer N seconds (0 = off);
 // schedules: 8 add, 9 update, 10 delete, 11 enable/disable (value 1/0),
-// 12 clear, 13 list. 6 and 7 belong to Ascon ({"co":6} / {"com":7}).
+// 12 clear, 13 list. 7 belongs to Ascon ({"com":7} -> {"rc":7,"rs":0,"ky":"<digits>"}).
+// 15 (high-speed capture) exists on DeviceIOT only.
 #define COMMAND_TYPE_ON_TIMER 5
 #define COMMAND_TYPE_SCHEDULE_ADD 8
 #define COMMAND_TYPE_SCHEDULE_UPDATE 9
@@ -78,6 +86,10 @@
 #define COMMAND_TYPE_SCHEDULE_ENABLE 11
 #define COMMAND_TYPE_SCHEDULE_CLEAR 12
 #define COMMAND_TYPE_SCHEDULE_LIST 13
+// {"com":14,"id":1|2,"value":N}: sensor threshold control (ThresholdControl.h).
+#define COMMAND_TYPE_THRESHOLD 14
+// Sensors of "va" a threshold may use: humidity, temperature, ADC.
+#define THRESHOLD_SENSOR_COUNT 3
 #define COMMAND_TYPE_ASCON_HANDSHAKE 0x07
 #define COMMAND_RESERVED_NONE 0x00
 #define COMMAND_RESERVED_CONTROL 0x01
@@ -150,7 +162,7 @@
 // EEPROM layout (identical to DeviceIOT). Strings are null-terminated and
 // *_MAX_LENGTH excludes the '\0'. EEPROM keeps a RAM copy of the whole area,
 // so EEPROM_SIZE ends at the last enabled region. Every configuration stays
-// below 3 KB (3063 B including the schedule, on-timer and countdown regions), inside the 4 KB sector of the
+// below 3 KB (3071 B including the schedule, on-timer, countdown and threshold regions), inside the 4 KB sector of the
 // NON-OS core.
 #define MODE_WIFI_ADRESS 1
 #define WIFI_SSSID 2
@@ -192,7 +204,7 @@
 
 // Ascon key table: ASCON_PUBLIC_KEY_COUNT null-terminated 32-char hex keys.
 // The session key is the XOR of the keys selected by ASCON_RANDOM_DIGITS
-// random digits; the digits are sent to the server in {"co":6,"va":"..."}.
+// random digits; the digits are sent to the server in {"rc":7,"rs":0,"ky":"..."}.
 #define ASCON_RANDOM_DIGITS 5
 #define ASCON_KEY_ROTATION_MS 86400000UL
 #define ASCON_PUBLIC_KEY_COUNT 10
@@ -230,7 +242,12 @@
 
 // The EEPROM sector keeps its old bytes when EEPROM_SIZE grows, so the stored
 // configuration survives; the new regions are formatted on first boot.
-#define EEPROM_SIZE COUNTDOWN_EEPROM_END
+// Sensor threshold control: 2 x 4 B (ThresholdControl.h).
+#define THRESHOLD_EEPROM_ADDRESS COUNTDOWN_EEPROM_END
+#define THRESHOLD_EEPROM_SIZE 8
+#define THRESHOLD_EEPROM_END (THRESHOLD_EEPROM_ADDRESS + THRESHOLD_EEPROM_SIZE)
+
+#define EEPROM_SIZE THRESHOLD_EEPROM_END
 
 #if EEPROM_SIZE > 3072
   #error "EEPROM layout exceeds the 3 KB budget."
@@ -268,9 +285,18 @@
 // LAN control: POST http://<ip>/lan {"data":<MQTT command>} runs the command
 // exactly like an MQTT message (same signature / Ascon checks) and answers
 // {"ip":"...","data":[the replies the device would publish]}. For when the
-// broker or the Internet is down. No separate authentication: enable
-// ENABLE_MESSAGE_AUTHENTICATION on an untrusted LAN.
+// broker or the Internet is down. Commands still need the "pa" password
+// (ENABLE_COMMAND_PASSWORD); on an untrusted LAN also enable
+// ENABLE_MESSAGE_AUTHENTICATION.
 #define ENABLE_LAN_CONTROL 1
+// Command password: every command (MQTT, LAN, /control) must carry "pa" equal
+// to the device password ("mqtt_pwd" stored at setup = web_manager's
+// "mqtt_pass"). Wrong -> rejected with {"rc":<com>,"rs":6}. A device without
+// a password accepts commands without "pa".
+#define ENABLE_COMMAND_PASSWORD 1
+#define COMMAND_RESULT_WRONG_PASSWORD 6
+// "rs" when the device is busy (same code as DeviceIOT).
+#define COMMAND_RESULT_BUSY 7
 #define LAN_CONTROL_PATH "/lan"
 #define LAN_REQUEST_MAX_LENGTH (MQTT_PACKET_SIZE + 64)
 #define LAN_REPLY_MAX_LENGTH 2048

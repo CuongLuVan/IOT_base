@@ -6,6 +6,6 @@ The scheduler never writes a GPIO. Due schedules produce `COMMAND_TYPE_SCHEDULE_
 
 Up to 20 schedules are stored in EEPROM at `SCHEDULE_EEPROM_ADDRESS` (2831), the same layout as DeviceIOT. Commands, conflict rules, auto OFF and reboot behaviour are described in `Schedule.md`.
 
-The former weekly/monthly/yearly pump rules (`schedule.set` / `schedule.clear`, `StoredSchedules` at 115) are no longer used and are not migrated; those commands now reply `schedule.error`. `{"cmd":"schedule.status"}` still returns the scheduler status.
+The former weekly/monthly/yearly pump rules (`StoredSchedules` at 115) are no longer used and are not migrated. The string commands `{"cmd":"schedule.*"}` were removed together with every other `"cmd"` command: the device ignores them. Schedule state is read with `{"com":2}` (status report, `set`) and `{"com":13}` (schedule list).
 
 Schedules use `SYSTEM_TASK_TIMEZONE_OFFSET_SECONDS`, defaulting to UTC. Set it to `7 * 3600` before building for Vietnam/ICT. Telemetry includes a `scheduler` object with enabled schedule count, triggered schedule count, failed queue submissions, and the schedulable port mask.

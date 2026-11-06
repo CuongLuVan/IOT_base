@@ -20,8 +20,8 @@ public:
     static void taskRun(void* parameter);
     static void service();
     // Schedules live in ScheduleEngine (EEPROM); SystemTask evaluates them
-    // every cycle once the SNTP clock is valid.
-    static String schedulerJson(const char* event);
+    // every cycle once the SNTP clock is valid. Their state is read with
+    // {"com":2} / {"com":13} (NetWork_Mqtt.cpp).
     static void setNetworkState(bool wifiConnected, bool mqttConnected,
                                 bool transportAvailable);
     static String telemetryJson();

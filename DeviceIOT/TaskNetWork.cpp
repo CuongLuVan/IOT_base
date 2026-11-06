@@ -1,4 +1,5 @@
 #include "TaskNetWork.h"
+#include "ThresholdControl.h"
 #include "NetWork_Wifi.h"
 #include "NetWork_Mqtt.h"
 #include "NetWork_RF.h"
@@ -630,6 +631,8 @@ void TaskNetWork::loopNetWork(void) {
     // Process sensor queue data if any
     if (sensorDataQueue != NULL) {
         if(xQueueReceive(sensorDataQueue, &sensorValue, 0) == pdTRUE) {
+            // Same task as the MQTT callback that edits the rules.
+            ThresholdControl::evaluate(sensorValue);
             if (netWork_Mqtt.checkStatusMqtt()) {
               // sendMessageInfo(getInfoDevice(sensorValue,statusDevice));
             }

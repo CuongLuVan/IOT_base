@@ -1,4 +1,4 @@
-// Host unit tests for ScheduleCore.h and the timer logic of OnTimer.h / Countdown.h (no Arduino needed).
+// Host unit tests for ScheduleCore.h and the logic of OnTimer.h / Countdown.h / ThresholdControl.h (no Arduino needed).
 //   g++ -std=c++17 -Wall -Wextra -I.. schedule_core_test.cpp -o schedule_core_test && ./schedule_core_test
 // Arduino IDE does not compile this folder (only the sketch root and src/).
 
@@ -8,6 +8,7 @@
 #include "../ScheduleCore.h"
 #include "../OnTimer.h"
 #include "../Countdown.h"
+#include "../ThresholdControl.h"
 
 using namespace schedule;
 
@@ -303,6 +304,62 @@ static void testCountdown()
     CHECK(t.poll(86399000u) == 0x01);
 }
 
+// Threshold rules: 4-byte packing, validation, rising edges only.
+static void testThreshold()
+{
+    using namespace threshold;
+    // Temperature (sensor 2) >= 30.00 C -> port 1 on.
+    const Rule hot = {2, static_cast<uint8_t>(0x01 | kActionOn), 3000};
+    const uint32_t hotValue = encode(hot);
+    CHECK(hotValue == ((2u << 24) | (0x11u << 16) | 3000u));
+    const Rule back = decode(hotValue);
+    CHECK(back.sensor == 2 && back.flags == 0x11 && back.threshold == 3000);
+    // Negative threshold round trip (-5.00 C), <= and off.
+    const Rule cold = {2, static_cast<uint8_t>(0x01 | kBelow), -500};
+    CHECK(decode(encode(cold)).threshold == -500);
+    CHECK(encode(cold) < 0x80000000u);  // Fits a signed 32-bit JSON number.
+
+    CHECK(isValid(0, 3, 0x01));
+    CHECK(isValid(hotValue, 3, 0x01));
+    CHECK(!isValid(encode(Rule{4, 0x11, 1}), 3, 0x01));   // Sensor 4 on a 3-sensor board.
+    CHECK(!isValid(encode(Rule{0, 0x11, 1}), 3, 0x01));   // No sensor but not empty.
+    CHECK(!isValid(encode(Rule{2, 0x12, 1}), 3, 0x01));   // Port 2 not allowed.
+    CHECK(!isValid(encode(Rule{2, 0x10, 1}), 3, 0x01));   // No port.
+    CHECK(!isValid(encode(Rule{2, 0x41, 1}), 3, 0x01));   // Unknown flag bit.
+    CHECK(!isValid(0xFFFFFFFFu, 6, 0x03));                // Blank EEPROM.
+
+    // Hysteresis pair: >= 30.00 on, <= 28.00 off.
+    Rule rules[kRuleCount] = {hot, {2, 0x01 | kBelow, 2800}};
+    const bool readable[kRuleCount] = {true, true};
+    EdgeTracker edges;
+    int32_t r1[kRuleCount] = {2900, 2900};
+    Actions a = edges.update(rules, readable, r1);
+    CHECK(a.onMask == 0 && a.offMask == 0);
+    int32_t r2[kRuleCount] = {3000, 3000};
+    a = edges.update(rules, readable, r2);
+    CHECK(a.onMask == 0x01 && a.offMask == 0);
+    a = edges.update(rules, readable, r2);                 // Still hot: nothing again.
+    CHECK(a.onMask == 0 && a.offMask == 0);
+    int32_t r3[kRuleCount] = {2800, 2800};
+    a = edges.update(rules, readable, r3);
+    CHECK(a.onMask == 0 && a.offMask == 0x01);
+    // Unreadable sensor: skipped, state kept (no new edge when it comes back).
+    const bool unreadable[kRuleCount] = {false, false};
+    int32_t r4[kRuleCount] = {3500, 3500};
+    a = edges.update(rules, unreadable, r4);
+    CHECK(a.onMask == 0 && a.offMask == 0);
+    // Reset (rule saved again): acts at once if the condition holds.
+    edges.reset(1);
+    a = edges.update(rules, readable, r3);
+    CHECK(a.offMask == 0x01);
+    // Both rules true on the same port: left unchanged.
+    Rule clash[kRuleCount] = {{1, 0x01 | kActionOn, 0}, {3, 0x01, 0}};
+    EdgeTracker fresh;
+    int32_t r5[kRuleCount] = {10, 10};
+    a = fresh.update(clash, readable, r5);
+    CHECK(a.onMask == 0 && a.offMask == 0);
+}
+
 int main()
 {
     testCalendar();
@@ -316,6 +373,7 @@ int main()
     testSettings();
     testOnTimer();
     testCountdown();
+    testThreshold();
     if (failures == 0) std::printf("All schedule core tests passed\n");
     return failures == 0 ? 0 : 1;
 }

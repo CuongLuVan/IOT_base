@@ -116,6 +116,7 @@ void startServer(bool setupPortal) {
         webServer->on("/control", HTTP_POST, NetWork_Wifi::handleControl);
 #if ENABLE_LAN_CONTROL
         webServer->on(LAN_CONTROL_PATH, HTTP_POST, NetWork_Wifi::handleLan);
+        webServer->on(LAN_CONTROL_PATH, HTTP_OPTIONS, NetWork_Wifi::handleLanOptions);
 #endif
         webServer->on("/update", HTTP_GET, NetWork_Wifi::handleUpdate);
     }
@@ -245,6 +246,12 @@ void NetWork_Wifi::handleControl() {
         sendJson(400, F("{\"error\":\"missing command\"}"));
         return;
     }
+#if ENABLE_COMMAND_PASSWORD
+    if (!commandPasswordMatches(webServer->arg("pa").c_str())) {
+        sendJson(403, F("{\"error\":\"wrong password\"}"));
+        return;
+    }
+#endif
 
     uint8_t commandValue = 0;
     if (webServer->arg("com") != String(COMMAND_TYPE_CONTROL) ||
@@ -307,6 +314,21 @@ void NetWork_Wifi::handleLoraPost() {
 }
 
 #if ENABLE_LAN_CONTROL
+// CORS preflight of LAN_CONTROL_PATH: web_manager pages call the device
+// straight from the user's browser (Chrome also asks before a page reaches
+// the LAN).
+void NetWork_Wifi::handleLanOptions() {
+    if (webServer == nullptr) {
+        return;
+    }
+    addNoCacheHeaders();
+    webServer->sendHeader(F("Access-Control-Allow-Methods"), F("POST, OPTIONS"));
+    webServer->sendHeader(F("Access-Control-Allow-Headers"), F("Content-Type"));
+    webServer->sendHeader(F("Access-Control-Allow-Private-Network"), F("true"));
+    webServer->sendHeader(F("Access-Control-Max-Age"), F("600"));
+    webServer->send(204);
+}
+
 // POST LAN_CONTROL_PATH {"data":<MQTT command object or JSON string>}
 // -> {"ip":"...","data":[replies]}; 422 when the command gave no reply.
 void NetWork_Wifi::handleLan() {

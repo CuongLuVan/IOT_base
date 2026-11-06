@@ -28,6 +28,7 @@ using MqttWiFiClient = WiFiClient;
 #include "ScheduleEngine.h"
 #include "OnTimer.h"
 #include "Countdown.h"
+#include "ThresholdControl.h"
 #if ENABLE_ASCON_AEAD128
 #include <new>
 #include "AsconAead128.h"
@@ -534,7 +535,9 @@ static bool announceAsconKey()
   if (asconRotationDue() && !rotateAsconKey()) {
     return false;
   }
-  return publishSecured(String("{\"co\":6,\"va\":\"") + currentAsconDigits + "\"}", false);
+  // Reply to {"com":7} (also sent on connect and on key rotation).
+  return publishSecured(String("{\"rc\":") + COMMAND_TYPE_ASCON_HANDSHAKE + ",\"rs\":0,\"ky\":\"" +
+                        currentAsconDigits + "\"}", false);
 }
 #endif
 
@@ -633,99 +636,85 @@ static void recordConnectResult(bool connected)
 }
 #endif
 
-static bool parseHighSpeedMode(const char* mode, HighSpeedMode& result)
+// "mode" of {"com":15}: 1 ADC 10 kHz, 2 IMU 32 kHz, 3 ADS 100 kHz, 4 all.
+static bool parseHighSpeedMode(long mode, HighSpeedMode& result)
 {
-  if (strcmp(mode, "adc") == 0) {
-    result = HS_MODE_ADC_10KHZ;
-  } else if (strcmp(mode, "imu") == 0) {
-    result = HS_MODE_ICM32K;
-  } else if (strcmp(mode, "ads") == 0) {
-    result = HS_MODE_ADS100K;
-  } else if (strcmp(mode, "all") == 0) {
-    result = HS_MODE_ALL;
-  } else {
-    return false;
+  switch (mode) {
+    case 1: result = HS_MODE_ADC_10KHZ; return true;
+    case 2: result = HS_MODE_ICM32K; return true;
+    case 3: result = HS_MODE_ADS100K; return true;
+    case 4: result = HS_MODE_ALL; return true;
+    default: return false;
   }
-  return true;
 }
 
-static void publishHighSpeedReply(const char* event, const char* reason = NULL)
+// {"rc":15,"rs":<result>,"act":<1 = sampling>}.
+static void publishHighSpeedReply(int result, const char* reason = nullptr)
 {
-  StaticJsonDocument<160> response;
-  response["event"] = event;
-  response["active"] = HighSpeedSampler::GetInstance().isSamplingActive();
-  if (reason != NULL) {
-    response["reason"] = reason;
+  if (reason != nullptr) {
+    DEVICE_LOG_INFO(String("[HighSpeed] ") + reason);
   }
-  String payload;
-  serializeJson(response, payload);
-  sendMessageInfoPublish(payload);
+  char reply[48];
+  snprintf(reply, sizeof(reply), "{\"rc\":%d,\"rs\":%d,\"act\":%d}", COMMAND_TYPE_HIGH_SPEED_CAPTURE, result,
+           HighSpeedSampler::GetInstance().isSamplingActive() ? 1 : 0);
+  sendMessageInfoPublish(reply);
 }
 
+// {"com":15,"value":<duration ms>,"mode":1..4,"udp_host":"..","udp_port":n} starts,
+// {"com":15,"value":0} stops, {"com":15} only reports. Results: 0 ok,
+// 2 invalid (mode, UDP target or duration), 5 sensor / sampler not ready, 7 busy.
 static bool handleHighSpeedCommand(JsonDocument& doc)
 {
-  const char* command = doc["cmd"] | "";
-  if (strcmp(command, "capture.start") == 0) {
-    const char* modeName = doc["mode"] | "";
-    const char* targetHost = doc["udp_host"] | "";
-    const uint32_t targetPort = doc["udp_port"] | 0;
-    const uint32_t durationMs = doc["duration_ms"] | 10000;
-
-    HighSpeedConfig config;
-    if (!parseHighSpeedMode(modeName, config.mode)) {
-      publishHighSpeedReply("capture.error", "invalid_mode");
-      return true;
-    }
-    if (!config.udpTargetIP.fromString(targetHost) || targetPort == 0 ||
-        targetPort > 65535 || config.udpTargetIP[0] == 0 ||
-        config.udpTargetIP[0] >= 224) {
-      publishHighSpeedReply("capture.error", "invalid_udp_target");
-      return true;
-    }
-    if (durationMs == 0 || durationMs > HS_CAPTURE_MAX_DURATION_MS) {
-      publishHighSpeedReply("capture.error", "invalid_duration");
-      return true;
-    }
-    config.udpTargetPort = static_cast<uint16_t>(targetPort);
-    config.durationMs = durationMs;
-    HighSpeedSampler& sampler = HighSpeedSampler::GetInstance();
-    if (sampler.isSamplingActive()) {
-      publishHighSpeedReply("capture.error", "capture_busy");
-      return true;
-    }
-    if (!sampler.isModeAvailable(config.mode)) {
-      publishHighSpeedReply("capture.error", "sensor_or_sampler_unavailable");
-      return true;
-    }
-    if (!sampler.startSampling(config)) {
-      publishHighSpeedReply("capture.error", "capture_start_failed");
-      return true;
-    }
-    publishHighSpeedReply("capture.started");
+  if ((doc["com"] | 0) != COMMAND_TYPE_HIGH_SPEED_CAPTURE) {
+    return false;
+  }
+  HighSpeedSampler& sampler = HighSpeedSampler::GetInstance();
+  JsonVariantConst value = doc["value"];
+  if (value.isNull()) {
+    publishHighSpeedReply(ScheduleEngine::STATUS_SUCCESS);
     return true;
   }
-
-  if (strcmp(command, "capture.stop") == 0) {
-    HighSpeedSampler& sampler = HighSpeedSampler::GetInstance();
-    const bool wasActive = sampler.isSamplingActive();
+  if (!value.is<long>() || value.as<long>() < 0 ||
+      static_cast<uint32_t>(value.as<long>()) > HS_CAPTURE_MAX_DURATION_MS) {
+    publishHighSpeedReply(ScheduleEngine::STATUS_INVALID, "invalid_duration");
+    return true;
+  }
+  const uint32_t durationMs = static_cast<uint32_t>(value.as<long>());
+  if (durationMs == 0) {
     sampler.stopSampling();
-    publishHighSpeedReply(wasActive ? "capture.stopping" : "capture.stopped");
+    publishHighSpeedReply(ScheduleEngine::STATUS_SUCCESS);
     return true;
   }
 
-  if (strcmp(command, "capture.status") == 0) {
-    publishHighSpeedReply("capture.status");
+  const char* targetHost = doc["udp_host"] | "";
+  const uint32_t targetPort = doc["udp_port"] | 0;
+  HighSpeedConfig config;
+  if (!doc["mode"].is<long>() || !parseHighSpeedMode(doc["mode"].as<long>(), config.mode)) {
+    publishHighSpeedReply(ScheduleEngine::STATUS_INVALID, "invalid_mode");
     return true;
   }
-  return false;
-}
-
-static void publishScheduleReply(const char* event)
-{
-  const String payload = SystemTask::schedulerJson(event);
-  if (payload.length() > 0) {
-    sendMessageInfoPublish(payload);
+  if (!config.udpTargetIP.fromString(targetHost) || targetPort == 0 ||
+      targetPort > 65535 || config.udpTargetIP[0] == 0 ||
+      config.udpTargetIP[0] >= 224) {
+    publishHighSpeedReply(ScheduleEngine::STATUS_INVALID, "invalid_udp_target");
+    return true;
   }
+  config.udpTargetPort = static_cast<uint16_t>(targetPort);
+  config.durationMs = durationMs;
+  if (sampler.isSamplingActive()) {
+    publishHighSpeedReply(COMMAND_RESULT_BUSY, "capture_busy");
+    return true;
+  }
+  if (!sampler.isModeAvailable(config.mode)) {
+    publishHighSpeedReply(ScheduleEngine::STATUS_NOT_READY, "sensor_or_sampler_unavailable");
+    return true;
+  }
+  if (!sampler.startSampling(config)) {
+    publishHighSpeedReply(ScheduleEngine::STATUS_NOT_READY, "capture_start_failed");
+    return true;
+  }
+  publishHighSpeedReply(ScheduleEngine::STATUS_SUCCESS);
+  return true;
 }
 
 static void publishStatusReport(int replyTo = 0, int id = 0,
@@ -875,17 +864,44 @@ static bool handleOnTimerCommand(JsonDocument& doc)
   return true;
 }
 
+// {"com":14,"id":1|2,"value":N}: sensor threshold rule (4 bytes packed in N,
+// see ThresholdControl.h); value 0 deletes, without "value" (and "id") only
+// reports. Answered with the status report ("th" = both rules).
+static bool handleThresholdCommand(JsonDocument& doc)
+{
+  if ((doc["com"] | 0) != COMMAND_TYPE_THRESHOLD) {
+    return false;
+  }
+  ScheduleEngine::Result result{ScheduleEngine::STATUS_SUCCESS, 0, 0, "Threshold"};
+  long id = 0;
+  long value = 0;
+  if (!doc["id"].isNull() || !doc["value"].isNull()) {
+    if (!readScheduleField(doc, "id", -1, 1, threshold::kRuleCount, id)) {
+      id = 0;
+      result = invalidSchedule("id must be 1 or 2");
+    } else if (!doc["value"].isNull() &&
+               (!readScheduleField(doc, "value", -1, 0, 0x7FFFFFFFL, value) ||
+                !ThresholdControl::set(static_cast<uint8_t>(id), static_cast<uint32_t>(value)))) {
+      result = invalidSchedule("invalid threshold rule (sensor, ports or flags)");
+    }
+  }
+  if (result.status != ScheduleEngine::STATUS_SUCCESS) {
+    DEVICE_LOG_INFO(String("[Threshold] ") + result.message);
+  }
+  publishStatusReport(COMMAND_TYPE_THRESHOLD, static_cast<int>(id), &result);
+  return true;
+}
+
 // {"com":4,"value":N}: switch the ports on after N seconds (1-86400), once,
 // independent of schedules; value 0 cancels, no value only reports. Optional
-// "mask" (default: every output). Lost on reboot. Reply:
-// {"cmd":"COUNTDOWN_ACK","status":..,"remain":<s left, 0 = idle>,"mask":..,"sec":<last N>,"message":..}
+// "mask" (default: every output). Lost on reboot. Reply: the status report
+// with "rc":4, "rs", "cd" (seconds left, 0 = idle), "cm" (ports), "cs" (last N).
 static bool handleCountdownCommand(JsonDocument& doc)
 {
   if ((doc["com"] | 0) != COMMAND_TYPE_COUNTDOWN) {
     return false;
   }
-  ScheduleEngine::Status status = ScheduleEngine::STATUS_SUCCESS;
-  const char* message = "Countdown";
+  ScheduleEngine::Result result{ScheduleEngine::STATUS_SUCCESS, 0, 0, "Countdown"};
   long seconds = 0;
   long mask = 0;
   if (doc["value"].isNull()) {
@@ -893,36 +909,27 @@ static bool handleCountdownCommand(JsonDocument& doc)
   } else if (!readScheduleField(doc, "value", -1, 0, countdown::kMaxSeconds, seconds) ||
              !readScheduleField(doc, "mask", SCHEDULE_ALLOWED_PORT_MASK, 1, 255, mask) ||
              (mask & ~SCHEDULE_ALLOWED_PORT_MASK) != 0) {
-    status = ScheduleEngine::STATUS_INVALID;
-    message = "value must be 0 (cancel) or 1-86400 s; mask must only contain output ports";
+    result = invalidSchedule("value must be 0 (cancel) or 1-86400 s; mask must only contain output ports");
   } else if (seconds == 0) {
     Countdown::cancel();
-    message = "Countdown cancelled";
+    result.message = "Countdown cancelled";
   } else if (Countdown::start(static_cast<uint32_t>(seconds), static_cast<uint8_t>(mask))) {
-    message = "Countdown started";
+    result.message = "Countdown started";
   } else {
-    status = ScheduleEngine::STATUS_NOT_READY;
-    message = "countdown not ready";
+    result.status = ScheduleEngine::STATUS_NOT_READY;
+    result.message = "countdown not ready";
   }
-  StaticJsonDocument<256> response;
-  response["cmd"] = "COUNTDOWN_ACK";
-  response["status"] = ScheduleEngine::statusName(status);
-  response["remain"] = Countdown::remaining();
-  response["mask"] = Countdown::mask();
-  response["sec"] = Countdown::lastSeconds();
-  response["message"] = message;
-  String payload;
-  serializeJson(response, payload);
-  DEVICE_LOG_INFO("[Countdown] " + payload);
-  sendMessageInfoPublish(payload);
+  DEVICE_LOG_INFO(String("[Countdown] ") + result.message);
+  publishStatusReport(COMMAND_TYPE_COUNTDOWN, 0, &result);
   return true;
 }
 
-// {"cmd":"STATUS_GET"} and the replies to com:5 / com:8-12:
-// {"se":..,"va":..,"co":..,"set":["8,20,1,4,5",...],"tim":1800,"cd":0,"ip":".."}:
+// The reply to {"com":2} (full status) and to com:4 / com:5 / com:8-12 / com:14:
+// {"se":..,"va":..,"co":..,"set":["8,20,1,4,5",...],"tim":1800,"cd":0,"cm":3,"cs":600,"ip":"..","th":[n,n]}:
 // the periodic status message plus every active schedule as its 6-byte record
 // "hour,minute,weekday,port_state,auto_off", ordered by time, the on-timer
-// in seconds (0 = off), the countdown seconds left (0 = idle) and the LAN IP.
+// in seconds (0 = off), the countdown seconds left (0 = idle), its ports
+// ("cm") and last length ("cs"), and the LAN IP.
 // A command reply adds "rc" (the com answered), "rs" (result: 0 ok,
 // 1 conflict, 2 invalid, 3 not found, 4 id exists, 5 not ready), "id" (the
 // schedule) and on conflict "ci"/"cp" (conflicting schedule id / ports). RAM only.
@@ -936,8 +943,15 @@ static void publishStatusReport(int replyTo, int id, const ScheduleEngine::Resul
   ScheduleEngine::addSettings(report.createNestedArray("set"));
   report["tim"] = OnTimer::seconds();
   report["cd"] = Countdown::remaining();
+  report["cm"] = Countdown::mask();
+  report["cs"] = Countdown::lastSeconds();
   // LAN address, so web_manager can reach the device without the broker.
   report["ip"] = WiFi.localIP().toString();
+  // Sensor threshold rules (ThresholdControl.h), 0 = empty.
+  JsonArray thresholds = report.createNestedArray("th");
+  for (uint8_t id = 1; id <= threshold::kRuleCount; ++id) {
+    thresholds.add(ThresholdControl::value(id));
+  }
   if (replyTo != 0) {
     report["rc"] = replyTo;
     report["rs"] = static_cast<int>(result != nullptr ? result->status : ScheduleEngine::STATUS_SUCCESS);
@@ -957,26 +971,76 @@ static void publishStatusReport(int replyTo, int id, const ScheduleEngine::Resul
   sendMessageInfoPublish(payload);
 }
 
-// STATUS_GET, the schedule commands (com:8-13) and the legacy schedule.*
-// commands of the removed NVS pump scheduler.
-static bool handleScheduleCommand(JsonDocument& doc)
+// {"com":2}: full status report with "rc":2 (replaces {"cmd":"STATUS_GET"}).
+static bool handleStatusCommand(JsonDocument& doc)
 {
-  const char* command = doc["cmd"] | "";
-  if (strcmp(command, "STATUS_GET") == 0) {
-    publishStatusReport();
-    return true;
+  if ((doc["com"] | 0) != COMMAND_TYPE_STATUS) {
+    return false;
   }
-  if (strcmp(command, "schedule.status") == 0) {
-    publishScheduleReply("schedule.status");
-    return true;
-  }
-  if (strcmp(command, "schedule.set") == 0 || strcmp(command, "schedule.clear") == 0) {
-    DEVICE_LOG_INFO("[Schedule] Legacy schedule.* command rejected; use com:8-13");
-    publishScheduleReply("schedule.error");
-    return true;
-  }
-  return handleScheduleEngineCommand(doc);
+  publishStatusReport(COMMAND_TYPE_STATUS);
+  return true;
 }
+
+// Short status message (the periodic one) answering com:1: adds "rc"/"rs".
+static void publishShortReply(int replyTo, int result)
+{
+  String payload = getInfoDevice(sensorValue, statusDevice);
+  const int end = payload.lastIndexOf('}');
+  if (end < 0) {
+    return;
+  }
+  payload = payload.substring(0, end) + ",\"rc\":" + replyTo + ",\"rs\":" + result + "}";
+  sendMessageInfoPublish(payload);
+}
+
+#if ENABLE_COMMAND_PASSWORD
+// Device password = "mqtt_pwd" of the stored setup JSON, read once (/setup
+// restarts the device). Only that field is parsed.
+static const char* devicePassword()
+{
+  static bool loaded = false;
+  static char password[33] = "";
+  if (!loaded) {
+    loaded = true;
+    StaticJsonDocument<32> filter;
+    filter["mqtt_pwd"] = true;
+    StaticJsonDocument<128> stored;
+    const String json = Memory::GetInstance()->readString(WIFI_SETUP_JSON, WIFI_SETUP_JSON_MAX_LENGTH);
+    if (!deserializeJson(stored, json, DeserializationOption::Filter(filter))) {
+      strlcpy(password, stored["mqtt_pwd"] | "", sizeof(password));
+    }
+  }
+  return password;
+}
+
+bool commandPasswordMatches(const char* received)
+{
+  const char* expected = devicePassword();
+  const size_t expectedLength = strlen(expected);
+  const size_t receivedLength = strlen(received);
+  // Runs over the whole received text, so timing does not show how much matched.
+  unsigned char difference = expectedLength != receivedLength ? 1 : 0;
+  for (size_t i = 0; i < receivedLength; ++i) {
+    difference |= static_cast<unsigned char>(received[i] ^ expected[expectedLength ? i % expectedLength : 0]);
+  }
+  return difference == 0;
+}
+
+// Rejects a command whose "pa" is not the device password, answering
+// {"rc":<com>,"rs":6} (also over LAN).
+static bool rejectWrongPassword(JsonDocument& doc)
+{
+  if (commandPasswordMatches(doc["pa"] | "")) {
+    return false;
+  }
+  DEVICE_LOG_INFO("[Auth] Rejected command with a wrong password");
+  char reply[40];
+  snprintf(reply, sizeof(reply), "{\"rc\":%d,\"rs\":%d}", static_cast<int>(doc["com"] | 0),
+           COMMAND_RESULT_WRONG_PASSWORD);
+  sendMessageInfoPublish(reply);
+  return true;
+}
+#endif
 
 DeviceCommand cmd;
 void MqttDataCallback(char* topic, byte* data, unsigned int data_len);
@@ -1020,11 +1084,16 @@ void MqttDataCallback(char* topic, byte* data, unsigned int data_len)
         return;
     }
 #endif
-
-    if (handleHighSpeedCommand(doc)) {
+#if ENABLE_COMMAND_PASSWORD
+    // After decryption: "pa" is inside the encrypted command.
+    if (rejectWrongPassword(doc)) {
         return;
     }
-    if (handleScheduleCommand(doc) || handleOnTimerCommand(doc) || handleCountdownCommand(doc)) {
+#endif
+
+    // Every command is {"com":<number>,...}; "cmd" commands are no longer accepted.
+    if (handleStatusCommand(doc) || handleHighSpeedCommand(doc) || handleScheduleEngineCommand(doc) ||
+        handleOnTimerCommand(doc) || handleCountdownCommand(doc) || handleThresholdCommand(doc)) {
         return;
     }
 
@@ -1044,20 +1113,20 @@ void MqttDataCallback(char* topic, byte* data, unsigned int data_len)
     // priority). Without it, value sets all 8 ports as before.
     cmd.portMask = doc["mask"] | 0;
 
-    if(cmd.commandType == COMMAND_TYPE_OTHER) {
-        cmd.reserved = COMMAND_RESERVED_NONE;
-        sendMessageInfoPublish(getInfoDevice(sensorValue,statusDevice));
-    } else if(cmd.commandType == COMMAND_TYPE_CONTROL)  {
+    if(cmd.commandType == COMMAND_TYPE_CONTROL)  {
         cmd.reserved = COMMAND_RESERVED_CONTROL;
         #if SUPPORT_RTOS
-            if (deviceCommandQueue == NULL) return;
-            if (xQueueSend(deviceCommandQueue, &cmd, pdMS_TO_TICKS(50)) != pdTRUE) {
+            if (deviceCommandQueue == NULL ||
+                xQueueSend(deviceCommandQueue, &cmd, pdMS_TO_TICKS(50)) != pdTRUE) {
                   DEVICE_LOG_INFO("[MQTT] Failed to queue device command");
+                  publishShortReply(COMMAND_TYPE_CONTROL, ScheduleEngine::STATUS_NOT_READY);
+                  return;
             }
         #else
             MemoryData::GetInstance().deviceCommand_ = &cmd;
         #endif
-        sendMessageInfoPublish(getInfoDevice(sensorValue,statusDevice));
+        // Sent before TaskDevice applies the command: "co" may still show the old ports.
+        publishShortReply(COMMAND_TYPE_CONTROL, ScheduleEngine::STATUS_SUCCESS);
     }
 }
 

@@ -102,17 +102,17 @@ Ví dụ trên chỉ phù hợp khi broker và client cùng máy; ESP32 không �
 
 ACL cho `device1` cho phép publish `devices/device1/data` và subscribe `devices/device1/commands/#`; `device2` chỉ subscribe data. Backend dùng `clientId=device_iot1`, publish lệnh tới `devices/device1/commands/...` và subscribe `devices/device1/data`. ACL và SHA-256 fingerprint certificate riêng của backend đã được thêm vào `mqtt_acl.json` và `mqtt_device_certs.json`. Certificate công khai nằm tại `mqttBroker/certs/device_iot1.crt`; private key đã mã hóa bằng passphrase ngẫu nhiên và passphrase được lưu ngoài Git trong thư mục session đã giới hạn quyền truy cập. Hai simulator hỗ trợ `MQTT_CLIENT_KEY_PASSPHRASE` cùng `MQTT_CLIENT_CERT`, `MQTT_CLIENT_KEY` để kiểm tra key mã hóa; đặt passphrase trong secret manager/environment, không commit vào `.env` hoặc repository. Chuyển cả certificate, private key và passphrase tới backend qua kênh quản lý secret an toàn; không đưa private key/passphrase vào log hoặc MQTT payload. Không dùng danh tính `device1` cho backend; không chia sẻ private key giữa các client.
 
-Lệnh capture được gửi trên topic subscribe đã provision, thường là `devices/device1/commands/...`. Replay fields là metadata ngoài lệnh và không ảnh hưởng đến việc firmware parse `cmd`, `mode`, `udp_host`, `udp_port` hay `duration_ms`.
+Lệnh capture được gửi trên topic subscribe đã provision, thường là `devices/device1/commands/...`. Replay fields là metadata ngoài lệnh và không ảnh hưởng đến việc firmware parse `com`, `value`, `mode`, `udp_host` hay `udp_port`.
 
 ### Bắt đầu phiên
 
 ```json
 {
-  "cmd": "capture.start",
-  "mode": "all",
+  "com": 15,
+  "value": 10000,
+  "mode": 4,
   "udp_host": "192.168.1.50",
   "udp_port": 5005,
-  "duration_ms": 10000,
   "timestamp": 1710000000000,
   "nonce": "e.g. 16-or-more-random-hex-characters"
 }
@@ -120,37 +120,47 @@ Lệnh capture được gửi trên topic subscribe đã provision, thường l�
 
 Hai giá trị cuối trong ví dụ chỉ minh họa định dạng; backend phải tạo lại `timestamp` từ đồng hồ đã đồng bộ và nonce ngẫu nhiên tại thời điểm gửi từng lệnh.
 
-`mode` nhận một trong các giá trị:
+Lệnh thu mẫu là `com` = 15 (`COMMAND_TYPE_HIGH_SPEED_CAPTURE`), thay cho các lệnh chuỗi cũ `{"cmd":"capture.start|stop|status"}`. `value` = thời gian thu (ms, 1–60000), bắt buộc khi bắt đầu.
+
+`mode` là số:
 
 | mode | Luồng bật |
 |---|---|
-| `adc` | ADC âm thanh, tốc độ theo `HS_AUDIO_ADC_SAMPLE_RATE_HZ` |
-| `imu` | ICM-42688-P, tốc độ theo `HS_ICM42688_SAMPLE_RATE_HZ` |
-| `ads` | ADS8866, tốc độ theo `HS_ADS8866_SAMPLE_RATE_HZ` |
-| `all` | Cả ba luồng |
+| `1` | ADC âm thanh, tốc độ theo `HS_AUDIO_ADC_SAMPLE_RATE_HZ` (trước đây `"adc"`) |
+| `2` | ICM-42688-P, tốc độ theo `HS_ICM42688_SAMPLE_RATE_HZ` (trước đây `"imu"`) |
+| `3` | ADS8866, tốc độ theo `HS_ADS8866_SAMPLE_RATE_HZ` (trước đây `"ads"`) |
+| `4` | Cả ba luồng (trước đây `"all"`) |
 
-`udp_host` là địa chỉ IPv4 của backend mà ESP32 có thể truy cập; `udp_port` phải từ 1 đến 65535. `duration_ms` là 1–60000; nếu bỏ qua, mặc định 10000 ms.
+`udp_host` là địa chỉ IPv4 của backend mà ESP32 có thể truy cập; `udp_port` phải từ 1 đến 65535.
 
 ### Dừng và hỏi trạng thái
 
 ```json
-{"cmd":"capture.stop"}
+{"com":15,"value":0}
 ```
 
 ```json
-{"cmd":"capture.status"}
+{"com":15}
 ```
 
-Phản hồi được publish lên `public_topic`, ví dụ:
+`value` = 0 dừng phiên; không có `value` chỉ hỏi trạng thái. Phản hồi được publish lên `public_topic` theo dạng chung `rc`/`rs` (thay `{"event":"capture.*"}` cũ):
 
 ```json
-{"event":"capture.started","active":true}
-{"event":"capture.stopping","active":true}
-{"event":"capture.status","active":false}
-{"event":"capture.error","active":false,"reason":"invalid_udp_target"}
+{"rc":15,"rs":0,"act":1}
+{"rc":15,"rs":0,"act":0}
+{"rc":15,"rs":2,"act":0}
+{"rc":15,"rs":7,"act":1}
 ```
 
-Lý do lỗi hiện có thể là `invalid_mode`, `invalid_udp_target`, `invalid_duration`, `capture_busy`, `sensor_or_sampler_unavailable` hoặc `capture_start_failed`. Phiên cũng tự dừng khi hết `duration_ms`.
+| `rs` | Ý nghĩa (lý do cũ) |
+|---|---|
+| `0` | thành công: đã bắt đầu, đã dừng hoặc trả trạng thái |
+| `2` | không hợp lệ: `mode`, `udp_host` / `udp_port` hoặc `value` sai (`invalid_mode`, `invalid_udp_target`, `invalid_duration`) |
+| `5` | chưa sẵn sàng: cảm biến / bộ lấy mẫu không dùng được hoặc không bắt đầu được (`sensor_or_sampler_unavailable`, `capture_start_failed`) |
+| `6` | sai mật khẩu thiết bị (`pa`) |
+| `7` | đang bận: đã có phiên đang chạy (`capture_busy`) |
+
+`act` = 1 khi đang thu mẫu. Lý do chi tiết chỉ ghi ra log Serial. Phiên cũng tự dừng khi hết `value` ms.
 
 ## 4. Định dạng gói UDP
 
@@ -181,7 +191,7 @@ Backend nên tách phiên bằng `session_id`, theo dõi `sequence` riêng theo 
 
 ## 5. Ví dụ giải mã phía backend Node.js
 
-Mở UDP socket trước khi gửi lệnh MQTT `capture.start`, tránh bỏ các datagram đầu phiên:
+Mở UDP socket trước khi gửi lệnh MQTT bắt đầu thu (`{"com":15,"value":...}`), tránh bỏ các datagram đầu phiên:
 
 ```js
 const dgram = require("node:dgram");
@@ -215,7 +225,7 @@ socket.on("message", (packet, remote) => {
 socket.bind(5005, "0.0.0.0");
 ```
 
-Mobile app chỉ cần publish lệnh MQTT và hiển thị `event` phản hồi. Nếu app cần nhận dữ liệu mẫu trực tiếp, app phải mở UDP socket trên IP/port mà app gửi trong `capture.start`; nếu backend là đích UDP thì backend chịu trách nhiệm lưu trữ/chuyển tiếp dữ liệu.
+Mobile app chỉ cần publish lệnh MQTT và hiển thị phản hồi `{"rc":15,"rs","act"}`. Nếu app cần nhận dữ liệu mẫu trực tiếp, app phải mở UDP socket trên IP/port mà app gửi trong lệnh `{"com":15}`; nếu backend là đích UDP thì backend chịu trách nhiệm lưu trữ/chuyển tiếp dữ liệu.
 
 ## 6. Kiểm tra tích hợp
 

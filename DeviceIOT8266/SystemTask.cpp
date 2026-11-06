@@ -10,6 +10,7 @@
 #include "ScheduleEngine.h"
 #include "OnTimer.h"
 #include "Countdown.h"
+#include "ThresholdControl.h"
 #include "define_All.h"
 
 namespace {
@@ -50,6 +51,7 @@ void processSchedules() {
     ScheduleEngine::flush();
     OnTimer::flush();
     Countdown::flush();
+    ThresholdControl::flush();
 }
 
 void refreshSnapshot() {
@@ -90,6 +92,7 @@ void SystemTask::setup() {
     ScheduleEngine::setup();
     OnTimer::setup();
     Countdown::setup();
+    ThresholdControl::setup();
 }
 
 void SystemTask::service() {
@@ -114,19 +117,6 @@ void SystemTask::taskRun(void* parameter) {
 void SystemTask::setNetworkState(bool wifi, bool mqtt, bool) {
     wifiConnected = wifi;
     mqttConnected = mqtt;
-}
-
-String SystemTask::schedulerJson(const char* event) {
-    StaticJsonDocument<256> document;
-    document["event"] = event == nullptr ? "schedule.status" : event;
-    document["port_mask"] = SCHEDULE_ALLOWED_PORT_MASK;
-    document["max_rules"] = SCHEDULE_MAX_COUNT;
-    document["enabled_rules"] = ScheduleEngine::activeCount();
-    document["triggered"] = ScheduleEngine::triggeredCount();
-    document["command_failures"] = ScheduleEngine::commandFailureCount();
-    document["clock_valid"] = time(nullptr) >= kMinimumValidEpoch;
-    String payload;
-    return serializeJson(document, payload) == 0 || document.overflowed() ? String() : payload;
 }
 
 String SystemTask::telemetryJson() {

@@ -47,6 +47,7 @@ class NetWork_Wifi {
         static void   handleControl(void);
 #if ENABLE_LAN_CONTROL
         static void   handleLan(void);
+        static void   handleLanOptions(void);
 #endif
         static void   handleUpdate(void);
         static void   handleLoraGet(void);

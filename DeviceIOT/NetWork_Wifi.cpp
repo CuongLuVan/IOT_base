@@ -273,6 +273,12 @@ extern DeviceCommand cmd;
 extern QueueHandle_t deviceCommandQueue;
 void NetWork_Wifi::handleControl(){
     DEVICE_LOG_INFO("start NetWork_Wifi::handleControl");
+#if ENABLE_COMMAND_PASSWORD
+    if (!commandPasswordMatches(webServer->arg("pa").c_str())) {
+        webServer->send(403, "application/json", "{\"error\":\"wrong password\"}");
+        return;
+    }
+#endif
     String data = webServer->arg("data");
    
     cmd.commandType = webServer->arg("com").toInt();
@@ -340,6 +346,16 @@ static void sendLanError(int status, const char* message)
     webServer->send(status, "application/json", payload);
 }
 
+// CORS preflight of LAN_CONTROL_PATH: web_manager pages call the device
+// straight from the user's browser. enableCORS(true) adds the Allow-Origin /
+// Methods / Headers fields; Chrome also asks before a page reaches the LAN.
+void NetWork_Wifi::handleLanOptions()
+{
+    webServer->sendHeader("Access-Control-Allow-Private-Network", "true");
+    webServer->sendHeader("Access-Control-Max-Age", "600");
+    webServer->send(204);
+}
+
 // POST LAN_CONTROL_PATH {"data":<MQTT command object or JSON string>}
 // -> {"ip":"...","data":[replies]}; 422 when the command gave no reply.
 void NetWork_Wifi::handleLan()
@@ -388,6 +404,7 @@ void NetWork_Wifi::startWebServer()
     webServer->on("/control", this->handleControl);
 #if ENABLE_LAN_CONTROL
     webServer->on(LAN_CONTROL_PATH, HTTP_POST, this->handleLan);
+    webServer->on(LAN_CONTROL_PATH, HTTP_OPTIONS, this->handleLanOptions);
 #endif
     webServer->on("/update", this->handleUpdate);
     webServer->on("/lora", HTTP_GET, this->handleLoraGet);

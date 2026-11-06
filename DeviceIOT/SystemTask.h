@@ -36,8 +36,8 @@ public:
     static void service();
 
     // Schedules live in ScheduleEngine (EEPROM); SystemTask evaluates them
-    // every cycle once the SNTP clock is valid.
-    static String schedulerJson(const char* event);
+    // every cycle once the SNTP clock is valid. Their state is read with
+    // {"com":2} / {"com":13} (NetWork_Mqtt.cpp).
 
     static void recordCollectedSamples(UdpPacketType type, uint32_t count);
     static void recordMissedSamples(UdpPacketType type, uint32_t count);

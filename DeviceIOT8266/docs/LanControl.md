@@ -18,7 +18,7 @@ Content-Type: application/json
 
 ```json
 {"data":{"com":1,"value":1}}
-{"data":{"cmd":"STATUS_GET"}}
+{"data":{"com":2}}
 {"data":{"com":5,"value":1800}}
 {"data":{"com":4,"value":600}}
 {"data":{"com":8,"id":1,"ho":7,"mi":30,"we":31,"po":1,"pos":1,"au":600}}
@@ -45,12 +45,12 @@ Content-Type: application/json
 - Lệnh đi vào **đúng hàm xử lý tin nhắn MQTT** (`MqttDataCallback` /
   `mqttCallback`): cùng giới hạn kích thước, cùng kiểm tra chữ ký
   (`ENABLE_MESSAGE_AUTHENTICATION`) và Ascon (`ENABLE_ASCON_AEAD128`), cùng các
-  lệnh `com` (1, 2, 4, 5, 8..13), `STATUS_GET`, …
+  lệnh `com` (1, 2, 4, 5, 8..14; 15 chỉ DeviceIOT) — mọi lệnh đều là `{"com":<số>}`, không còn `"cmd"`
 - Bản tin trả lời được gom vào phản hồi HTTP thay vì publish. Không thêm trường
   replay/chữ ký của broker; nếu bật Ascon thì vẫn được mã hóa như qua MQTT.
 - Chạy trong TaskNetwork, cùng luồng với MQTT callback, nên không cần khóa
   thêm.
-- `STATUS_GET` (cả qua MQTT) trả thêm `"ip"` để web_manager biết địa chỉ LAN
+- `{"com":2}` (cả qua MQTT) trả thêm `"ip"` để web_manager biết địa chỉ LAN
   khi còn kết nối MQTT.
 - DeviceIOT (ESP32): khi chỉ broker / Internet lỗi mà WiFi vẫn kết nối, thiết bị
   **không ngắt WiFi** nữa (trước đây ngắt và kết nối lại mỗi ~20 s), server
@@ -61,18 +61,36 @@ Content-Type: application/json
 
 ## Bảo mật
 
-Không có xác thực riêng cho LAN: ai trong cùng mạng LAN cũng gửi được lệnh
-(giống endpoint `/control` có sẵn). Trên mạng LAN không tin cậy:
+Lệnh LAN cũng phải có `"pa"` = mật khẩu thiết bị (xem `Schedule.md`, mục Mật
+khẩu lệnh); sai → `{"rc":<com>,"rs":6}`. web_manager gắn `pa` từ `mqtt_pass`.
+Mật khẩu đi dạng chữ rõ trong HTTP trên LAN.
+
+Ngoài mật khẩu lệnh (`pa`, gửi dạng chữ rõ) không có xác thực riêng cho LAN.
+Trên mạng LAN không tin cậy:
 
 - bật `ENABLE_MESSAGE_AUTHENTICATION`: lệnh LAN phải có chữ ký HMAC như lệnh
-  MQTT (web_manager tự ký khi có `MQTT_HMAC_SECRET`). Thiết bị không kiểm tra
+  MQTT. Thiết bị không kiểm tra
   replay, nên một lệnh đã ký bị bắt được trên LAN có thể bị gửi lại;
 - hoặc tắt `ENABLE_LAN_CONTROL`.
 
 ## web_manager
 
-Trang điều khiển thiết bị có mục **Kết nối**: Tự động / MQTT / LAN, IP thiết
-bị báo, và ô nhập IP thủ công. "Tự động" dùng MQTT khi broker và thiết bị đang
-trả lời qua MQTT, ngược lại gửi qua LAN nếu đã biết IP. Máy chủ web_manager
-phải nằm cùng mạng LAN với thiết bị; chỉ gửi tới IPv4 nội bộ (10.x,
-172.16–31.x, 192.168.x), cổng 80.
+Điều khiển LAN **không đi qua máy chủ web_manager**: trình duyệt trên máy
+người dùng (cùng mạng LAN với thiết bị) gửi thẳng `POST http://<ip>/lan`, tự
+dựng lệnh `{"com":...}` và tự tách bản tin trả lời (trạng thái, `set`, `tim`,
+`cd`, danh sách lịch, mã `rs`). Máy chủ chỉ dùng cho MQTT.
+
+- Mục **Kết nối** trên trang thiết bị: Tự động / MQTT / LAN, IP thiết bị báo
+  và ô nhập IP thủ công (lưu trong trình duyệt). "Tự động" dùng MQTT khi máy
+  chủ, broker và thiết bị đang trả lời qua MQTT (trong 60 s), ngược lại LAN.
+- IP lấy từ trường `"ip"` thiết bị gửi qua MQTT (trả lời `{"com":2}`) hoặc trong trả
+  lời LAN, lưu trong trình duyệt; danh sách thiết bị cũng được lưu để vẫn
+  điều khiển được qua LAN khi không gọi được máy chủ.
+- Thiết bị trả lời CORS (`Access-Control-Allow-Origin: *`) và preflight
+  `OPTIONS /lan` (có `Access-Control-Allow-Private-Network: true` cho Chrome).
+  Trang gửi `Content-Type: text/plain` để tránh preflight khi có thể.
+- Nếu trang web_manager mở bằng **HTTPS**, trình duyệt có thể chặn gọi
+  `http://` tới thiết bị (mixed content / truy cập mạng cục bộ): cần cho phép
+  truy cập mạng cục bộ trong trình duyệt hoặc mở trang bằng HTTP trong LAN.
+- Trình duyệt không có khóa HMAC: khi bật `ENABLE_MESSAGE_AUTHENTICATION`,
+  lệnh LAN từ trang sẽ bị từ chối (422).

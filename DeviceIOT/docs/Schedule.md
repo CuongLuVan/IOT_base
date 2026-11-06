@@ -64,9 +64,10 @@ lệnh khác.
 | 11 | Bật / tắt lịch | `{"com":11,"id":1,"value":1}` (`0` = tắt) |
 | 12 | Xóa tất cả lịch | `{"com":12}` |
 | 13 | Đọc danh sách lịch | `{"com":13,"fr":1}` |
+| 14 | Điều khiển theo ngưỡng sensor (xem mục dưới) | `{"com":14,"id":1,"value":34671544}` |
 
 Các số khác đã dùng: 1 điều khiển, 2 trạng thái, 3 (nội bộ), 4 đếm ngược,
-6/7 Ascon.
+7 Ascon, 15 thu mẫu tốc độ cao (chỉ DeviceIOT). 6 không dùng.
 
 Trường của lịch (com 8, 9):
 
@@ -81,20 +82,40 @@ Trường của lịch (com 8, 9):
 | `en` | `0` = lưu ở trạng thái tắt | mặc định 1 |
 | `ye`, `mo`, `da` | ngày chạy của lịch một lần (`we` 0); thời điểm đã qua → bị từ chối | khi `we` = 0 |
 
+### Mật khẩu lệnh (`ENABLE_COMMAND_PASSWORD`)
+
+Mọi lệnh (MQTT, LAN `/lan`, HTTP `/control`) phải có `"pa"` = mật khẩu thiết
+bị, tức `mqtt_pwd` đã lưu khi cài đặt (web_manager lưu thành `mqtt_pass` khi
+đăng ký thiết bị):
+
+```json
+{"com":5,"value":1800,"pa":"matkhau"}
+{"com":8,"id":1,"ho":7,"mi":30,"we":31,"po":1,"pos":1,"au":600,"pa":"matkhau"}
+{"com":2,"pa":"matkhau"}
+```
+
+- Sai hoặc thiếu `pa` → lệnh không chạy, thiết bị trả `{"rc":<com>,"rs":6}`;
+  `/control` trả HTTP 403. Mọi lệnh đều có dạng `{"com":<số>,...}`, không còn
+  lệnh / trả lời dạng `"cmd"`.
+- Thiết bị chưa cài mật khẩu (`mqtt_pwd` rỗng) nhận lệnh không có `pa`.
+- Kiểm tra sau khi giải mã Ascon, nên `pa` nằm trong lệnh đã mã hóa.
+- `pa` đi dạng chữ rõ: qua MQTT được TLS bảo vệ tới broker (broker vẫn đọc
+  được); qua LAN là HTTP thường, máy khác trong LAN có thể nghe được.
+
 ### Trả lời
 
-Mọi lệnh (trừ 13) trả về **bản tin trạng thái rút gọn** (như `STATUS_GET`)
+Mọi lệnh (trừ 1, 7, 13, 15) trả về **bản tin trạng thái rút gọn** (như `{"com":2}`)
 cộng thêm kết quả:
 
 ```json
-{"se":2,"va":"...","co":"1,0,0,12","set":["7,30,31,1,600"],"tim":1800,"cd":0,"ip":"192.168.1.20","rc":8,"rs":0,"id":1}
-{"se":2,"va":"...","co":"1,0,0,12","set":["7,30,31,1,600"],"tim":1800,"cd":0,"ip":"192.168.1.20","rc":8,"rs":1,"id":3,"ci":1,"cp":1}
+{"se":2,"va":"...","co":"1,0,0,12","set":["7,30,31,1,600"],"tim":1800,"cd":0,"cm":0,"cs":600,"ip":"192.168.1.20","rc":8,"rs":0,"id":1}
+{"se":2,"va":"...","co":"1,0,0,12","set":["7,30,31,1,600"],"tim":1800,"cd":0,"cm":0,"cs":600,"ip":"192.168.1.20","rc":8,"rs":1,"id":3,"ci":1,"cp":1}
 ```
 
 | Trường | Ý nghĩa |
 |---|---|
 | `rc` | `com` của lệnh được trả lời |
-| `rs` | kết quả: 0 thành công, 1 trùng lịch, 2 không hợp lệ, 3 không có lịch, 4 id đã dùng, 5 chưa sẵn sàng |
+| `rs` | kết quả: 0 thành công, 1 trùng lịch, 2 không hợp lệ, 3 không có lịch, 4 id đã dùng, 5 chưa sẵn sàng, 6 sai mật khẩu, 7 đang bận |
 | `id` | id lịch của lệnh (không có với 5, 12) |
 | `ci`, `cp` | khi `rs` = 1: id lịch bị trùng và các cổng trùng |
 
@@ -107,7 +128,7 @@ Idempotent (QoS 1 gửi lại): thêm lịch y hệt lịch đã có → `rs` 0;
 `{"com":13,"fr":1}` trả tối đa 10 lịch/lần (giữ dưới 1024 byte):
 
 ```json
-{"rc":13,"mx":20,"cv":1,"nx":0,"it":[[1,7,30,31,1,1,600,1,0,""],[2,18,0,0,1,1,0,1,0,"2026-12-24"]]}
+{"rc":13,"rs":0,"mx":20,"cv":1,"nx":0,"it":[[1,7,30,31,1,1,600,1,0,""],[2,18,0,0,1,1,0,1,0,"2026-12-24"]]}
 ```
 
 Mỗi dòng `it`: `id,ho,mi,we,po,pos,au,en,dn,date` (`dn` = lịch một lần đã
@@ -117,17 +138,21 @@ khởi động của lịch tuần). `mx` = số lịch tối đa, `cv` = 1 khi 
 
 Lệnh trực tiếp hiện có không đổi: `{"com":1,"value":X}` vẫn đặt cả 8 bit.
 Thêm tùy chọn `"mask"`: `{"com":1,"value":1,"mask":1}` chỉ đổi Port 1.
+Trả lời: bản tin trạng thái ngắn (`se`, `va`, `co`) + `"rc":1,"rs":0`; bản tin gửi
+trước khi thiết bị áp lệnh nên `co` có thể còn trạng thái cũ.
 
-## Đọc trạng thái và lịch hiện tại: `STATUS_GET`
+## Đọc trạng thái và lịch hiện tại: `com:2`
 
 ```json
-{"cmd":"STATUS_GET"}
+{"com":2}
 ```
 
-Thiết bị trả lời bản tin trạng thái rút gọn ở trên (không có `rc`/`rs`):
-`se`, `va`, `co` như bản tin định kỳ, cộng thêm `set` (các lịch đang hoạt
-động), `tim` (hẹn giờ tự tắt, giây; `0` = không dùng), `cd` (đếm ngược tự bật,
-số giây còn lại; `0` = không đếm) và `ip` (địa chỉ LAN).
+Thay cho lệnh cũ `{"cmd":"STATUS_GET"}`. Thiết bị trả lời bản tin trạng thái
+rút gọn ở trên với `"rc":2,"rs":0`: `se`, `va`, `co` như bản tin định kỳ, cộng
+thêm `set` (các lịch đang hoạt động), `tim` (hẹn giờ tự tắt, giây; `0` = không
+dùng), `cd` (đếm ngược tự bật, số giây còn lại; `0` = không đếm), `cm` (cổng
+đếm ngược sẽ bật), `cs` (số giây của lần đếm ngược gần nhất), `ip` (địa chỉ LAN)
+và `th` (cài đặt ngưỡng).
 
 Mỗi phần tử `set` là đúng bản ghi 6 byte trong EEPROM, dạng chữ
 `"giờ,phút,weekday,port_state,auto_off"`:
@@ -197,15 +222,49 @@ Trả lời là bản tin trạng thái rút gọn với `"rc":5`, `rs` 0 (hoặ
   little-endian, chỉ lưu N của lần đếm gần nhất để web hiện lại. Chỉ ghi khi N
   khác lần trước, trong `SystemTask` (`Countdown::flush()`).
 
-Trả lời:
+Trả lời: bản tin trạng thái rút gọn + `"rc":4,"rs"` (thay `COUNTDOWN_ACK` cũ):
 
 ```json
-{"cmd":"COUNTDOWN_ACK","status":"SUCCESS","remain":600,"mask":3,"sec":600,"message":"Countdown started"}
-{"cmd":"COUNTDOWN_ACK","status":"SUCCESS","remain":0,"mask":0,"sec":600,"message":"Countdown cancelled"}
+{"se":2,"va":"...","co":"0,0,0,12","set":[],"tim":0,"cd":600,"cm":3,"cs":600,"ip":"192.168.1.20","th":[0,0],"rc":4,"rs":0}
+{"se":2,"va":"...","co":"0,0,0,12","set":[],"tim":0,"cd":0,"cm":0,"cs":600,"ip":"192.168.1.20","th":[0,0],"rc":4,"rs":0}
 ```
 
-`remain` = số giây còn lại (0 = không đếm), `mask` = cổng sẽ bật, `sec` = N
-gần nhất. `STATUS_GET` cũng trả `cd` = số giây còn lại.
+`cd` = số giây còn lại (0 = không đếm), `cm` = cổng sẽ bật, `cs` = N
+gần nhất. `rs`: 0 thành công, 2 `value` / `mask` không hợp lệ, 5 chưa sẵn sàng.
+`{"com":2}` cũng trả `cd`, `cm`, `cs`.
+
+## Điều khiển theo ngưỡng sensor (ThresholdControl, độc lập với lịch)
+
+Tối đa **2 cài đặt**, mỗi cài đặt **4 byte** gộp thành một số `value`:
+
+| Byte | Bit | Ý nghĩa |
+|---|---|---|
+| 1 | 31..24 | Thứ tự sensor trong chuỗi `va`, từ 1; `0` = trống |
+| 2 | 19..16 (bit0-3) | Cổng tác động (bit0 = cổng 1 …) |
+| 2 | 20 (bit4) | `1` = bật, `0` = tắt |
+| 2 | 21 (bit5) | `0` = khi sensor **≥** ngưỡng, `1` = khi sensor **≤** ngưỡng |
+| 3-4 | 15..0 | Ngưỡng `int16`, cùng đơn vị với `va` |
+
+Sensor: 1 độ ẩm ×100, 2 nhiệt độ ×100, 3 bụi, 4 PM2.5, 5 PM10, 6 PM1 (cổng: bit0 bơm, bit1 thiết bị 1).
+
+```json
+{"com":14,"id":1,"value":34671544,"pa":"..."}
+{"com":14,"id":2,"value":35719920,"pa":"..."}
+{"com":14,"id":1,"value":0,"pa":"..."}
+{"com":14,"pa":"..."}
+```
+
+- Ví dụ 1: `34671544` = `0x02110BB8` → sensor 2 (nhiệt độ), `0x11` = cổng 1 + bật, ≥ `3000` (30,00 °C).
+- Ví dụ 2: `35719920` = `0x02210AF0` → nhiệt độ ≤ `2800` (28,00 °C) thì tắt cổng 1: cặp này tạo ngưỡng trễ.
+- `value` 0 = xóa cài đặt; không có `id`/`value` = chỉ đọc.
+- Hành động chạy **một lần mỗi khi điều kiện chuyển từ sai sang đúng** (không lặp mỗi lần đọc
+  sensor), áp như lệnh trực tiếp `com:1`. Cài đặt mới lưu: điều kiện đang đúng thì chạy ở lần đọc sensor kế tiếp.
+- Hai cài đặt cùng đúng một lúc trên cùng cổng nhưng ngược nhau → cổng giữ nguyên.
+- Lưu 8 byte tại 3063..3070 (`THRESHOLD_EEPROM_ADDRESS`), chỉ ghi khi đổi, trong `SystemTask`.
+  `EEPROM_SIZE` = 3071 (giới hạn 3072).
+
+Trả lời: bản tin trạng thái rút gọn + `"rc":14,"rs":0|2[,"id":n]`, có `"th":[v1,v2]` (cả 2 cài đặt).
+`{"com":2}` cũng trả `th`.
 
 ## Xung đột
 

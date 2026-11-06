@@ -81,8 +81,8 @@ router.route('/scheduleCommandMqtt').post(isAuthenMutile, mqttDeviceCtrl.sendSch
 router.route('/onTimerMqtt').post(isAuthenMutile, mqttDeviceCtrl.onTimerCommand);
 // Countdown auto ON on the device ({"com":4,"value":seconds}).
 router.route('/countdownMqtt').post(isAuthenMutile, mqttDeviceCtrl.countdownCommand);
-// LAN control fallback: manual device IP (commands go to POST http://<ip>/lan).
-router.route('/deviceLanMqtt').post(isAuthenMutile, mqttDeviceCtrl.setDeviceLan);
+// Sensor threshold control stored on the device ({"com":14,"id","value"}).
+router.route('/thresholdMqtt').post(isAuthenMutile, mqttDeviceCtrl.thresholdCommand);
 
 
 module.exports =  router;

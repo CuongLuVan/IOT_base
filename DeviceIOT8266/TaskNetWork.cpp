@@ -1,4 +1,5 @@
 ﻿#include "TaskNetWork.h"
+#include "ThresholdControl.h"
 
 #include <ArduinoJson.h>
 
@@ -95,6 +96,7 @@ void collectTaskState() {
     while (sensorDataQueue != nullptr &&
            xQueueReceive(sensorDataQueue, &queuedSensor, 0) == pdTRUE) {
         sensorValue = queuedSensor;
+        ThresholdControl::evaluate(sensorValue);
         sensorDirty = true;
     }
     InfoDeviceControl queuedStatus;
@@ -109,6 +111,7 @@ void collectTaskState() {
         latestSensor.sampleSequence != lastSensorSequence) {
         lastSensorSequence = latestSensor.sampleSequence;
         sensorValue = latestSensor;
+        ThresholdControl::evaluate(sensorValue);
         sensorDirty = true;
     }
     InfoDeviceControl latestStatus;

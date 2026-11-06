@@ -185,6 +185,28 @@ export const saveCertificateMqtt = (data) => {
   return  httpPostData(API_URL + 'document/saveCertificateMqtt' ,data);
 }
 
+// Device status history (web_manager: MongoDB sensor_data, admin only).
+export const getDeviceHistoryDevices = () => {
+  return httpGetData(API_URL + 'mongodb/device-history/devices');
+}
+
+export const getDeviceStatusHistory = (deviceId, limit) => {
+  return httpPostData(API_URL + 'mongodb/device-history', { mqtt_microservice_id: deviceId, limit });
+}
+
+// On/off counts. period: { days: 1..31 } (per day), { months: 1..12 } (per month, 12 = 1 year)
+// or { from, to: "YYYY-MM-DD", groupBy?: 'day' | 'month' } (custom range, max 366 days).
+export const getDeviceSwitchStats = (deviceId, period = { days: 7 }) => {
+  return httpPostData(API_URL + 'mongodb/device-history/switch-stats', Object.assign({ mqtt_microservice_id: deviceId }, period));
+}
+
+// Sensor values ("va", raw units). period: { days: 1..31 } (averaged per bucketMs),
+// { months: 1..12 } (averaged per month, 12 = 1 year)
+// or { from, to: "YYYY-MM-DD", groupBy?: 'day' | 'month' } (custom range, max 366 days).
+export const getDeviceSensorData = (deviceId, period = { days: 7 }) => {
+  return httpPostData(API_URL + 'mongodb/device-history/sensor-data', Object.assign({ mqtt_microservice_id: deviceId }, period));
+}
+
 export const  addOneDataToTable = async (table, data)  =>  {
   return await httpPostData(API_URL + 'users/manager_add', Object.assign({}, data, { table }));
 }

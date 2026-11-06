@@ -21,6 +21,7 @@ public:
     static void handleControl();
 #if ENABLE_LAN_CONTROL
     static void handleLan();
+    static void handleLanOptions();
 #endif
     static void handleUpdate();
     static void handleLoraGet();

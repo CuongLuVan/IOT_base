@@ -28,4 +28,8 @@ const httpServer = require('http').createServer(app);
 ws.createServer({ server: httpServer }, aedes.handle);
 httpServer.listen(app.get('port'), function () {
   console.log('server listening on port ', app.get('port'));
+  // Contexts (automation): loaded from MySQL into RAM, commands over MQTT.
+  if (process.env.MQTT_CONTEXT_ENABLED !== 'false') {
+    require('./app/context/contextService.js').start();
+  }
 })

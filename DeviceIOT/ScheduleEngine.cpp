@@ -563,6 +563,7 @@ String ScheduleEngine::listJson(uint8_t firstId)
     DynamicJsonDocument document(3072);
     // Rows: id,ho,mi,we,po,pos,au,en,dn,date (dn = once schedule done).
     document["rc"] = COMMAND_TYPE_SCHEDULE_LIST;
+    document["rs"] = 0;  // Every reply carries "rs" (0 = success).
     document["mx"] = SCHEDULE_MAX_COUNT;
     document["cv"] = clockValid(time(nullptr)) ? 1 : 0;
     document["nx"] = 0;

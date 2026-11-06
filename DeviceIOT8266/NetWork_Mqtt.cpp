@@ -12,6 +12,7 @@
 #include "ScheduleEngine.h"
 #include "OnTimer.h"
 #include "Countdown.h"
+#include "ThresholdControl.h"
 #include "SystemTask.h"
 
 #if ENABLE_TLS_SSL || ENABLE_mTLS
@@ -518,7 +519,9 @@ bool announceAsconKey() {
     if (asconRotationDue() && !rotateAsconKey()) {
         return false;
     }
-    return publishPayload(String("{\"co\":6,\"va\":\"") + asconDigits + "\"}", false);
+    // Reply to {"com":7} (also sent on connect and on key rotation).
+    return publishPayload(String("{\"rc\":") + COMMAND_TYPE_ASCON_HANDSHAKE + ",\"rs\":0,\"ky\":\"" +
+                          asconDigits + "\"}", false);
 }
 #endif
 
@@ -578,18 +581,22 @@ bool publishPayload(const String& data, bool encrypt) {
     return mqttClient.publish(settings.publishTopic, payload.c_str());
 }
 
-void sendCurrentStatus() {
-    const String payload = getInfoDevice(sensorValue, statusDevice);
-    if (payload.length() > 0) {
-        (void)publishPayload(payload);
+// Short status message (the periodic one) answering com:1, with "rc"/"rs".
+void sendShortReply(int replyTo, int result) {
+    String payload = getInfoDevice(sensorValue, statusDevice);
+    const int end = payload.lastIndexOf('}');
+    if (end < 0) {
+        return;
     }
+    payload = payload.substring(0, end) + ",\"rc\":" + replyTo + ",\"rs\":" + result + "}";
+    (void)publishPayload(payload);
 }
 
-void sendScheduleReply(const char* event) {
-    const String payload = SystemTask::schedulerJson(event);
-    if (payload.length() > 0) {
-        (void)publishPayload(payload);
-    }
+// Reply without a status message, e.g. a rejected com:1: {"rc":<com>,"rs":<result>}.
+void sendResultReply(int replyTo, int result) {
+    char reply[32];
+    snprintf(reply, sizeof(reply), "{\"rc\":%d,\"rs\":%d}", replyTo, result);
+    (void)publishPayload(String(reply));
 }
 
 void publishStatusReport(int replyTo = 0, int id = 0,
@@ -734,16 +741,42 @@ bool handleOnTimerCommand(JsonDocument& document) {
     return true;
 }
 
+// {"com":14,"id":1|2,"value":N}: sensor threshold rule (4 bytes packed in N,
+// see ThresholdControl.h); value 0 deletes, without "value" (and "id") only
+// reports. Answered with the status report ("th" = both rules).
+bool handleThresholdCommand(JsonDocument& document) {
+    if ((document["com"] | 0) != COMMAND_TYPE_THRESHOLD) {
+        return false;
+    }
+    ScheduleEngine::Result result{ScheduleEngine::STATUS_SUCCESS, 0, 0, "Threshold"};
+    long id = 0;
+    long value = 0;
+    if (!document["id"].isNull() || !document["value"].isNull()) {
+        if (!readScheduleField(document, "id", -1, 1, threshold::kRuleCount, id)) {
+            id = 0;
+            result = invalidSchedule("id must be 1 or 2");
+        } else if (!document["value"].isNull() &&
+                   (!readScheduleField(document, "value", -1, 0, 0x7FFFFFFFL, value) ||
+                    !ThresholdControl::set(static_cast<uint8_t>(id), static_cast<uint32_t>(value)))) {
+            result = invalidSchedule("invalid threshold rule (sensor, ports or flags)");
+        }
+    }
+    if (result.status != ScheduleEngine::STATUS_SUCCESS) {
+        DEVICE_LOG_INFO(String("[Threshold] ") + result.message);
+    }
+    publishStatusReport(COMMAND_TYPE_THRESHOLD, static_cast<int>(id), &result);
+    return true;
+}
+
 // {"com":4,"value":N}: switch the ports on after N seconds (1-86400), once,
 // independent of schedules; value 0 cancels, no value only reports. Optional
-// "mask" (default: every output). Lost on reboot. Reply:
-// {"cmd":"COUNTDOWN_ACK","status":..,"remain":<s left, 0 = idle>,"mask":..,"sec":<last N>,"message":..}
+// "mask" (default: every output). Lost on reboot. Reply: the status report
+// with "rc":4, "rs", "cd" (seconds left, 0 = idle), "cm" (ports), "cs" (last N).
 bool handleCountdownCommand(JsonDocument& document) {
     if ((document["com"] | 0) != COMMAND_TYPE_COUNTDOWN) {
         return false;
     }
-    ScheduleEngine::Status status = ScheduleEngine::STATUS_SUCCESS;
-    const char* message = "Countdown";
+    ScheduleEngine::Result result{ScheduleEngine::STATUS_SUCCESS, 0, 0, "Countdown"};
     long seconds = 0;
     long mask = 0;
     if (document["value"].isNull()) {
@@ -751,36 +784,27 @@ bool handleCountdownCommand(JsonDocument& document) {
     } else if (!readScheduleField(document, "value", -1, 0, countdown::kMaxSeconds, seconds) ||
                !readScheduleField(document, "mask", SCHEDULE_ALLOWED_PORT_MASK, 1, 255, mask) ||
                (mask & ~SCHEDULE_ALLOWED_PORT_MASK) != 0) {
-        status = ScheduleEngine::STATUS_INVALID;
-        message = "value must be 0 (cancel) or 1-86400 s; mask must only contain output ports";
+        result = invalidSchedule("value must be 0 (cancel) or 1-86400 s; mask must only contain output ports");
     } else if (seconds == 0) {
         Countdown::cancel();
-        message = "Countdown cancelled";
+        result.message = "Countdown cancelled";
     } else if (Countdown::start(static_cast<uint32_t>(seconds), static_cast<uint8_t>(mask))) {
-        message = "Countdown started";
+        result.message = "Countdown started";
     } else {
-        status = ScheduleEngine::STATUS_NOT_READY;
-        message = "countdown not ready";
+        result.status = ScheduleEngine::STATUS_NOT_READY;
+        result.message = "countdown not ready";
     }
-    StaticJsonDocument<256> response;
-    response["cmd"] = "COUNTDOWN_ACK";
-    response["status"] = ScheduleEngine::statusName(status);
-    response["remain"] = Countdown::remaining();
-    response["mask"] = Countdown::mask();
-    response["sec"] = Countdown::lastSeconds();
-    response["message"] = message;
-    String payload;
-    serializeJson(response, payload);
-    DEVICE_LOG_INFO(String("[Countdown] ") + payload);
-    (void)publishPayload(payload);
+    DEVICE_LOG_INFO(String("[Countdown] ") + result.message);
+    publishStatusReport(COMMAND_TYPE_COUNTDOWN, 0, &result);
     return true;
 }
 
-// {"cmd":"STATUS_GET"} and the replies to com:5 / com:8-12:
-// {"se":..,"va":..,"co":..,"set":["8,20,1,4,5",...],"tim":1800,"cd":0,"ip":".."}:
+// The reply to {"com":2} (full status) and to com:4 / com:5 / com:8-12 / com:14:
+// {"se":..,"va":..,"co":..,"set":["8,20,1,4,5",...],"tim":1800,"cd":0,"cm":1,"cs":600,"ip":"..","th":[n,n]}:
 // the periodic status message plus every active schedule as its 6-byte record
 // "hour,minute,weekday,port_state,auto_off", ordered by time, the on-timer
-// in seconds (0 = off), the countdown seconds left (0 = idle) and the LAN IP.
+// in seconds (0 = off), the countdown seconds left (0 = idle), its ports
+// ("cm") and last length ("cs"), and the LAN IP.
 // A command reply adds "rc" (the com answered), "rs" (result: 0 ok,
 // 1 conflict, 2 invalid, 3 not found, 4 id exists, 5 not ready), "id" (the
 // schedule) and on conflict "ci"/"cp" (conflicting schedule id / ports). RAM only.
@@ -793,8 +817,15 @@ void publishStatusReport(int replyTo, int id, const ScheduleEngine::Result* resu
     ScheduleEngine::addSettings(report.createNestedArray("set"));
     report["tim"] = OnTimer::seconds();
     report["cd"] = Countdown::remaining();
+    report["cm"] = Countdown::mask();
+    report["cs"] = Countdown::lastSeconds();
     // LAN address, so web_manager can reach the device without the broker.
     report["ip"] = WiFi.localIP().toString();
+    // Sensor threshold rules (ThresholdControl.h), 0 = empty.
+    JsonArray thresholds = report.createNestedArray("th");
+    for (uint8_t id = 1; id <= threshold::kRuleCount; ++id) {
+        thresholds.add(ThresholdControl::value(id));
+    }
     if (replyTo != 0) {
         report["rc"] = replyTo;
         report["rs"] = static_cast<int>(result != nullptr ? result->status : ScheduleEngine::STATUS_SUCCESS);
@@ -814,25 +845,60 @@ void publishStatusReport(int replyTo, int id, const ScheduleEngine::Result* resu
     (void)publishPayload(payload);
 }
 
-// STATUS_GET, SCHEDULE_* and the legacy schedule.* commands of the removed
-// pump scheduler.
-bool handleScheduleCommand(JsonDocument& document) {
-    const char* command = document["cmd"] | "";
-    if (strcmp(command, "STATUS_GET") == 0) {
-        publishStatusReport();
-        return true;
+// {"com":2}: full status report with "rc":2 (replaces {"cmd":"STATUS_GET"}).
+bool handleStatusCommand(JsonDocument& document) {
+    if ((document["com"] | 0) != COMMAND_TYPE_STATUS) {
+        return false;
     }
-    if (strcmp(command, "schedule.status") == 0) {
-        sendScheduleReply("schedule.status");
-        return true;
-    }
-    if (strcmp(command, "schedule.set") == 0 || strcmp(command, "schedule.clear") == 0) {
-        DEVICE_LOG_WARNING("[Schedule] Legacy schedule.* command rejected; use SCHEDULE_*");
-        sendScheduleReply("schedule.error");
-        return true;
-    }
-    return handleScheduleEngineCommand(document);
+    publishStatusReport(COMMAND_TYPE_STATUS);
+    return true;
 }
+
+#if ENABLE_COMMAND_PASSWORD
+// Device password = "mqtt_pwd" of the stored setup JSON, read once (/setup
+// restarts the device). Only that field is parsed.
+const char* devicePassword() {
+    static bool loaded = false;
+    static char password[33] = "";
+    if (!loaded) {
+        loaded = true;
+        StaticJsonDocument<32> filter;
+        filter["mqtt_pwd"] = true;
+        StaticJsonDocument<128> stored;
+        const String json = Memory::GetInstance()->readString(WIFI_SETUP_JSON, WIFI_SETUP_JSON_MAX_LENGTH);
+        if (!deserializeJson(stored, json, DeserializationOption::Filter(filter))) {
+            strlcpy(password, stored["mqtt_pwd"] | "", sizeof(password));
+        }
+    }
+    return password;
+}
+
+bool passwordMatches(const char* received) {
+    const char* expected = devicePassword();
+    const size_t expectedLength = strlen(expected);
+    const size_t receivedLength = strlen(received);
+    // Runs over the whole received text, so timing does not show how much matched.
+    unsigned char difference = expectedLength != receivedLength ? 1 : 0;
+    for (size_t i = 0; i < receivedLength; ++i) {
+        difference |= static_cast<unsigned char>(received[i] ^ expected[expectedLength ? i % expectedLength : 0]);
+    }
+    return difference == 0;
+}
+
+// Rejects a command whose "pa" is not the device password, answering
+// {"rc":<com>,"rs":6} (also over LAN).
+bool rejectWrongPassword(JsonDocument& doc) {
+    if (passwordMatches(doc["pa"] | "")) {
+        return false;
+    }
+    DEVICE_LOG_WARNING("[Auth] Rejected command with a wrong password");
+    char reply[40];
+    snprintf(reply, sizeof(reply), "{\"rc\":%d,\"rs\":%d}", static_cast<int>(doc["com"] | 0),
+             COMMAND_RESULT_WRONG_PASSWORD);
+    (void)publishPayload(reply);
+    return true;
+}
+#endif
 
 void mqttCallback(char* topic, byte* data, unsigned int length) {
     (void)topic;
@@ -860,9 +926,17 @@ void mqttCallback(char* topic, byte* data, unsigned int length) {
         return;
     }
 #endif
+#if ENABLE_COMMAND_PASSWORD
+    // After decryption: "pa" is inside the encrypted command.
+    if (rejectWrongPassword(document)) {
+        return;
+    }
+#endif
 
-    if (handleScheduleCommand(document) || handleOnTimerCommand(document) ||
-        handleCountdownCommand(document)) {
+    // Every command is {"com":<number>,...}; "cmd" commands are no longer accepted.
+    if (handleStatusCommand(document) || handleScheduleEngineCommand(document) ||
+        handleOnTimerCommand(document) || handleCountdownCommand(document) ||
+        handleThresholdCommand(document)) {
         return;
     }
 
@@ -875,21 +949,19 @@ void mqttCallback(char* topic, byte* data, unsigned int length) {
         return;
     }
 #endif
-    if (commandType == COMMAND_TYPE_OTHER) {
-        sendCurrentStatus();
-        return;
-    }
     if (commandType != COMMAND_TYPE_CONTROL) {
         DEVICE_LOG_WARNING("[MQTT] Rejected unknown command");
         return;
     }
     if (!document["value"].is<int>()) {
         DEVICE_LOG_WARNING("[MQTT] Rejected command without an integer value");
+        sendResultReply(COMMAND_TYPE_CONTROL, ScheduleEngine::STATUS_INVALID);
         return;
     }
     const int commandValue = document["value"].as<int>();
     if (commandValue < 0 || commandValue > DEVICE_OUTPUT_MASK) {
         DEVICE_LOG_WARNING("[MQTT] Rejected out-of-range control value");
+        sendResultReply(COMMAND_TYPE_CONTROL, ScheduleEngine::STATUS_INVALID);
         return;
     }
 
@@ -898,6 +970,7 @@ void mqttCallback(char* topic, byte* data, unsigned int length) {
     const int commandMask = document["mask"] | 0;
     if (commandMask < 0 || commandMask > 0xFF) {
         DEVICE_LOG_WARNING("[MQTT] Rejected out-of-range control mask");
+        sendResultReply(COMMAND_TYPE_CONTROL, ScheduleEngine::STATUS_INVALID);
         return;
     }
 
@@ -909,14 +982,34 @@ void mqttCallback(char* topic, byte* data, unsigned int length) {
     if (deviceCommandQueue == nullptr ||
         xQueueSend(deviceCommandQueue, &pendingCommand, 0) != pdTRUE) {
         DEVICE_LOG_WARNING("[MQTT] Device command queue is full");
+        sendResultReply(COMMAND_TYPE_CONTROL, ScheduleEngine::STATUS_NOT_READY);
         return;
     }
 #else
     MemoryData::GetInstance().deviceCommand_ = &pendingCommand;
 #endif
-    sendCurrentStatus();
+    // Sent before the device task applies the command: "co" may still show the old output.
+    sendShortReply(COMMAND_TYPE_CONTROL, ScheduleEngine::STATUS_SUCCESS);
 }
 } // namespace
+
+#if ENABLE_COMMAND_PASSWORD
+bool commandPasswordMatches(const char* received) {
+    return passwordMatches(received);
+}
+#endif
+
+#if ENABLE_LAN_CONTROL
+String handleLanCommand(const char* json, size_t length) {
+    String replies;
+    lanReplies = &replies;
+    // Same path as an MQTT message: size limit, signature, Ascon, password, handlers.
+    mqttCallback(nullptr, reinterpret_cast<byte*>(const_cast<char*>(json)),
+                 static_cast<unsigned int>(length));
+    lanReplies = nullptr;
+    return "[" + replies + "]";
+}
+#endif
 
 #if ENABLE_ASCON_AEAD128
 String getAsconEncryptedPayload(const String& payload) {

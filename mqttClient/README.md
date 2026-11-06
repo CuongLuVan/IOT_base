@@ -38,3 +38,39 @@ MQTT_SUBSCRIBE_TOPICS=pub_c/+,devices/+/data,iot/power/#,iot/alert/#
 Không subscribe '#': broker chỉ cho phép các topic có trong mqtt_acl.json. Nếu broker từ chối
 chứng chỉ, chương trình dừng thay vì thử lại (tránh bị khóa vì brute-force).
 Xem mqttBroker/certs/CERTIFICATE_SETUP.md.
+
+5. Ngữ cảnh (automation) – app/context/
+
+Chạy trong server API (node index.js). Ngữ cảnh lưu trong bảng MySQL `mqtt_context` (tự tạo khi
+khởi động nếu chưa có), nạp vào RAM khi khởi động; thêm/sửa/xóa qua API ghi SQL rồi cập nhật RAM.
+Khi điều kiện trên thiết bị cài đặt chuyển từ sai sang đúng, gửi {"com":1,"value":..,"mask":..,"pa":..}
+tới topic subscribe của thiết bị đích (thiết bị lấy từ bảng mqtt_microservice).
+
+- content 1 AND / 2 OR / 3 NOT / 4 XOR trên các cổng trong state (bitmask);
+  5..8: cảm biến 1..4 > state; 9..12: cảm biến 1..4 < state (giá trị "va", nhiệt độ/độ ẩm x100).
+- action: bit0-7 trạng thái cổng gửi đi, bit8-15 cổng tác động (0 = cả byte).
+- Chống lặp (chỉ chạy ở cạnh lên), cooldown_s, timeout_s + retry, priority, ưu tiên điều khiển thủ công
+  5 phút (nút nhấn trên thiết bị, hoặc lệnh com:1 do client khác gửi tới topic subscribe), kiểm tra
+  thiết bị đích (online, đã đúng trạng thái) trước khi gửi. Hỏi trạng thái `{"com":2}` mỗi 30 s tới các thiết bị liên quan.
+
+API (POST, JSON):
+- /api/context/list | /api/context/save | /api/context/delete            token customer
+- /api/context/admin/list | /api/context/admin/save | /api/context/admin/delete   token admin
+- save: mqtt_context_id (bỏ trống = tạo mới), name, source_device_id, target_device_id, content, state,
+  action, enabled, priority, cooldown_s (30), timeout_s (10), retry (2). delete: mqtt_context_id.
+
+Kết nối broker (khác clientId với LissenAndReply.js), trong .env:
+
+MQTT_HOST, MQTT_PORT
+MQTT_CONTEXT_CLIENT_ID=iot_context
+MQTT_CERTS=../mqttBroker/certs                (ca.crt, iot_context.crt, iot_context.key)
+MQTT_CA_CERT= / MQTT_CONTEXT_CERT= / MQTT_CONTEXT_KEY=   (tùy chọn)
+MQTT_HMAC_SECRET= / MQTT_HMAC_KEY_ID=          (khi broker bật xác thực bản tin)
+MQTT_CONTEXT_ENABLED=false                      (tắt chức năng)
+
+Broker cần: chứng chỉ ECDSA cho iot_context (mqttBroker/certs/generate_ecdsa_certs.ps1, đăng ký trong
+mqtt_device_certs.json) và rule trong mqtt_acl.json:
+  { "clientId": "iot_context",
+    "publish":   ["sub_c/+", "devices/+/commands/#"],
+    "subscribe": ["pub_c/+", "devices/+/data", "sub_c/+", "devices/+/commands/#"] }
+Không có quyền subscribe "sub_c/+" thì chỉ nút nhấn trên thiết bị được tính là điều khiển thủ công.

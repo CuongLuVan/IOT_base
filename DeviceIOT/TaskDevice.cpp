@@ -8,6 +8,7 @@
 #include "ScheduleEngine.h"
 #include "OnTimer.h"
 #include "Countdown.h"
+#include "ThresholdControl.h"
 #include <time.h>
 
 #if SUPPORT_RTOS
@@ -84,6 +85,18 @@ static void processCountdown(void)
         applyDirectCommand(ports, ports);
         Serial.printf("[TaskDevice] Countdown ON ports=0x%02X\n", ports);
     }
+}
+
+// Sensor threshold actions, independent of schedules, see ThresholdControl.h.
+// Applied like a direct command.
+static void processThresholds(void)
+{
+    uint8_t onMask = 0;
+    uint8_t offMask = 0;
+    if (!ThresholdControl::takeActions(onMask, offMask)) return;
+    if (offMask != 0) applyDirectCommand(offMask, 0);
+    if (onMask != 0) applyDirectCommand(onMask, onMask);
+    Serial.printf("[TaskDevice] Threshold on=0x%02X off=0x%02X\n", onMask, offMask);
 }
 
 static void applyCommand(DeviceCommand &command)
@@ -216,6 +229,7 @@ void TaskDevice::taskRun(void * parameter) {
                     applyCommand(cmd_to_device);
                 }
             }
+            processThresholds();
             processCountdown();
             processAutoOff();
             processOnTimer();
@@ -239,6 +253,7 @@ void TaskDevice::taskRun(void * parameter) {
                 control.device_port_last = control.device_port;
             }
         }
+        processThresholds();
         processCountdown();
         processAutoOff();
         processOnTimer();

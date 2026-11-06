@@ -192,6 +192,17 @@
       </div>
       <div class="card">
         <div class="title row">
+          <span>Điều khiển theo ngưỡng <span id="thresholdCount" class="meta"></span></span>
+          <button type="button" id="thresholdReloadBtn" class="small">Tải lại</button>
+        </div>
+        <div class="body">
+          <p class="meta" style="margin-top:0">Thiết bị tự bật/tắt kênh khi giá trị cảm biến vượt ngưỡng (một lần mỗi khi điều kiện bắt đầu đúng). Tối đa 2 cài đặt, lưu trên thiết bị. Dùng 2 cài đặt ngược nhau để có ngưỡng trễ, ví dụ nhiệt độ ≥ 30 °C thì bật, ≤ 28 °C thì tắt.</p>
+          <div id="thresholdList" class="schedule-list"></div>
+          <p id="thresholdHint" class="meta" style="margin-bottom:0"></p>
+        </div>
+      </div>
+      <div class="card">
+        <div class="title row">
           <span>Lập lịch <span id="scheduleCount" class="meta"></span></span>
           <span class="links">
             <button type="button" id="scheduleReloadBtn" class="small">Tải lại</button>
@@ -266,6 +277,48 @@
       <div class="dialog-actions">
         <button type="button" id="scheduleCancelBtn">Hủy</button>
         <button type="submit" id="scheduleSaveBtn" class="primary">Lưu</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="thresholdDialog" aria-labelledby="thresholdDialogTitle">
+    <form id="thresholdForm" method="dialog" novalidate>
+      <h2 id="thresholdDialogTitle">Cài đặt ngưỡng</h2>
+      <div id="thresholdError" class="dialog-error" role="alert"></div>
+
+      <div class="field">
+        <label for="thresholdSensor">Cảm biến</label>
+        <select id="thresholdSensor"></select>
+      </div>
+
+      <div class="field">
+        <span class="label">Điều kiện</span>
+        <div class="inline">
+          <select id="thresholdCompare" aria-label="So sánh">
+            <option value="above">≥ (lớn hơn hoặc bằng)</option>
+            <option value="below">≤ (nhỏ hơn hoặc bằng)</option>
+          </select>
+          <input type="number" id="thresholdValue" step="0.01" style="width:130px" aria-label="Ngưỡng">
+          <span id="thresholdUnit" class="meta"></span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="thresholdAction">Hành động</label>
+        <select id="thresholdAction">
+          <option value="on">Bật</option>
+          <option value="off">Tắt</option>
+        </select>
+      </div>
+
+      <div class="field" id="thresholdChannelsField">
+        <span class="label">Kênh</span>
+        <div id="thresholdChannels" class="segmented"></div>
+      </div>
+
+      <div class="dialog-actions">
+        <button type="button" id="thresholdCancelBtn">Hủy</button>
+        <button type="submit" id="thresholdSaveBtn" class="primary">Lưu</button>
       </div>
     </form>
   </dialog>
@@ -374,7 +427,7 @@
         card.appendChild(el('div', 'meta', 'ID: ' + device.mqtt_id));
         const seen = el('div', 'meta ' + (isOnline(device) ? 'online' : 'offline'), lastSeenText(device));
         card.appendChild(seen);
-        if (device.route === 'lan') card.appendChild(el('div', 'meta', '🔌 Qua ' + routeText(device)));
+        if (deviceRoute(device) === 'lan') card.appendChild(el('div', 'meta', '🔌 Qua ' + routeText(device)));
         if (device.status && device.status.sensors.length) {
           card.appendChild(el('div', 'meta', device.status.sensors.slice(0, 2).map(function(sensor) {
             return sensor.label + ' ' + sensor.value + sensor.unit;
@@ -452,11 +505,12 @@
         ['MQTT subscribe', device.mqtt_sub],
         ['Kết nối', lastSeenText(device)],
         ['Đường gửi lệnh', (routeText(device) || '—') + ' (' + TRANSPORT_LABELS[currentTransport(device.mqtt_microservice_id)] + ')'],
-        ['IP trong mạng LAN', (device.lan && device.lan.ip) || (device.status && device.status.ip) || '—'],
+        ['IP trong mạng LAN', lanInfo(device).ip || (device.status && device.status.ip) || '—'],
         ['Số lệnh đã thực hiện', status && status.commandCount != null ? status.commandCount : '—'],
         ['Lịch đang hoạt động', describeSettings(device) || '—'],
         ['Hẹn giờ tự tắt', describeOnTimer(currentOnTimer(device))],
         ['Đếm ngược tự bật', describeCountdown(device) || 'Chưa rõ'],
+        ['Điều khiển theo ngưỡng', describeThresholds(device) || 'Chưa rõ'],
         ['Đăng ký lúc', device.updated_at ? new Date(device.updated_at).toLocaleString('vi-VN') : '—'],
       ].forEach(function(item) {
         info.appendChild(el('dt', null, item[0]));
@@ -479,6 +533,7 @@
       renderOnTimer();
       if (!countdownState.busy && !countdownState.loading) syncCountdownFromStatus(device);
       renderCountdown();
+      renderThresholds();
     }
 
     function openDetail(id) {
@@ -492,13 +547,17 @@
       loadOnTimer();
       resetCountdown();
       loadCountdown();
+      thresholdState.error = null;
+      loadThresholds();
       window.scrollTo(0, 0);
     }
 
     function closeDetail() {
       selectedId = null;
-      const dialog = document.getElementById('scheduleDialog');
-      if (dialog.open) dialog.close();
+      ['scheduleDialog', 'thresholdDialog'].forEach(function(dialogId) {
+        const dialog = document.getElementById(dialogId);
+        if (dialog.open) dialog.close();
+      });
       document.getElementById('detailView').hidden = true;
       document.getElementById('listView').hidden = false;
       renderList();
@@ -598,7 +657,7 @@
       schedules.error = null;
       renderSchedules();
       try {
-        const data = await api('scheduleListMqtt', deviceBody(id));
+        const data = await linkScheduleList(device);
         if (selectedId !== id) return;
         schedules.items = data.schedules || [];
         schedules.max = data.max || 20;
@@ -614,7 +673,7 @@
     async function sendSchedule(command) {
       const device = selectedDevice();
       if (!device) throw new Error('Chưa chọn thiết bị.');
-      return api('scheduleCommandMqtt', deviceBody(device.mqtt_microservice_id, command));
+      return linkScheduleCommand(device, command);
     }
 
     function renderSchedules() {
@@ -993,7 +1052,7 @@
     async function onTimerRequest(body) {
       const device = selectedDevice();
       const id = device.mqtt_microservice_id;
-      const data = await api('onTimerMqtt', deviceBody(id, body));
+      const data = await linkOnTimer(device, body);
       if (selectedId !== id) return null;
       if (data.seconds != null) {
         onTimer.seconds = data.seconds;
@@ -1220,7 +1279,7 @@
     // Returns null when the user has left this device meanwhile.
     async function countdownRequest(body) {
       const id = selectedDevice().mqtt_microservice_id;
-      const data = await api('countdownMqtt', deviceBody(id, body));
+      const data = await linkCountdown(selectedDevice(), body);
       if (selectedId !== id) return null;
       if (data.remaining != null) {
         countdownState.remaining = data.remaining;
@@ -1326,71 +1385,712 @@
       }, 1000);
     }
 
-    // ---- Transport: MQTT, or LAN (POST http://<ip>/lan) when the broker or
-    // the Internet is down. The choice is kept per device in this browser.
+    // ---- Sensor threshold control: 2 rules of 4 bytes stored on the device
+    // (firmware ThresholdControl.h). byte 1 sensor (N-th value of "va"),
+    // byte 2 bit0-3 channels / bit4 on / bit5 "<=", bytes 3-4 int16 threshold.
+    const THRESHOLD_RULE_COUNT = 2;
+    const THRESHOLD_PORT_BITS = 0x0F;
+    const THRESHOLD_ACTION_ON = 0x10;
+    const THRESHOLD_BELOW = 0x20;
+    // scale: the device sends the value multiplied by it.
+    const THRESHOLD_SENSORS = {
+      DeviceIOT: [
+        {id: 1, label: 'Độ ẩm', unit: '%', scale: 100},
+        {id: 2, label: 'Nhiệt độ', unit: '°C', scale: 100},
+        {id: 3, label: 'Bụi', unit: '', scale: 1},
+        {id: 4, label: 'PM2.5', unit: 'µg/m³', scale: 1},
+        {id: 5, label: 'PM10', unit: 'µg/m³', scale: 1},
+        {id: 6, label: 'PM1', unit: 'µg/m³', scale: 1},
+      ],
+      DeviceIOT8266: [
+        {id: 1, label: 'Độ ẩm', unit: '%', scale: 100},
+        {id: 2, label: 'Nhiệt độ', unit: '°C', scale: 100},
+        {id: 3, label: 'ADC', unit: '', scale: 1},
+      ],
+    };
+    const thresholdState = {busy: false, loading: false, error: null, editing: null};
+
+    function thresholdSensors(device) {
+      return device && device.status ? THRESHOLD_SENSORS[device.status.model] || null : null;
+    }
+
+    function decodeThreshold(value) {
+      if (!value) return null;
+      const raw = value % 65536;
+      return {
+        sensor: Math.floor(value / 16777216) % 256,
+        flags: Math.floor(value / 65536) % 256,
+        threshold: raw >= 32768 ? raw - 65536 : raw,
+      };
+    }
+
+    function encodeThreshold(rule) {
+      return rule.sensor * 16777216 + rule.flags * 65536 + (rule.threshold & 0xFFFF);
+    }
+
+    function describeThreshold(rule, device) {
+      const sensors = thresholdSensors(device) || THRESHOLD_SENSORS.DeviceIOT8266;
+      const sensor = sensors.find(function(item) { return item.id === rule.sensor; }) || {label: 'Sensor ' + rule.sensor, unit: '', scale: 1};
+      const value = rule.threshold / sensor.scale;
+      return 'Khi ' + sensor.label + ((rule.flags & THRESHOLD_BELOW) ? ' ≤ ' : ' ≥ ') + value +
+        (sensor.unit ? ' ' + sensor.unit : '') + ' → ' + ((rule.flags & THRESHOLD_ACTION_ON) ? 'Bật ' : 'Tắt ') +
+        describeMask(rule.flags & THRESHOLD_PORT_BITS);
+    }
+
+    function currentThresholds(device) {
+      return device && device.status && Array.isArray(device.status.thresholds) ? device.status.thresholds : null;
+    }
+
+    function describeThresholds(device) {
+      const values = currentThresholds(device);
+      if (!values) return null;
+      const rules = values.map(decodeThreshold).filter(Boolean);
+      return rules.length ? rules.map(function(rule) { return describeThreshold(rule, device); }).join('; ') : 'Không dùng';
+    }
+
+    function renderThresholds() {
+      const device = selectedDevice();
+      const list = document.getElementById('thresholdList');
+      list.replaceChildren();
+      const values = currentThresholds(device);
+      const used = values ? values.filter(Boolean).length : 0;
+      document.getElementById('thresholdCount').textContent = values ? '(' + used + '/' + THRESHOLD_RULE_COUNT + ')' : '';
+      document.getElementById('thresholdReloadBtn').disabled = thresholdState.busy || thresholdState.loading;
+      const canEdit = !!thresholdSensors(device) && !thresholdState.busy;
+      for (let id = 1; id <= THRESHOLD_RULE_COUNT; id++) {
+        const rule = values ? decodeThreshold(values[id - 1]) : null;
+        const row = el('div', 'schedule' + (rule ? '' : ' disabled'));
+        row.appendChild(el('div', 'time', '#' + id));
+        const what = el('div', 'what');
+        what.appendChild(el('div', 'name', rule ? describeThreshold(rule, device) : values ? 'Trống' : 'Chưa rõ'));
+        row.appendChild(what);
+        const actions = el('div', 'actions');
+        const edit = el('button', 'small', rule ? 'Sửa' : 'Cài đặt');
+        edit.type = 'button';
+        edit.disabled = !canEdit || !values;
+        edit.addEventListener('click', function() { openThresholdDialog(id); });
+        actions.appendChild(edit);
+        if (rule) {
+          const remove = el('button', 'small danger', 'Xóa');
+          remove.type = 'button';
+          remove.disabled = !canEdit;
+          remove.addEventListener('click', function() {
+            if (confirm('Xóa cài đặt ngưỡng #' + id + '?')) saveThreshold(id, 0);
+          });
+          actions.appendChild(remove);
+        }
+        row.appendChild(actions);
+        list.appendChild(row);
+      }
+      const hint = document.getElementById('thresholdHint');
+      hint.className = 'meta' + (thresholdState.error ? ' danger' : '');
+      hint.textContent = thresholdState.error ? thresholdState.error
+        : thresholdState.busy ? 'Đang chờ thiết bị xác nhận…'
+        : thresholdState.loading && !values ? 'Đang đọc cài đặt từ thiết bị…'
+        : !thresholdSensors(device) ? 'Cần trạng thái thiết bị để biết loại cảm biến.' : '';
+    }
+
+    function showThresholdError(message) {
+      const box = document.getElementById('thresholdError');
+      box.textContent = message || '';
+      box.style.display = message ? 'block' : 'none';
+    }
+
+    function renderThresholdUnit() {
+      const sensors = thresholdSensors(selectedDevice()) || [];
+      const id = Number(document.getElementById('thresholdSensor').value);
+      const sensor = sensors.find(function(item) { return item.id === id; });
+      document.getElementById('thresholdUnit').textContent = sensor ? sensor.unit : '';
+      document.getElementById('thresholdValue').step = sensor && sensor.scale > 1 ? '0.01' : '1';
+    }
+
+    function openThresholdDialog(id) {
+      const device = selectedDevice();
+      const sensors = thresholdSensors(device);
+      if (!sensors) return;
+      thresholdState.editing = id;
+      const values = currentThresholds(device) || [];
+      const rule = decodeThreshold(values[id - 1]) || {sensor: 2, flags: 0x01 | THRESHOLD_ACTION_ON, threshold: 3000};
+      document.getElementById('thresholdDialogTitle').textContent = 'Cài đặt ngưỡng #' + id;
+      const select = document.getElementById('thresholdSensor');
+      select.replaceChildren();
+      sensors.forEach(function(sensor) {
+        const option = el('option', null, sensor.label + (sensor.unit ? ' (' + sensor.unit + ')' : ''));
+        option.value = String(sensor.id);
+        select.appendChild(option);
+      });
+      const sensor = sensors.find(function(item) { return item.id === rule.sensor; }) || sensors[0];
+      select.value = String(sensor.id);
+      document.getElementById('thresholdCompare').value = (rule.flags & THRESHOLD_BELOW) ? 'below' : 'above';
+      document.getElementById('thresholdValue').value = String(rule.threshold / sensor.scale);
+      document.getElementById('thresholdAction').value = (rule.flags & THRESHOLD_ACTION_ON) ? 'on' : 'off';
+
+      const channels = channelCount();
+      const box = document.getElementById('thresholdChannels');
+      box.replaceChildren();
+      document.getElementById('thresholdChannelsField').hidden = channels < 2;
+      for (let index = 0; index < channels; index++) {
+        const label = el('label', 'check');
+        const input = el('input');
+        input.type = 'checkbox';
+        input.dataset.bit = String(1 << index);
+        input.checked = (rule.flags & (1 << index)) !== 0;
+        label.appendChild(input);
+        label.appendChild(document.createTextNode(' Kênh ' + (index + 1)));
+        box.appendChild(label);
+      }
+      showThresholdError('');
+      renderThresholdUnit();
+      document.getElementById('thresholdDialog').showModal();
+    }
+
+    // Reads the popup into the 4-byte value; throws a message for the user.
+    function readThresholdForm() {
+      const sensors = thresholdSensors(selectedDevice()) || [];
+      const id = Number(document.getElementById('thresholdSensor').value);
+      const sensor = sensors.find(function(item) { return item.id === id; });
+      if (!sensor) throw new Error('Chọn cảm biến.');
+      const input = Number(document.getElementById('thresholdValue').value);
+      if (document.getElementById('thresholdValue').value.trim() === '' || !Number.isFinite(input)) {
+        throw new Error('Nhập giá trị ngưỡng.');
+      }
+      const raw = Math.round(input * sensor.scale);
+      if (raw < -32768 || raw > 32767) {
+        throw new Error('Ngưỡng phải từ ' + (-32768 / sensor.scale) + ' đến ' + (32767 / sensor.scale) + (sensor.unit ? ' ' + sensor.unit : '') + '.');
+      }
+      let ports = 0;
+      if (channelCount() < 2) {
+        ports = 1;
+      } else {
+        document.querySelectorAll('#thresholdChannels input[type=checkbox]').forEach(function(box) {
+          if (box.checked) ports |= Number(box.dataset.bit);
+        });
+      }
+      if (!ports) throw new Error('Chọn ít nhất một kênh.');
+      let flags = ports;
+      if (document.getElementById('thresholdAction').value === 'on') flags |= THRESHOLD_ACTION_ON;
+      if (document.getElementById('thresholdCompare').value === 'below') flags |= THRESHOLD_BELOW;
+      return encodeThreshold({sensor: sensor.id, flags: flags, threshold: raw});
+    }
+
+    function applyThresholdReply(data) {
+      if (!data || !Array.isArray(data.thresholds)) return;
+      const device = selectedDevice();
+      if (device && device.status) device.status.thresholds = data.thresholds;
+    }
+
+    async function loadThresholds() {
+      const device = selectedDevice();
+      if (!device || thresholdState.loading) return;
+      const id = device.mqtt_microservice_id;
+      thresholdState.loading = true;
+      thresholdState.error = null;
+      renderThresholds();
+      try {
+        const data = await linkThreshold(device, {});
+        if (selectedId === id) applyThresholdReply(data);
+      } catch (error) {
+        if (selectedId === id) thresholdState.error = 'Không đọc được cài đặt ngưỡng: ' + error.message;
+      } finally {
+        thresholdState.loading = false;
+        if (selectedId === id) renderThresholds();
+      }
+    }
+
+    // Returns true when the device saved it.
+    async function saveThreshold(ruleId, value) {
+      const device = selectedDevice();
+      if (!device || thresholdState.busy) return false;
+      const id = device.mqtt_microservice_id;
+      thresholdState.busy = true;
+      thresholdState.error = null;
+      renderThresholds();
+      try {
+        const data = await linkThreshold(device, {id: ruleId, value: value});
+        if (selectedId !== id) return false;
+        applyThresholdReply(data);
+        if (data.status !== 'SUCCESS') {
+          thresholdState.error = 'Thiết bị từ chối: ' + (data.message || data.status);
+          return false;
+        }
+        showNotice(value ? 'Đã lưu cài đặt ngưỡng #' + ruleId + '.' : 'Đã xóa cài đặt ngưỡng #' + ruleId + '.', 'ok');
+        return true;
+      } catch (error) {
+        thresholdState.error = 'Không gửi được cài đặt ngưỡng: ' + error.message;
+        return false;
+      } finally {
+        thresholdState.busy = false;
+        if (selectedId != null) renderThresholds();
+      }
+    }
+
+    function setupThresholds() {
+      document.getElementById('thresholdSensor').addEventListener('change', renderThresholdUnit);
+      document.getElementById('thresholdReloadBtn').addEventListener('click', loadThresholds);
+      const dialog = document.getElementById('thresholdDialog');
+      document.getElementById('thresholdCancelBtn').addEventListener('click', function() { dialog.close(); });
+      dialog.addEventListener('cancel', function(event) { if (thresholdState.busy) event.preventDefault(); });
+      document.getElementById('thresholdForm').addEventListener('submit', async function(event) {
+        event.preventDefault();
+        let value;
+        try {
+          value = readThresholdForm();
+        } catch (error) {
+          showThresholdError(error.message);
+          return;
+        }
+        showThresholdError('');
+        const save = document.getElementById('thresholdSaveBtn');
+        save.disabled = true;
+        save.textContent = 'Đang chờ thiết bị xác nhận…';
+        const ok = await saveThreshold(thresholdState.editing, value);
+        save.disabled = false;
+        save.textContent = 'Lưu';
+        if (ok) dialog.close();
+        else showThresholdError(thresholdState.error);
+      });
+    }
+
+    // ---- Device link: MQTT through the server API, or LAN straight from this
+    // browser to http://<device ip>/lan (firmware docs/LanControl.md). LAN
+    // commands never go through the server, which may not be on the device's
+    // LAN; this page builds the firmware commands and reads the replies itself.
     const TRANSPORT_KEY = 'deviceTransport:';
+    const LAN_IP_KEY = 'deviceLanIp:';              // last IP the device reported
+    const LAN_MANUAL_IP_KEY = 'deviceLanIpManual:';
+    const DEVICE_CACHE_KEY = 'deviceListCache';
     const TRANSPORT_LABELS = {auto: 'Tự động', mqtt: 'MQTT', lan: 'LAN'};
+    const LAN_TIMEOUT_MS = 6000;
+    const LAN_STATUS_INTERVAL_MS = 5000;
+    // "Tự động" keeps MQTT while the device answered over MQTT this recently.
+    const MQTT_FRESH_MS = 60000;
+    // The device answers a control command before its task applies it.
+    const STATUS_AFTER_CONTROL_MS = 1500;
+    const LIST_MAX_PAGES = 3;
+    // Firmware "com" numbers (docs/Schedule.md).
+    const COMMAND_CONTROL = 1;
+    // {"com":2}: full status report (replaces the former {"cmd":"STATUS_GET"}).
+    const COMMAND_STATUS = 2;
+    const COMMAND_COUNTDOWN = 4;
+    const COMMAND_ON_TIMER = 5;
+    const COMMAND_SCHEDULE_LIST = 13;
+    const COMMAND_THRESHOLD = 14;
+    const SCHEDULE_COMS = {
+      SCHEDULE_ADD: 8, SCHEDULE_UPDATE: 9, SCHEDULE_DELETE: 10,
+      SCHEDULE_ENABLE: 11, SCHEDULE_DISABLE: 11, SCHEDULE_CLEAR: 12,
+    };
+    // "rs" of a command reply; the device sends only the code.
+    const RESULT_NAMES = ['SUCCESS', 'CONFLICT', 'INVALID', 'NOT_FOUND', 'ID_EXISTS', 'NOT_READY'];
+    // {"rc":<com>,"rs":6}: the device refused the command's "pa".
+    const RESULT_WRONG_PASSWORD = 6;
+    const RESULT_MESSAGES = {
+      INVALID: 'dữ liệu không hợp lệ hoặc thời điểm đã qua',
+      NOT_FOUND: 'không có lịch này',
+      ID_EXISTS: 'id đã được dùng',
+      NOT_READY: 'bộ lập lịch chưa sẵn sàng',
+    };
+
+    const lanStatuses = {};   // id -> {data, settings, onTimer, countdown, ip, receivedAt}
+    const lanErrors = {};     // id -> last LAN error
+    const lanLastStatus = {}; // id -> time of the last LAN status request
+    let serverReachable = true;
+    let mqttConnected = true;
     let lanBusy = false;
 
-    function deviceTransport(id) {
+    function storageGet(key) {
       try {
-        const value = localStorage.getItem(TRANSPORT_KEY + id);
-        return TRANSPORT_LABELS[value] ? value : 'auto';
+        return localStorage.getItem(key);
       } catch (e) {
-        return 'auto';
+        return null;
       }
     }
 
-    function saveTransport(id, mode) {
+    function storageSet(key, value) {
       try {
-        localStorage.setItem(TRANSPORT_KEY + id, mode);
+        if (value == null || value === '') localStorage.removeItem(key);
+        else localStorage.setItem(key, value);
       } catch (e) {
-        // Not remembered; the page still uses it until reload.
+        // Not remembered; the page still works until reload.
       }
-      transportOverrides[id] = mode;
     }
 
-    const transportOverrides = {};
     function currentTransport(id) {
-      return transportOverrides[id] || deviceTransport(id);
+      const value = storageGet(TRANSPORT_KEY + id);
+      return TRANSPORT_LABELS[value] ? value : 'auto';
     }
 
-    // Body of every command for a device: the server picks MQTT or LAN.
-    function deviceBody(id, extra) {
-      return Object.assign({mqtt_microservice_id: id, transport: currentTransport(id)}, extra || {});
+    // Private IPv4 only (10.x, 172.16-31.x, 192.168.x).
+    function isLanIp(ip) {
+      const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(String(ip || ''));
+      if (!match) return false;
+      const bytes = match.slice(1).map(Number);
+      if (bytes.some(function(b) { return b > 255; })) return false;
+      return bytes[0] === 10 || (bytes[0] === 172 && bytes[1] >= 16 && bytes[1] <= 31) ||
+        (bytes[0] === 192 && bytes[1] === 168);
     }
 
-    function allTransports() {
-      const result = {};
-      devices.forEach(function(device) { result[device.mqtt_microservice_id] = currentTransport(device.mqtt_microservice_id); });
-      return result;
+    // The manual IP wins over the one the device reported.
+    function lanInfo(device) {
+      const id = device.mqtt_microservice_id;
+      const manualIp = isLanIp(storageGet(LAN_MANUAL_IP_KEY + id)) ? storageGet(LAN_MANUAL_IP_KEY + id) : null;
+      const reportedIp = isLanIp(storageGet(LAN_IP_KEY + id)) ? storageGet(LAN_IP_KEY + id) : null;
+      return {ip: manualIp || reportedIp, manualIp: manualIp, reportedIp: reportedIp, error: lanErrors[id] || null};
+    }
+
+    function rememberLanIp(id, ip) {
+      if (isLanIp(ip) && storageGet(LAN_IP_KEY + id) !== ip) storageSet(LAN_IP_KEY + id, ip);
+    }
+
+    function deviceRoute(device) {
+      const mode = currentTransport(device.mqtt_microservice_id);
+      if (mode !== 'auto') return mode;
+      if (!lanInfo(device).ip) return 'mqtt';
+      const status = device.serverStatus;
+      const fresh = !!status && Date.now() - new Date(status.receivedAt).getTime() < MQTT_FRESH_MS;
+      return serverReachable && mqttConnected && fresh ? 'mqtt' : 'lan';
     }
 
     function routeText(device) {
-      if (!device || !device.route) return null;
-      return device.route === 'lan' ? 'LAN' + (device.lan && device.lan.ip ? ' · ' + device.lan.ip : '') : 'MQTT';
+      if (!device) return null;
+      if (deviceRoute(device) !== 'lan') return 'MQTT';
+      const ip = lanInfo(device).ip;
+      return 'LAN' + (ip ? ' · ' + ip : '');
     }
 
+    function renderCurrentView() {
+      if (selectedId != null) renderDetail();
+      else renderList();
+    }
+
+    // ---- Device replies, read here exactly like deviceStatusService does.
+    function toNumbers(text) {
+      return String(text == null ? '' : text).split(',').map(function(part) { return Number(part.trim()); });
+    }
+
+    function isDeviceSeconds(value) {
+      return Number.isInteger(value) && value >= 0 && value <= 86400;
+    }
+
+    // Messages without "set"/"tim"/"cd" (e.g. the reply to com:1) keep the
+    // values of the last full status report.
+    function applyLanReply(id, data) {
+      if (!data || typeof data !== 'object') return;
+      const previous = lanStatuses[id];
+      if (data.va === undefined && data.co === undefined) return;
+      const settings = Array.isArray(data.set) ? data.set : previous ? previous.settings : null;
+      const onTimerSeconds = isDeviceSeconds(data.tim) ? data.tim : previous ? previous.onTimer : null;
+      let countdown = previous ? previous.countdown : null;
+      if (isDeviceSeconds(data.cd)) {
+        // "cm": ports the countdown switches on (full report).
+        let mask = Number.isInteger(data.cm) ? data.cm : countdown ? countdown.mask : null;
+        if (data.cd === 0) mask = null;
+        countdown = {remaining: data.cd, mask: mask, at: Date.now()};
+      }
+      const ip = isLanIp(data.ip) ? data.ip : previous ? previous.ip : null;
+      const thresholds = Array.isArray(data.th) ? data.th : previous ? previous.thresholds : null;
+      lanStatuses[id] = {data: data, settings: settings, onTimer: onTimerSeconds, countdown: countdown, ip: ip,
+        thresholds: thresholds, receivedAt: new Date().toISOString()};
+    }
+
+    // Same shape as describeStatus() of the server.
+    function describeLanStatus(entry) {
+      const va = toNumbers(entry.data.va);
+      const co = toNumbers(entry.data.co);
+      const esp32 = va.length >= 7;
+      const sensors = esp32 ? [
+        {label: 'Độ ẩm', value: va[0] / 100, unit: '%'},
+        {label: 'Nhiệt độ', value: va[1] / 100, unit: '°C'},
+        {label: 'Bụi', value: va[2], unit: ''},
+        {label: 'PM2.5', value: va[3], unit: 'µg/m³'},
+        {label: 'PM10', value: va[4], unit: 'µg/m³'},
+        {label: 'PM1', value: va[5], unit: 'µg/m³'},
+      ] : [
+        {label: 'Độ ẩm', value: va[0] / 100, unit: '%'},
+        {label: 'Nhiệt độ', value: va[1] / 100, unit: '°C'},
+        {label: 'ADC', value: va[2], unit: ''},
+      ];
+      const port = Number.isInteger(co[0]) ? co[0] : null;
+      const settings = Array.isArray(entry.settings) ? entry.settings.map(toNumbers)
+        .filter(function(values) { return values.length === 5 && values.every(Number.isInteger); })
+        .map(function(values) {
+          return {hour: values[0], minute: values[1], weekday: values[2], portState: values[3], autoOff: values[4]};
+        }) : null;
+      const countdown = !entry.countdown ? null : entry.countdown.remaining === 0 ? 0
+        : Math.max(0, entry.countdown.remaining - Math.floor((Date.now() - entry.countdown.at) / 1000));
+      return {
+        model: esp32 ? 'DeviceIOT' : 'DeviceIOT8266',
+        channels: esp32 ? 2 : 1,
+        port: port,
+        on: port == null ? null : port !== 0,
+        buttonClick: Number.isFinite(co[1]) ? co[1] : null,
+        buttonStatus: Number.isFinite(co[2]) ? co[2] : null,
+        commandCount: Number.isFinite(co[3]) ? co[3] : null,
+        sensors: sensors.filter(function(sensor) { return Number.isFinite(sensor.value); }),
+        settings: settings,
+        onTimer: entry.onTimer == null ? null : entry.onTimer,
+        countdown: countdown,
+        countdownMask: entry.countdown && entry.countdown.mask ? entry.countdown.mask : null,
+        ip: entry.ip || null,
+        thresholds: entry.thresholds || null,
+        via: 'lan',
+        receivedAt: entry.receivedAt,
+      };
+    }
+
+    function showLanStatus(id) {
+      const device = devices.find(function(item) { return item.mqtt_microservice_id === id; });
+      if (device && lanStatuses[id] && deviceRoute(device) === 'lan') {
+        device.status = describeLanStatus(lanStatuses[id]);
+        device.error = null;
+      }
+    }
+
+    // POST {"data":command} to the device; returns its replies (the messages
+    // it would have published over MQTT).
+    async function lanRequest(device, command) {
+      const id = device.mqtt_microservice_id;
+      const ip = lanInfo(device).ip;
+      if (!ip) {
+        throw new Error('Chưa biết IP LAN của thiết bị: kết nối MQTT một lần để thiết bị báo IP, hoặc nhập IP ở mục Kết nối.');
+      }
+      const abort = new AbortController();
+      const timer = setTimeout(function() { abort.abort(); }, LAN_TIMEOUT_MS);
+      let response;
+      try {
+        // text/plain keeps this a simple CORS request; the firmware reads the
+        // raw body either way. targetAddressSpace is Chrome's opt-in for
+        // requests to the local network (ignored by other browsers).
+        // "pa": the device password, checked by the firmware on every command.
+        const data = device.mqtt_pass ? Object.assign({}, command, {pa: device.mqtt_pass}) : command;
+        response = await fetch('http://' + ip + '/lan', {
+          method: 'POST',
+          headers: {'Content-Type': 'text/plain'},
+          body: JSON.stringify({data: data}),
+          signal: abort.signal,
+          cache: 'no-store',
+          targetAddressSpace: 'local',
+        });
+      } catch (error) {
+        const reason = error.name === 'AbortError' ? 'hết thời gian chờ ' + LAN_TIMEOUT_MS / 1000 + ' giây'
+          : 'máy này không kết nối được' + (location.protocol === 'https:'
+            ? ' (trang đang mở bằng HTTPS: trình duyệt có thể chặn gọi http tới thiết bị, cần cho phép truy cập mạng cục bộ)' : '');
+        lanErrors[id] = 'Không gọi được thiết bị ' + ip + ' qua LAN: ' + reason + '.';
+        throw new Error(lanErrors[id]);
+      } finally {
+        clearTimeout(timer);
+      }
+      const body = await response.json().catch(function() { return {}; });
+      rememberLanIp(id, body.ip);
+      if (!response.ok) {
+        lanErrors[id] = 'Thiết bị ' + ip + ' từ chối lệnh LAN: ' + (body.error || 'HTTP ' + response.status) +
+          (response.status === 404 ? ' (firmware chưa hỗ trợ điều khiển LAN)' : '') + '.';
+        throw new Error(lanErrors[id]);
+      }
+      const replies = Array.isArray(body.data) ? body.data : [];
+      if (replies.some(function(reply) { return reply && reply.rs === RESULT_WRONG_PASSWORD && reply.va === undefined; })) {
+        lanErrors[id] = 'Thiết bị ' + ip + ' từ chối lệnh: sai mật khẩu thiết bị (mqtt_pass khác mật khẩu đã cài trên thiết bị).';
+        throw new Error(lanErrors[id]);
+      }
+      delete lanErrors[id];
+      replies.forEach(function(reply) { applyLanReply(id, reply); });
+      showLanStatus(id);
+      return replies;
+    }
+
+    function findReply(replies, match) {
+      const reply = replies.find(function(item) { return item && typeof item === 'object' && match(item); });
+      if (!reply) throw new Error('Thiết bị không trả lời lệnh này (firmware chưa hỗ trợ?).');
+      return reply;
+    }
+
+    function toResult(reply) {
+      const status = RESULT_NAMES[reply.rs] || 'ERROR';
+      return {
+        status: status,
+        message: RESULT_MESSAGES[status] || (status === 'ERROR' ? 'mã kết quả ' + reply.rs : ''),
+        conflictId: reply.ci,
+        conflictPorts: reply.cp,
+      };
+    }
+
+    async function refreshLanStatus(device, force) {
+      const id = device.mqtt_microservice_id;
+      if (!force && Date.now() - (lanLastStatus[id] || 0) < LAN_STATUS_INTERVAL_MS) return;
+      lanLastStatus[id] = Date.now();
+      try {
+        await lanRequest(device, {com: COMMAND_STATUS});
+      } catch (error) {
+        const current = devices.find(function(item) { return item.mqtt_microservice_id === id; });
+        if (current && deviceRoute(current) === 'lan') current.error = error.message;
+      }
+      renderCurrentView();
+    }
+
+    // ---- One function per page action: server API (MQTT) or LAN.
+    async function linkControl(device, value) {
+      if (deviceRoute(device) !== 'lan') {
+        await api('controlDeviceMqtt', {mqtt_microservice_id: device.mqtt_microservice_id, value: value});
+        return 'mqtt';
+      }
+      await lanRequest(device, {com: COMMAND_CONTROL, value: value});
+      setTimeout(function() { refreshLanStatus(device, true); }, STATUS_AFTER_CONTROL_MS);
+      return 'lan';
+    }
+
+    // Row of {"com":13}: id,ho,mi,we,po,pos,au,en,dn,date.
+    function toScheduleRow(row) {
+      return {
+        id: Number(row[0]), hour: Number(row[1]), minute: Number(row[2]), weekday: Number(row[3]),
+        portMask: Number(row[4]), portState: Number(row[5]), autoOff: Number(row[6]),
+        enabled: Number(row[7]) === 1, done: Number(row[8]) === 1, date: row[9] || '',
+      };
+    }
+
+    async function linkScheduleList(device) {
+      if (deviceRoute(device) !== 'lan') {
+        return api('scheduleListMqtt', {mqtt_microservice_id: device.mqtt_microservice_id});
+      }
+      const items = [];
+      let from = 1;
+      let reply = null;
+      for (let page = 0; page < LIST_MAX_PAGES; page++) {
+        reply = findReply(await lanRequest(device, {com: COMMAND_SCHEDULE_LIST, fr: from}), function(data) {
+          return data.rc === COMMAND_SCHEDULE_LIST && Array.isArray(data.it);
+        });
+        reply.it.forEach(function(row) {
+          if (Array.isArray(row) && row.length >= 9) items.push(toScheduleRow(row));
+        });
+        const next = Number(reply.nx) || 0;
+        if (next <= from) break;
+        from = next;
+      }
+      return {schedules: items, max: Number(reply.mx) || 20, clockValid: Number(reply.cv) === 1};
+    }
+
+    // Page command ({cmd:'SCHEDULE_ADD', hour, ...}) -> firmware command
+    // ({com:8, ho, ...}), the same mapping as the server controller.
+    function toFirmwareSchedule(command) {
+      const com = SCHEDULE_COMS[command.cmd];
+      if (!com) throw new Error('Lệnh lịch không hợp lệ.');
+      if (command.cmd === 'SCHEDULE_CLEAR') return {com: com};
+      const firmware = {com: com, id: command.id};
+      if (command.cmd === 'SCHEDULE_ENABLE' || command.cmd === 'SCHEDULE_DISABLE') {
+        firmware.value = command.cmd === 'SCHEDULE_ENABLE' ? 1 : 0;
+        return firmware;
+      }
+      if (command.cmd === 'SCHEDULE_DELETE') return firmware;
+      firmware.ho = command.hour;
+      firmware.mi = command.minute;
+      firmware.we = command.weekday;
+      firmware.po = command.port_mask;
+      firmware.pos = command.port_state & command.port_mask;
+      firmware.au = command.auto_off || 0;
+      if (command.enabled === false) firmware.en = 0;
+      if (command.weekday === 0) {
+        firmware.ye = command.year;
+        firmware.mo = command.month;
+        firmware.da = command.day;
+      }
+      return firmware;
+    }
+
+    async function linkScheduleCommand(device, command) {
+      if (deviceRoute(device) !== 'lan') {
+        return api('scheduleCommandMqtt', Object.assign({mqtt_microservice_id: device.mqtt_microservice_id}, command));
+      }
+      const firmware = toFirmwareSchedule(command);
+      const id = firmware.id || 0;
+      return toResult(findReply(await lanRequest(device, firmware), function(data) {
+        return data.rc === firmware.com && Number.isInteger(data.rs) && (Number(data.id) || 0) === id;
+      }));
+    }
+
+    // body: {} reads, {sec} sets (0 = off).
+    async function linkOnTimer(device, body) {
+      if (deviceRoute(device) !== 'lan') {
+        return api('onTimerMqtt', Object.assign({mqtt_microservice_id: device.mqtt_microservice_id}, body));
+      }
+      const command = {com: COMMAND_ON_TIMER};
+      if (body.sec != null) command.value = body.sec;
+      const reply = findReply(await lanRequest(device, command), function(data) {
+        return data.rc === COMMAND_ON_TIMER && Number.isInteger(data.rs);
+      });
+      const result = toResult(reply);
+      return {
+        status: result.status,
+        message: result.status === 'INVALID' ? 'thời gian phải từ 1 giây đến 24 giờ' : result.message,
+        seconds: Number.isInteger(reply.tim) ? reply.tim : null,
+      };
+    }
+
+    // body: {} reads, {id, value} sets rule id (value 0 deletes).
+    async function linkThreshold(device, body) {
+      if (deviceRoute(device) !== 'lan') {
+        return api('thresholdMqtt', Object.assign({mqtt_microservice_id: device.mqtt_microservice_id}, body));
+      }
+      const command = {com: COMMAND_THRESHOLD};
+      if (body.value != null) {
+        command.id = body.id;
+        command.value = body.value;
+      }
+      const reply = findReply(await lanRequest(device, command), function(data) {
+        return data.rc === COMMAND_THRESHOLD && Number.isInteger(data.rs);
+      });
+      const result = toResult(reply);
+      return {
+        status: result.status,
+        message: result.status === 'INVALID' ? 'cài đặt ngưỡng không hợp lệ (sensor, kênh hoặc cờ)' : result.message,
+        thresholds: Array.isArray(reply.th) ? reply.th : null,
+      };
+    }
+
+    // body: {} reads, {sec: 0} cancels, {sec, mask} starts.
+    async function linkCountdown(device, body) {
+      if (deviceRoute(device) !== 'lan') {
+        return api('countdownMqtt', Object.assign({mqtt_microservice_id: device.mqtt_microservice_id}, body));
+      }
+      const command = {com: COMMAND_COUNTDOWN};
+      if (body.sec != null) {
+        command.value = body.sec;
+        if (body.sec > 0 && body.mask) command.mask = body.mask;
+      }
+      const reply = findReply(await lanRequest(device, command), function(data) {
+        return data.rc === COMMAND_COUNTDOWN && Number.isInteger(data.rs);
+      });
+      const result = toResult(reply);
+      return {
+        status: result.status,
+        message: result.status === 'INVALID'
+          ? 'thời gian phải từ 1 giây đến 24 giờ, cổng phải là cổng ra của thiết bị'
+          : result.status === 'NOT_READY' ? 'bộ đếm ngược chưa sẵn sàng' : result.message,
+        remaining: Number.isInteger(reply.cd) ? reply.cd : null,
+        mask: Number.isInteger(reply.cm) ? reply.cm : 0,
+        seconds: Number.isInteger(reply.cs) ? reply.cs : null,
+      };
+    }
+
+    // ---- "Kết nối" card
     function renderTransport() {
       const device = selectedDevice();
       if (!device) return;
       const mode = currentTransport(device.mqtt_microservice_id);
+      const route = deviceRoute(device);
       document.querySelectorAll('[data-transport]').forEach(function(button) {
         button.setAttribute('aria-pressed', String(button.dataset.transport === mode));
         button.disabled = lanBusy;
       });
       const badge = document.getElementById('routeBadge');
-      badge.className = 'badge ' + (device.route === 'lan' ? 'on' : device.route ? 'off' : 'unknown');
-      badge.textContent = device.route ? 'Đang dùng ' + routeText(device) : 'Chưa rõ';
+      badge.className = 'badge ' + (route === 'lan' ? 'on' : 'off');
+      badge.textContent = 'Đang dùng ' + routeText(device);
 
-      const lan = device.lan || {};
+      const lan = lanInfo(device);
       document.getElementById('transportHint').textContent = mode === 'auto'
-        ? 'Tự động: dùng MQTT khi broker và thiết bị đang kết nối; nếu không thì gửi thẳng tới thiết bị trong mạng LAN (cần IP).'
+        ? 'Tự động: dùng MQTT khi máy chủ, broker và thiết bị đang kết nối; nếu không thì trình duyệt trên máy này gửi lệnh thẳng tới IP của thiết bị trong mạng LAN.'
         : mode === 'lan'
-          ? 'LAN: web_manager gửi lệnh thẳng tới thiết bị qua mạng nội bộ, không cần broker/Internet. Máy chủ web_manager phải cùng mạng LAN với thiết bị.'
-          : 'MQTT: luôn gửi qua broker.';
+          ? 'LAN: trình duyệt trên máy này gửi lệnh thẳng tới IP của thiết bị, không qua máy chủ web_manager hay broker. Máy này phải cùng mạng LAN với thiết bị.'
+          : 'MQTT: luôn gửi qua máy chủ web_manager và broker.';
       const input = document.getElementById('lanIpInput');
-      if (document.activeElement !== input && !lanBusy) input.value = lan.manualIp || lan.ip || '';
+      if (document.activeElement !== input) input.value = lan.ip || '';
       document.getElementById('lanIpSaveBtn').disabled = lanBusy;
       document.getElementById('lanIpAutoBtn').disabled = lanBusy || !lan.manualIp;
 
@@ -1398,27 +2098,19 @@
       const lines = [];
       if (lan.reportedIp) lines.push('Thiết bị báo IP ' + lan.reportedIp + '.');
       if (lan.manualIp) lines.push('Đang dùng IP nhập tay ' + lan.manualIp + '.');
-      if (!lan.ip) lines.push('Chưa biết IP: thiết bị báo IP khi trả lời qua MQTT (STATUS_GET), hoặc nhập IP.');
-      if (device.route === 'lan' && lan.error) lines.push('Lỗi LAN: ' + lan.error);
-      hint.className = 'meta' + (device.route === 'lan' && lan.error ? ' danger' : '');
+      if (!lan.ip) lines.push('Chưa biết IP: thiết bị báo IP khi trả lời qua MQTT, hoặc nhập IP.');
+      if (route === 'lan' && lan.error) lines.push(lan.error);
+      hint.className = 'meta' + (route === 'lan' && lan.error ? ' danger' : '');
       hint.textContent = lines.join(' ');
     }
 
-    async function saveLanIp(ip) {
+    // Stored in this browser only; '' goes back to the IP the device reported.
+    function saveLanIp(ip) {
       const device = selectedDevice();
-      if (!device || lanBusy) return;
-      lanBusy = true;
-      renderTransport();
-      try {
-        const data = await api('deviceLanMqtt', {mqtt_microservice_id: device.mqtt_microservice_id, ip: ip});
-        device.lan = Object.assign({}, device.lan, data.lan);
-        showNotice(ip ? 'Đã lưu IP LAN ' + ip + '.' : 'Đã chuyển về IP thiết bị tự báo.', 'ok');
-      } catch (error) {
-        showNotice('Không lưu được IP: ' + error.message, 'error');
-      } finally {
-        lanBusy = false;
-        renderTransport();
-      }
+      if (!device) return;
+      storageSet(LAN_MANUAL_IP_KEY + device.mqtt_microservice_id, ip);
+      showNotice(ip ? 'Đã lưu IP LAN ' + ip + ' trên máy này.' : 'Đã chuyển về IP thiết bị tự báo.', 'ok');
+      loadStatus();
     }
 
     function setupTransport() {
@@ -1426,7 +2118,7 @@
         button.addEventListener('click', function() {
           const device = selectedDevice();
           if (!device) return;
-          saveTransport(device.mqtt_microservice_id, button.dataset.transport);
+          storageSet(TRANSPORT_KEY + device.mqtt_microservice_id, button.dataset.transport);
           renderTransport();
           loadStatus();
         });
@@ -1434,13 +2126,33 @@
       document.getElementById('lanIpForm').addEventListener('submit', function(event) {
         event.preventDefault();
         const ip = document.getElementById('lanIpInput').value.trim();
-        if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) {
-          showNotice('Nhập IPv4 dạng 192.168.1.20.', 'error');
+        if (!isLanIp(ip)) {
+          showNotice('Nhập IPv4 trong mạng LAN, ví dụ 192.168.1.20 (10.x, 172.16–31.x, 192.168.x).', 'error');
           return;
         }
         saveLanIp(ip);
       });
       document.getElementById('lanIpAutoBtn').addEventListener('click', function() { saveLanIp(''); });
+    }
+
+    // ---- Device list kept in this browser, so LAN control still works when
+    // the web_manager server cannot be reached.
+    function writeDeviceCache(list) {
+      storageSet(DEVICE_CACHE_KEY, JSON.stringify(list.map(function(device) {
+        return {
+          mqtt_microservice_id: device.mqtt_microservice_id, content: device.content, mqtt_id: device.mqtt_id,
+          mqtt_pub: device.mqtt_pub, mqtt_sub: device.mqtt_sub, mqtt_pass: device.mqtt_pass, updated_at: device.updated_at,
+        };
+      })));
+    }
+
+    function readDeviceCache() {
+      try {
+        const list = JSON.parse(storageGet(DEVICE_CACHE_KEY) || '[]');
+        return Array.isArray(list) ? list.map(function(device) { return Object.assign({status: null, error: null}, device); }) : [];
+      } catch (e) {
+        return [];
+      }
     }
 
     async function sendControl(value) {
@@ -1449,8 +2161,8 @@
       sending = true;
       renderDetail();
       try {
-        const data = await api('controlDeviceMqtt', deviceBody(device.mqtt_microservice_id, {value: value}));
-        showNotice('Đã gửi lệnh tới ' + (device.content || device.mqtt_id) + (data.route === 'lan' ? ' qua LAN' : '') +
+        const route = await linkControl(device, value);
+        showNotice('Đã gửi lệnh tới ' + (device.content || device.mqtt_id) + (route === 'lan' ? ' qua LAN' : '') +
           '. Đang chờ thiết bị cập nhật trạng thái…', 'ok');
         setTimeout(loadStatus, 2000);
       } catch (error) {
@@ -1466,16 +2178,39 @@
       if (loading) return;
       loading = true;
       try {
-        const data = await api('deviceStatusMqtt', {transports: allTransports()});
-        devices = data.devices || [];
-        if (!data.mqttConnected) {
-          const lanCount = devices.filter(function(device) { return device.route === 'lan'; }).length;
-          showNotice('Máy chủ chưa kết nối MQTT broker: ' + data.mqttError +
-            (lanCount ? ' — ' + lanCount + ' thiết bị đang được điều khiển qua LAN.' : ''), lanCount ? null : 'error');
+        let data;
+        try {
+          data = await api('deviceStatusMqtt');
+          serverReachable = true;
+        } catch (error) {
+          serverReachable = false;
+          data = {devices: readDeviceCache(), mqttConnected: false, mqttError: error.message};
+          if (!data.devices.length) throw error;
         }
-        else if (document.getElementById('notice').classList.contains('error')) showNotice('');
-        if (selectedId != null) renderDetail();
-        else renderList();
+        mqttConnected = !!data.mqttConnected;
+        devices = data.devices || [];
+        if (serverReachable) writeDeviceCache(devices);
+        let lanCount = 0;
+        devices.forEach(function(device) {
+          device.serverStatus = device.status;
+          if (device.status && device.status.ip) rememberLanIp(device.mqtt_microservice_id, device.status.ip);
+          if (deviceRoute(device) !== 'lan') return;
+          lanCount++;
+          const id = device.mqtt_microservice_id;
+          if (lanStatuses[id]) device.status = describeLanStatus(lanStatuses[id]);
+          device.error = lanErrors[id] || null;
+          refreshLanStatus(device, false);
+        });
+        const lanText = lanCount ? ' — ' + lanCount + ' thiết bị được điều khiển qua LAN từ máy này.' : '';
+        if (!serverReachable) {
+          showNotice('Không kết nối được máy chủ web_manager (' + data.mqttError + '). Đang dùng danh sách thiết bị đã lưu trên máy này' +
+            lanText, lanCount ? null : 'error');
+        } else if (!mqttConnected) {
+          showNotice('Máy chủ chưa kết nối MQTT broker: ' + data.mqttError + lanText, lanCount ? null : 'error');
+        } else if (document.getElementById('notice').classList.contains('error')) {
+          showNotice('');
+        }
+        renderCurrentView();
       } catch (error) {
         showNotice('Không tải được thiết bị: ' + error.message, 'error');
       } finally {
@@ -1489,6 +2224,7 @@
     setupOnTimer();
     setupCountdown();
     setupTransport();
+    setupThresholds();
     setInterval(function() { if (!document.hidden) loadStatus(); }, POLL_INTERVAL_MS);
     loadStatus();
   </script>

@@ -7,6 +7,7 @@
 #include "ScheduleEngine.h"
 #include "OnTimer.h"
 #include "Countdown.h"
+#include "ThresholdControl.h"
 
 #include <time.h>
 
@@ -67,6 +68,28 @@ void processCountdown() {
     control.count_info++;
     statusDirty = true;
     DEVICE_LOG_INFO(String("[Device] Countdown ON ports=0x") + String(ports, HEX));
+}
+
+// Sensor threshold actions, independent of schedules, see ThresholdControl.h.
+// Applied like a direct command.
+void processThresholds() {
+    uint8_t onMask = 0;
+    uint8_t offMask = 0;
+    if (!ThresholdControl::takeActions(onMask, offMask)) {
+        return;
+    }
+    onMask &= DEVICE_OUTPUT_MASK;
+    offMask &= DEVICE_OUTPUT_MASK;
+    uint8_t cancelled = 0;
+    uint8_t port = portController.applyDirect(control.device_port, offMask, 0, cancelled);
+    port = portController.applyDirect(port, onMask, onMask, cancelled);
+    if (port != control.device_port) {
+        control.device_port = port;
+        control.count_info++;
+        statusDirty = true;
+    }
+    DEVICE_LOG_INFO(String("[Device] Threshold on=0x") + String(onMask, HEX) +
+                    " off=0x" + String(offMask, HEX));
 }
 
 #if SUPPORT_RTOS
@@ -242,6 +265,7 @@ void TaskDevice::taskRun(void* parameter) {
         }
 #endif
 
+        processThresholds();
         processCountdown();
         processAutoOff();
         processOnTimer();
