@@ -1,9 +1,11 @@
 #pragma once
 
-// Pure schedule logic (no Arduino/EEPROM dependency) so it can be unit tested
-// on a host compiler: tests/schedule_core_test.cpp.
+// Pure schedule logic (no Arduino/EEPROM access) so it can be unit tested on a
+// host compiler: tests/core_logic_test.cpp. ScheduleEngine.cpp adds the
+// locking, the EEPROM I/O and the device command queue.
 //
-// EEPROM slot = 6-byte record (spec_v1 §2, format unchanged) + 5-byte metadata.
+// EEPROM region (eeprom_layout.h): 4-byte header, then SCHEDULE_MAX_COUNT
+// records, then SCHEDULE_MAX_COUNT metadata blocks. Slot i is:
 //   record: [hour][minute][weekday][port_state][auto_off lo][auto_off hi]
 //   meta:   [flags][port_mask][day lo][day hi][crc8 of record + meta 0..3]
 // weekday bit0 = Monday ... bit6 = Sunday; weekday == 0 means ONCE.
@@ -12,10 +14,16 @@
 //   WEEKLY -> the last local date it ran, RAM only (stored as 0).
 // Execution history (WEEKLY day, kFlagDone) is never written to EEPROM, so
 // running schedules does not wear the flash; see configurationOnly().
+//
+// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
 
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
+
+#include "PortBits.h"
+#include "eeprom_layout.h"
 
 namespace schedule {
 
@@ -172,7 +180,21 @@ inline bool occursOnDay(const Entry& e, uint16_t dayNumber)
     return (e.weekday & weekdayBit(dayNumber)) != 0;
 }
 
+
 constexpr int64_t kMinutesPerDay = 1440;
+
+// Minutes since local midnight.
+inline int minuteOfDay(const Entry& e)
+{
+    return e.hour * 60 + e.minute;
+}
+
+// Local minute number (minutes since 1970-01-01 00:00 local time) of the
+// entry's time of day on day.
+inline int64_t occurrenceMinute(const Entry& e, int64_t day)
+{
+    return day * kMinutesPerDay + minuteOfDay(e);
+}
 
 inline bool daysOverlap(const Entry& a, const Entry& b)
 {
@@ -186,7 +208,7 @@ inline bool daysOverlap(const Entry& a, const Entry& b)
 // different ON/OFF state, or ON with a different auto OFF time (spec §5).
 inline uint8_t conflictingPorts(const Entry& a, const Entry& b)
 {
-    if (a.hour != b.hour || a.minute != b.minute || !daysOverlap(a, b)) return 0;
+    if (minuteOfDay(a) != minuteOfDay(b) || !daysOverlap(a, b)) return 0;
     const uint8_t shared = a.portMask & b.portMask;
     uint8_t conflict = (a.portState ^ b.portState) & shared;
     if (a.autoOff != b.autoOff) conflict |= a.portState & b.portState & shared;
@@ -196,9 +218,8 @@ inline uint8_t conflictingPorts(const Entry& a, const Entry& b)
 // Fields that define what a schedule does; flags/day bookkeeping excluded.
 inline bool sameDefinition(const Entry& a, const Entry& b)
 {
-    return a.hour == b.hour && a.minute == b.minute && a.weekday == b.weekday &&
-           a.portState == b.portState && a.autoOff == b.autoOff &&
-           a.portMask == b.portMask && (!isOnce(a) || a.day == b.day);
+    return a.hour == b.hour && a.minute == b.minute && a.weekday == b.weekday && a.portState == b.portState &&
+           a.autoOff == b.autoOff && a.portMask == b.portMask && (!isOnce(a) || a.day == b.day);
 }
 
 // STATUS "set" item: the 6-byte record as text,
@@ -215,10 +236,9 @@ inline size_t activeByTime(const Entry* entries, size_t count, uint8_t* order)
     size_t used = 0;
     for (size_t i = 0; i < count; ++i) {
         if (!isActive(entries[i])) continue;
-        const int key = entries[i].hour * 60 + entries[i].minute;
+        const int key = minuteOfDay(entries[i]);
         size_t position = used++;
-        while (position > 0 &&
-               entries[order[position - 1]].hour * 60 + entries[order[position - 1]].minute > key) {
+        while (position > 0 && minuteOfDay(entries[order[position - 1]]) > key) {
             order[position] = order[position - 1];
             --position;
         }
@@ -227,12 +247,70 @@ inline size_t activeByTime(const Entry* entries, size_t count, uint8_t* order)
     return used;
 }
 
+// ---------------------------------------------------------------------------
+// Evaluation. A "minute" is a local minute number (occurrenceMinute()).
+// ---------------------------------------------------------------------------
+
+// True when the entry is due in minute and has not run in it yet.
+inline bool shouldRun(const Entry& e, int64_t minute)
+{
+    if (!isActive(e) || minute < 0) return false;
+    const uint16_t day = static_cast<uint16_t>(minute / kMinutesPerDay);
+    if (minuteOfDay(e) != static_cast<int>(minute % kMinutesPerDay) || !occursOnDay(e, day)) return false;
+    // Weekly: already ran today (e.g. reboot inside the same minute).
+    return isOnce(e) || e.day != day;
+}
+
+// Records a run in RAM: ONCE is done, WEEKLY remembers the day.
+inline void markRun(Entry& e, int64_t minute)
+{
+    if (isOnce(e)) {
+        e.flags |= kFlagDone;
+    } else {
+        e.day = static_cast<uint16_t>(minute / kMinutesPerDay);
+    }
+}
+
+// An active ONCE entry whose moment is at or before lastMinute: it was missed
+// (device off or clock not valid) and must not run late.
+inline bool missedOnce(const Entry& e, int64_t lastMinute)
+{
+    return isActive(e) && isOnce(e) && occurrenceMinute(e, e.day) <= lastMinute;
+}
+
+// An update keeps the weekly last-run day while the time of day is unchanged,
+// so an edit does not make a schedule that already ran today run again.
+inline void keepLastRunDay(const Entry& previous, Entry& updated)
+{
+    if (!isOnce(updated) && !isOnce(previous) && minuteOfDay(previous) == minuteOfDay(updated)) {
+        updated.day = previous.day;
+    }
+}
+
+// Which minutes the next process() call evaluates: lastEvaluatedMinute + 1 .. now.
+struct CatchUp {
+    int64_t lastEvaluatedMinute;
+    int64_t skippedMinutes;  // Minutes dropped because the scheduler was late.
+};
+
+// lastEvaluatedMinute < 0: first valid clock after boot. A clock that moved
+// back also restarts at the current minute (weekly last-run days prevent a
+// second run). A delay longer than maxCatchupMinutes skips the older minutes.
+inline CatchUp catchUpWindow(int64_t lastEvaluatedMinute, int64_t nowMinute, int64_t maxCatchupMinutes)
+{
+    if (lastEvaluatedMinute < 0 || nowMinute < lastEvaluatedMinute) return {nowMinute - 1, 0};
+    if (nowMinute - lastEvaluatedMinute > maxCatchupMinutes) {
+        return {nowMinute - maxCatchupMinutes, nowMinute - lastEvaluatedMinute - maxCatchupMinutes};
+    }
+    return {lastEvaluatedMinute, 0};
+}
+
 // Merges the schedules due in one minute. Ports with conflicting requests are
 // removed from every command (spec §5) and reported in conflictMask.
 struct PortAction {
     uint8_t onMask;
     uint8_t offMask;
-    uint16_t autoOff[8];
+    uint16_t autoOff[ports::kCount];
     uint8_t conflictMask;
 };
 
@@ -242,28 +320,150 @@ inline void mergeDue(const Entry* const* due, size_t count, PortAction& action)
     uint8_t seen = 0;
     for (size_t i = 0; i < count; ++i) {
         const Entry& e = *due[i];
-        for (uint8_t port = 0; port < 8; ++port) {
-            const uint8_t bit = static_cast<uint8_t>(1u << port);
-            if ((e.portMask & bit) == 0) continue;
+        ports::forEach(e.portMask, [&](uint8_t port, uint8_t bit) {
             const bool on = (e.portState & bit) != 0;
             const uint16_t autoOff = on ? e.autoOff : 0;
             if ((seen & bit) == 0) {
                 seen |= bit;
-                if (on) action.onMask |= bit; else action.offMask |= bit;
+                if (on) {
+                    action.onMask |= bit;
+                } else {
+                    action.offMask |= bit;
+                }
                 action.autoOff[port] = autoOff;
             } else if (((action.onMask & bit) != 0) != on || action.autoOff[port] != autoOff) {
                 action.conflictMask |= bit;
             }
+        });
+    }
+    action.onMask &= static_cast<uint8_t>(~action.conflictMask);
+    action.offMask &= static_cast<uint8_t>(~action.conflictMask);
+}
+
+// A device command produced by due schedules: set the ports of mask to state;
+// the ports switched on get an auto OFF after autoOff seconds (0 = none).
+struct Command {
+    uint8_t mask;
+    uint8_t state;
+    uint16_t autoOff;
+};
+
+// At most one OFF command plus one ON command per distinct auto OFF value.
+constexpr size_t kMaxCommandsPerMinute = ports::kCount + 1;
+
+// Splits a merged action into commands; ON ports sharing an auto OFF value
+// share a command. Returns the number written to commands.
+inline size_t buildCommands(const PortAction& action, Command* commands)
+{
+    size_t count = 0;
+    if (action.offMask != 0) commands[count++] = {action.offMask, 0, 0};
+    uint8_t remaining = action.onMask;
+    while (remaining != 0) {
+        uint8_t first = 0;
+        while ((remaining & ports::bitOf(first)) == 0) ++first;
+        const uint16_t autoOff = action.autoOff[first];
+        uint8_t group = 0;
+        ports::forEach(remaining, [&](uint8_t port, uint8_t bit) {
+            if (action.autoOff[port] == autoOff) group |= bit;
+        });
+        commands[count++] = {group, group, autoOff};
+        remaining &= static_cast<uint8_t>(~group);
+    }
+    return count;
+}
+
+// ---------------------------------------------------------------------------
+// EEPROM region SCHEDULE_EEPROM_ADDRESS..SCHEDULE_EEPROM_END as a byte image.
+// ---------------------------------------------------------------------------
+
+constexpr uint8_t kRegionMagic0 = 'S';
+constexpr uint8_t kRegionMagic1 = 'C';
+constexpr size_t kSlotCount = SCHEDULE_MAX_COUNT;
+constexpr size_t kRegionSize = SCHEDULE_EEPROM_END - SCHEDULE_EEPROM_ADDRESS;
+
+static_assert(SCHEDULE_RECORD_SIZE == kRecordSize, "6-byte record size changed");
+static_assert(SCHEDULE_META_SIZE == kMetaSize, "metadata size changed");
+static_assert(SCHEDULE_MAX_COUNT <= 255, "schedule ids are one byte");
+
+inline size_t recordOffset(size_t slot)
+{
+    return (SCHEDULE_RECORDS_ADDRESS - SCHEDULE_EEPROM_ADDRESS) + slot * kRecordSize;
+}
+
+inline size_t metaOffset(size_t slot)
+{
+    return (SCHEDULE_META_ADDRESS - SCHEDULE_EEPROM_ADDRESS) + slot * kMetaSize;
+}
+
+// region: kRegionSize bytes. Unused slots are written as zeros.
+inline void encodeRegion(const Entry* source, uint8_t* region)
+{
+    region[0] = kRegionMagic0;
+    region[1] = kRegionMagic1;
+    region[2] = SCHEDULE_EEPROM_VERSION;
+    region[3] = SCHEDULE_MAX_COUNT;
+    for (size_t i = 0; i < kSlotCount; ++i) {
+        uint8_t* record = region + recordOffset(i);
+        uint8_t* meta = region + metaOffset(i);
+        if (isUsed(source[i])) {
+            encode(configurationOnly(source[i]), record, meta);
+        } else {
+            memset(record, 0, kRecordSize);
+            memset(meta, 0, kMetaSize);
         }
     }
-    action.onMask &= ~action.conflictMask;
-    action.offMask &= ~action.conflictMask;
+}
+
+enum class SlotLoad : uint8_t {
+    Empty,
+    Loaded,
+    CrcError,     // Dropped.
+    InvalidData,  // Dropped: unknown flags or a definition validate() rejects.
+};
+
+struct RegionLoad {
+    bool headerValid;   // false: blank or foreign data, every slot empty.
+    bool needsRewrite;  // The stored image differs from what was loaded.
+    SlotLoad slots[kSlotCount];
+};
+
+// Decodes a region image into loaded (kSlotCount entries, configuration only).
+inline RegionLoad decodeRegion(const uint8_t* region, uint8_t allowedPortMask, Entry* loaded)
+{
+    RegionLoad result = {};
+    for (size_t i = 0; i < kSlotCount; ++i) {
+        loaded[i] = {};
+        result.slots[i] = SlotLoad::Empty;
+    }
+    result.headerValid = region[0] == kRegionMagic0 && region[1] == kRegionMagic1 &&
+                         region[2] == SCHEDULE_EEPROM_VERSION && region[3] == SCHEDULE_MAX_COUNT;
+    if (!result.headerValid) {
+        result.needsRewrite = true;
+        return result;
+    }
+    for (size_t i = 0; i < kSlotCount; ++i) {
+        Entry entry;
+        if (!decode(region + recordOffset(i), region + metaOffset(i), entry)) {
+            result.slots[i] = SlotLoad::CrcError;
+            result.needsRewrite = true;
+            continue;
+        }
+        if (!isUsed(entry)) continue;
+        if ((entry.flags & ~kFlagMask) != 0 || validate(entry, allowedPortMask) != VALID) {
+            result.slots[i] = SlotLoad::InvalidData;
+            result.needsRewrite = true;
+            continue;
+        }
+        loaded[i] = configurationOnly(entry);
+        result.slots[i] = SlotLoad::Loaded;
+    }
+    return result;
 }
 
 // Per-port ownership (spec §6). A direct command (MQTT/HTTP com:1, button)
 // cancels the auto OFF of the schedule that last switched the port; the next
 // schedule event on that port takes control back. Methods return the new
-// 8-bit port state. Times are epoch seconds; now = 0 means "clock invalid".
+// port byte. Times are epoch seconds; now = 0 means "clock invalid".
 class PortController {
 public:
     struct PortState {
@@ -277,23 +477,19 @@ public:
     uint8_t applyDirect(uint8_t current, uint8_t mask, uint8_t state, uint8_t& cancelled)
     {
         cancelled = 0;
-        for (uint8_t port = 0; port < 8; ++port) {
-            const uint8_t bit = static_cast<uint8_t>(1u << port);
-            if ((mask & bit) == 0) continue;
+        ports::forEach(mask, [&](uint8_t port, uint8_t bit) {
             PortState& p = ports_[port];
             if (p.autoOffDeadline != 0) cancelled |= bit;
             p.manualOverride = true;
             p.scheduleGeneration++;  // Invalidates the pending auto OFF.
             p.autoOffDeadline = 0;
-        }
+        });
         return static_cast<uint8_t>((current & ~mask) | (state & mask));
     }
 
     uint8_t applySchedule(uint8_t current, uint8_t mask, uint8_t state, uint16_t autoOff, int64_t now)
     {
-        for (uint8_t port = 0; port < 8; ++port) {
-            const uint8_t bit = static_cast<uint8_t>(1u << port);
-            if ((mask & bit) == 0) continue;
+        ports::forEach(mask, [&](uint8_t port, uint8_t bit) {
             PortState& p = ports_[port];
             p.manualOverride = false;  // A new schedule event restores automatic control.
             p.scheduleGeneration++;
@@ -303,7 +499,7 @@ public:
             } else {
                 p.autoOffDeadline = 0;
             }
-        }
+        });
         return static_cast<uint8_t>((current & ~mask) | (state & mask));
     }
 
@@ -312,22 +508,24 @@ public:
     {
         switchedOff = 0;
         if (now <= 0) return current;
-        for (uint8_t port = 0; port < 8; ++port) {
+        for (uint8_t port = 0; port < ports::kCount; ++port) {
             PortState& p = ports_[port];
             if (p.autoOffDeadline == 0 || now < p.autoOffDeadline) continue;
             p.autoOffDeadline = 0;
             // A stale timer (port taken over since) does nothing.
             if (p.manualOverride || p.autoOffGeneration != p.scheduleGeneration) continue;
-            switchedOff |= static_cast<uint8_t>(1u << port);
+            switchedOff |= ports::bitOf(port);
         }
         return static_cast<uint8_t>(current & ~switchedOff);
     }
 
-    const PortState& port(uint8_t index) const { return ports_[index]; }
-
+    const PortState& port(uint8_t index) const
+    {
+        return ports_[index];
+    }
 
 private:
-    PortState ports_[8] = {};
+    PortState ports_[ports::kCount] = {};
 };
 
-} // namespace schedule
+}  // namespace schedule

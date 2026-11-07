@@ -1,13 +1,15 @@
-#ifndef COUNTDOWN_H
-#define COUNTDOWN_H
+#pragma once
+
+// Countdown auto ON, independent of schedules: {"com":COMMAND_TYPE_COUNTDOWN,
+// "value":N} switches the ports on once after N seconds (1..kMaxSeconds);
+// value 0 cancels. The running countdown lives in RAM only and is lost on a
+// power cycle. COUNTDOWN_EEPROM_ADDRESS keeps only the last N (little-endian
+// uint32, ByteCodec.h) so the web page can show it again.
+//
+// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
 
 #include <stdint.h>
 
-// Đếm ngược tự bật, độc lập với lịch: {"com":COMMAND_TYPE_COUNTDOWN,"value":N}
-// bật các cổng sau N giây (1..kMaxSeconds), một lần; value 0 = hủy. Bộ đếm chỉ
-// nằm trong RAM: mất điện / khởi động lại thì hủy. 4 byte tại
-// COUNTDOWN_EEPROM_ADDRESS (uint32 little-endian, cùng định dạng hẹn giờ tự
-// tắt) chỉ lưu N gần nhất để web hiển thị lại.
 namespace countdown {
 
 constexpr uint32_t kMaxSeconds = 86400;  // 24 h
@@ -28,9 +30,20 @@ public:
         armed_ = seconds != 0 && mask != 0;
     }
 
-    void cancel() { armed_ = false; }
-    bool armed() const { return armed_; }
-    uint8_t mask() const { return armed_ ? mask_ : 0; }
+    void cancel()
+    {
+        armed_ = false;
+    }
+
+    bool armed() const
+    {
+        return armed_;
+    }
+
+    uint8_t mask() const
+    {
+        return armed_ ? mask_ : 0;
+    }
 
     // Returns the ports to switch on once the time has elapsed; the timer
     // then stops, so they are returned only once.
@@ -57,10 +70,10 @@ private:
     uint32_t startMs_ = 0;
 };
 
-} // namespace countdown
+}  // namespace countdown
 
 // The MQTT callback calls start() / cancel(), TaskDevice calls takeExpired(),
-// SystemTask calls flush(): EEPROM is written only when a new N is started.
+// Automation calls stage(): EEPROM is written only when a new N is started.
 class Countdown {
 public:
     static void setup();
@@ -72,7 +85,7 @@ public:
     static uint8_t mask();
     // Last N started (0 = never), kept in EEPROM.
     static uint32_t lastSeconds();
-    static void flush();
+    // Automation: copies a changed value into the EEPROM RAM copy (committed
+    // by Automation). true when something was staged.
+    static bool stage();
 };
-
-#endif

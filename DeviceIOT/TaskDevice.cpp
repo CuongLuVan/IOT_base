@@ -1,269 +1,223 @@
+// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
 
 #include "TaskDevice.h"
+
 #include <Arduino.h>
-#include "Common.h"
-#include "define_All.h"
-#include "MemoryData.h"
-#include "DebugInfo.h"
-#include "ScheduleEngine.h"
-#include "OnTimer.h"
+
+#include "ButtonInput.h"
+#include "Clock.h"
 #include "Countdown.h"
+#include "DebugInfo.h"
+#include "OnTimer.h"
+#include "PortArbiter.h"
+#include "ScheduleEngine.h"
+#include "Sync.h"
+#include "TaskWatchdog.h"
 #include "ThresholdControl.h"
-#include <time.h>
 
-#if SUPPORT_RTOS
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-#include <freertos/queue.h>
-extern QueueHandle_t deviceCommandQueue;
-extern QueueHandle_t deviceStatusQueue;
-#else
+namespace {
 
+// Output pins, one per bit of DEVICE_OUTPUT_MASK (board_pins.h).
+struct OutputPin {
+    uint8_t bit;
+    int pin;
+};
+
+constexpr OutputPin kOutputs[] = {
+    {0x01, OUTPUT_PUMP_PIN},
+#if (DEVICE_OUTPUT_MASK & 0x02) != 0
+    {0x02, OUTPUT_DEVICE_1_PIN},
 #endif
+};
 
-InfoDeviceControl control;
-
-// Direct control priority and schedule auto OFF (spec_v1 §6), see ScheduleCore.h.
-static schedule::PortController portController;
-// Auto OFF on-timer, independent of schedules, see OnTimer.h.
-static on_timer::Tracker onTimerTracker;
-static constexpr time_t kMinimumValidEpoch = 1704067200;
-
-static int64_t validEpochOrZero(void)
+constexpr uint8_t outputBits(size_t index = 0)
 {
-    const time_t now = time(nullptr);
-    return now >= kMinimumValidEpoch ? static_cast<int64_t>(now) : 0;
+    return index == sizeof(kOutputs) / sizeof(kOutputs[0]) ? 0 : kOutputs[index].bit | outputBits(index + 1);
 }
 
-static void applyDirectCommand(uint8_t portMask, uint8_t portState)
+static_assert(outputBits() == DEVICE_OUTPUT_MASK, "every bit of DEVICE_OUTPUT_MASK needs an entry in kOutputs");
+
+// Upper bound of commands applied in one cycle; the rest wait for the next one.
+constexpr size_t kMaxScheduleEventsPerCycle = 10;
+// How often TaskDevice checks the heartbeats of the other tasks (SystemTask
+// checks them too; each covers the other).
+constexpr uint32_t kHeartbeatCheckIntervalMs = 1000;
+
+// Network task -> TaskDevice.
+platform_sync::Queue<DeviceCommand, DEVICE_COMMAND_QUEUE_LENGTH> commandQueue;
+
+// Published state: written by TaskDevice, read by copyStatus() in other tasks.
+InfoDeviceControl publishedStatus = {};
+bool ready = false;
+
+// TaskDevice only.
+port_arbiter::Arbiter arbiter(DEVICE_OUTPUT_MASK, BUTTON_TOGGLE_PORT_MASK);
+ButtonInput button;
+uint8_t outputPort = 0;
+// NON-OS: service() runs from a recurrent scheduled function; never nest it.
+bool serviceRunning = false;
+
+void writeOutputs(uint8_t port)
 {
-    // com:1 without "mask" keeps its legacy meaning: value is the whole byte.
-    const uint8_t mask = portMask != 0 ? portMask : 0xFF;
-    uint8_t cancelled = 0;
-    control.device_port = portController.applyDirect(control.device_port, mask, portState, cancelled);
-    control.count_info++;
-    if (cancelled != 0) {
-        Serial.printf("[TaskDevice] Direct control cancels auto OFF, ports=0x%02X\n", cancelled);
+    for (const OutputPin& output : kOutputs) {
+        digitalWrite(output.pin, (port & output.bit) != 0 ? HIGH : LOW);
     }
 }
 
-static void applyScheduleCommand(uint8_t portMask, uint8_t portState, uint16_t autoOffSeconds)
+// Returns true when the button was released after a long press (toggle);
+// every release counts as a click.
+bool pollButton(uint32_t nowMs, bool& clicked)
 {
-    control.device_port = portController.applySchedule(control.device_port, portMask, portState,
-                                                       autoOffSeconds, validEpochOrZero());
-    control.count_info++;
+    clicked = false;
+    if (button.update(nowMs) != ButtonInput::Event::Released) return false;
+    clicked = true;
+    return button.heldMs(nowMs) >= BUTTON_LONG_PRESS_MS;
 }
 
-static void processAutoOff(void)
+size_t drainScheduleEvents(port_arbiter::ScheduleEvent* events)
 {
-    uint8_t switchedOff = 0;
-    control.device_port = portController.processAutoOff(control.device_port, validEpochOrZero(), switchedOff);
-    if (switchedOff != 0) {
-        control.count_info++;
-        Serial.printf("[TaskDevice] Auto OFF ports=0x%02X\n", switchedOff);
-    }
-}
-
-static void processOnTimer(void)
-{
-    const uint32_t seconds = OnTimer::seconds();
-    const uint8_t expired = onTimerTracker.update(control.device_port, seconds, millis());
-    if (expired != 0) {
-        control.device_port &= ~expired;
-        control.count_info++;
-        Serial.printf("[TaskDevice] On-timer OFF ports=0x%02X after %lu s\n", expired,
-                      static_cast<unsigned long>(seconds));
-    }
-}
-
-// Countdown auto ON, independent of schedules, see Countdown.h. It acts like
-// a direct command, so it also cancels a pending schedule auto OFF.
-static void processCountdown(void)
-{
-    const uint8_t ports = Countdown::takeExpired();
-    if (ports != 0) {
-        applyDirectCommand(ports, ports);
-        Serial.printf("[TaskDevice] Countdown ON ports=0x%02X\n", ports);
-    }
-}
-
-// Sensor threshold actions, independent of schedules, see ThresholdControl.h.
-// Applied like a direct command.
-static void processThresholds(void)
-{
-    uint8_t onMask = 0;
-    uint8_t offMask = 0;
-    if (!ThresholdControl::takeActions(onMask, offMask)) return;
-    if (offMask != 0) applyDirectCommand(offMask, 0);
-    if (onMask != 0) applyDirectCommand(onMask, onMask);
-    Serial.printf("[TaskDevice] Threshold on=0x%02X off=0x%02X\n", onMask, offMask);
-}
-
-static void applyCommand(DeviceCommand &command)
-{
-    if (command.commandType == COMMAND_TYPE_CONTROL) {
-        applyDirectCommand(command.portMask, command.commandValue);
-    } else if (command.commandType == COMMAND_TYPE_SCHEDULE_CONTROL &&
-               command.reserved == COMMAND_RESERVED_CONTROL) {
-        applyScheduleCommand(command.portMask, command.commandValue, command.autoOffSeconds);
-    } else {
-        return;
-    }
-    command.reserved = COMMAND_RESERVED_NONE; // Mark as processed
-    Serial.printf("[TaskDevice] Exec command type=%d mask=0x%02X value=0x%02X auto_off=%u -> port=0x%02X\n",
-                  command.commandType, command.portMask, command.commandValue,
-                  command.autoOffSeconds, control.device_port);
-}
-
-// Schedule commands are applied before a direct command received in the same
-// cycle, so the direct command wins.
-static void processScheduleCommands(void)
-{
+    size_t count = 0;
     DeviceCommand command;
-    while (ScheduleEngine::receiveDeviceCommand(command)) {
-        applyCommand(command);
+    while (count < kMaxScheduleEventsPerCycle && ScheduleEngine::receiveDeviceCommand(command)) {
+        events[count++] = {command.portMask, command.commandValue, command.autoOffSeconds};
     }
+    return count;
 }
 
-void TaskDevice::setup(void)
+size_t drainDirectCommands(port_arbiter::DirectCommand* commands)
 {
-    DEVICE_LOG_INFO("start TaskDevice::setup");
-    control.device_port = 0x00;
-    control.button_click = 0x00;
-    control.button_status = 0x00;
-    control.count_info = 0x00;
-    pinMode(DEVICE_BUTTON_PIN, INPUT);
-    pinMode(INPUT_PULLUP_PIN, INPUT);
-    pinMode(OUTPUT_PUMP_PIN, OUTPUT);
-    pinMode(OUTPUT_DEVICE_1_PIN, OUTPUT);
-    DEVICE_LOG_INFO("end TaskDevice::setup");
+    size_t count = 0;
+    DeviceCommand command;
+    while (count < DEVICE_COMMAND_QUEUE_LENGTH && commandQueue.pop(command)) {
+        if (command.commandType != COMMAND_TYPE_CONTROL) {
+            DEVICE_LOGF_WARNING("[Device] Ignored command type %u\n", command.commandType);
+            continue;
+        }
+        DEVICE_LOGF_DEBUG("[Device] Command mask=0x%02X value=0x%02X\n", command.portMask, command.commandValue);
+        commands[count++] = {command.portMask, command.commandValue};
+    }
+    return count;
 }
 
-void TaskDevice::readButton(void)
+void logReport(const port_arbiter::Inputs& inputs, const port_arbiter::Report& report)
 {
-    static int lastButtonReading = HIGH;
-    static int buttonState = HIGH;
-    static unsigned long lastDebounceTime = 0;
-    static unsigned long pressStart = 0;
-
-    const unsigned long debounceDelay = BUTTON_DEBOUNCE_MS;
-    const unsigned long longPressTime = BUTTON_LONG_PRESS_MS;
-
-    int reading = digitalRead(DEVICE_BUTTON_PIN);
-
-    if (reading != lastButtonReading) {
-        lastDebounceTime = millis();
+    if (inputs.thresholdOn != 0 || inputs.thresholdOff != 0) {
+        DEVICE_LOGF_DEBUG("[Device] Threshold on=0x%02X off=0x%02X\n", inputs.thresholdOn, inputs.thresholdOff);
     }
-
-    if ((millis() - lastDebounceTime) > debounceDelay) {
-        if (reading != buttonState) {
-            buttonState = reading;
-
-            if (buttonState == LOW) { // nút được nhấn (INPUT_PULLUP)
-                pressStart = millis();
-            } else { // nút được nhả
-                if (pressStart > 0) {
-                    unsigned long pressDuration = millis() - pressStart;
-                    if (pressDuration >= longPressTime) {
-                        // long press (>= 3s) => toggle device_port (direct control)
-                        applyDirectCommand(SYSTEM_TASK_SCHEDULE_PORT_MASK,
-                                           control.device_port ^ SYSTEM_TASK_SCHEDULE_PORT_MASK);
-                        Serial.printf("[TaskDevice] Long press toggle device_port -> %d\n", control.device_port);
-                    }
-                    pressStart = 0;
-                }
-            }
-        }
+    if (inputs.countdownOn != 0) DEVICE_LOGF_INFO("[Device] Countdown ON ports=0x%02X\n", inputs.countdownOn);
+    if (inputs.buttonToggle) DEVICE_LOG_INFO("[Device] Button long press: toggle");
+    if (report.autoOffCancelled != 0) {
+        DEVICE_LOGF_INFO("[Device] Direct control cancels auto OFF, ports=0x%02X\n", report.autoOffCancelled);
     }
-
-    lastButtonReading = reading;
-}
-
-void TaskDevice::controlPump(void){
-    if((control.device_port & 0x01) != 0) {
-        digitalWrite(OUTPUT_PUMP_PIN, HIGH); // Bật bơm
-    } else {
-        digitalWrite(OUTPUT_PUMP_PIN, LOW); // Tắt bơm
-    }
-}
-void TaskDevice::controlDevice(void){
-     if((control.device_port & 0x02) != 0) {
-        digitalWrite(OUTPUT_DEVICE_1_PIN, HIGH); // Bật thiết bị 1
-    } else {
-        digitalWrite(OUTPUT_DEVICE_1_PIN, LOW); // Tắt thiết bị 1
+    if (report.autoOffSwitched != 0) DEVICE_LOGF_INFO("[Device] Auto OFF ports=0x%02X\n", report.autoOffSwitched);
+    if (report.onTimerExpired != 0) {
+        DEVICE_LOGF_INFO("[Device] On-timer OFF ports=0x%02X after %lu s\n", report.onTimerExpired,
+                         static_cast<unsigned long>(inputs.onTimerSeconds));
     }
 }
 
-void TaskDevice::updateMemoryStatus(void){
-    MemoryData::GetInstance().deviceStatus_->device_port = control.device_port;
-    MemoryData::GetInstance().deviceStatus_->button_click = control.button_click;  
-    MemoryData::GetInstance().deviceStatus_->button_status = control.button_status; 
-    MemoryData::GetInstance().deviceStatus_->device_port_last = control.device_port_last; 
-    MemoryData::GetInstance().deviceStatus_->count_info = control.count_info; 
+void publish(uint8_t port, bool clicked)
+{
+    platform_sync::CriticalSection section;
+    publishedStatus.device_port_last = publishedStatus.device_port;
+    publishedStatus.device_port = port;
+    if (clicked) publishedStatus.button_click++;
+    publishedStatus.count_info++;
 }
 
-void TaskDevice::taskRun(void * parameter) {
-    //DEVICE_LOG_INFO("start TaskDevice::taskRun");
-    #if SUPPORT_RTOS
-        for(;;)
-        { 
-            TaskDevice::readButton();
-            TaskDevice::controlPump();
-            TaskDevice::controlDevice();
-            vTaskDelay(DEVICE_TASK_PERIOD_MS / portTICK_PERIOD_MS);
-            if(control.device_port!=control.device_port_last){
-                control.device_port_last = control.device_port;
-                // Report current device status to network
-                if (deviceStatusQueue != NULL) {
-                    xQueueSend(deviceStatusQueue, &control, pdMS_TO_TICKS(DEVICE_QUEUE_SEND_DELAY_MS));
-                }
+// One cycle: commands, button, automation inputs, outputs.
+void serviceOnce()
+{
+    const uint32_t nowMs = millis();
 
-                // Receive command from network if available
-                
-            }
-            processScheduleCommands();
-            if (deviceCommandQueue != NULL) {
-                DeviceCommand cmd_to_device;
-                if (xQueueReceive(deviceCommandQueue, &cmd_to_device, 0) == pdTRUE) {
-                    // apply command locally
-                    applyCommand(cmd_to_device);
-                }
-            }
-            processThresholds();
-            processCountdown();
-            processAutoOff();
-            processOnTimer();
+    port_arbiter::ScheduleEvent schedules[kMaxScheduleEventsPerCycle];
+    port_arbiter::DirectCommand directs[DEVICE_COMMAND_QUEUE_LENGTH];
+    port_arbiter::Inputs inputs;
+    inputs.schedules = schedules;
+    inputs.scheduleCount = drainScheduleEvents(schedules);
+    inputs.directs = directs;
+    inputs.directCount = drainDirectCommands(directs);
+    bool clicked = false;
+    inputs.buttonToggle = pollButton(nowMs, clicked);
+    (void)ThresholdControl::takeActions(inputs.thresholdOn, inputs.thresholdOff);
+    inputs.countdownOn = Countdown::takeExpired();
+    inputs.onTimerSeconds = OnTimer::seconds();
+    inputs.nowEpoch = device_clock::epochOrZero();
+    inputs.nowMs = nowMs;
+
+    port_arbiter::Report report;
+    const uint8_t port = arbiter.step(outputPort, inputs, report);
+    logReport(inputs, report);
+
+    if (port == outputPort && !clicked) return;
+    if (port != outputPort) {
+        DEVICE_LOGF_DEBUG("[Device] port 0x%02X -> 0x%02X\n", outputPort, port);
+        outputPort = port;
+        writeOutputs(outputPort);
+    }
+    publish(outputPort, clicked);
+}
+
+}  // namespace
+
+void TaskDevice::setup()
+{
+    for (const OutputPin& output : kOutputs) pinMode(output.pin, OUTPUT);
+    pinMode(INPUT_PULLUP_PIN, INPUT_PULLUP);
+    button.begin(DEVICE_BUTTON_PIN, INPUT_PULLUP, true, BUTTON_DEBOUNCE_MS);
+    outputPort = 0;
+    writeOutputs(outputPort);
+    if (!commandQueue.create()) {
+        DEVICE_LOG_ERROR("[Device] Cannot create command queue; MQTT / LAN control disabled");
+    }
+    {
+        platform_sync::CriticalSection section;
+        publishedStatus = {};
+        ready = true;
+    }
+    DEVICE_LOG_INFO("[Device] Outputs and button initialized");
+}
+
+void TaskDevice::taskRun(void* parameter)
+{
+    (void)parameter;
+#if SUPPORT_RTOS
+    task_watchdog::add(task_watchdog::Slot::Device);
+    uint32_t lastHeartbeatCheckMs = millis();
+    for (;;) {
+        service();
+        task_watchdog::reset(task_watchdog::Slot::Device);
+        const uint32_t nowMs = millis();
+        if (nowMs - lastHeartbeatCheckMs >= kHeartbeatCheckIntervalMs) {
+            lastHeartbeatCheckMs = nowMs;
+            task_watchdog::restartIfStalled();
         }
-        
-    #else
-        TaskDevice::updateMemoryStatus();
-        TaskDevice::readButton();
-        TaskDevice::controlPump();
-        TaskDevice::controlDevice();
-        processScheduleCommands();
-        if(MemoryData::GetInstance().deviceCommand_ != NULL) {
+        vTaskDelay(platform_sync::timeoutTicks(DEVICE_TASK_PERIOD_MS));
+    }
+#endif
+}
 
-            DeviceCommand* cmd_to_device = MemoryData::GetInstance().deviceCommand_;
-            DEVICE_LOG_INFO("start TaskDevice::DeviceCommand commandType "+
-                String(cmd_to_device->commandType) + " value=" +
-                String(cmd_to_device->commandValue) + " reserved=" +
-                String(cmd_to_device->reserved)  );
-            if(cmd_to_device->commandType == COMMAND_TYPE_CONTROL && cmd_to_device->reserved) {
-                applyCommand(*cmd_to_device);
-                control.device_port_last = control.device_port;
-            }
-        }
-        processThresholds();
-        processCountdown();
-        processAutoOff();
-        processOnTimer();
-        // The last direct command is no longer re-applied here: it would undo
-        // every schedule and auto OFF change on the next cycle.
-        if(control.device_port!=control.device_port_last){
-            control.device_port_last = control.device_port;
-            MemoryData::GetInstance().deviceStatus_ = &control;
-        }
-    #endif
+void TaskDevice::service()
+{
+    if (serviceRunning) return;
+    serviceRunning = true;
+    serviceOnce();
+    serviceRunning = false;
+}
 
+bool TaskDevice::postCommand(const DeviceCommand& command, uint32_t timeoutMs)
+{
+    if (!commandQueue.push(command, timeoutMs)) {
+        DEVICE_LOG_WARNING("[Device] Command queue full; command rejected");
+        return false;
+    }
+    return true;
+}
 
+bool TaskDevice::copyStatus(InfoDeviceControl& destination)
+{
+    platform_sync::CriticalSection section;
+    if (!ready) return false;
+    destination = publishedStatus;
+    return true;
 }

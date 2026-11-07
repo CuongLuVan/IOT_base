@@ -1,19 +1,217 @@
+// NIST SP 800-232 Ascon-AEAD128 (128-bit key, nonce and tag; 128-bit rate).
+//
+// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
+
 #include "AsconAead128.h"
 
-struct AsconState { uint64_t x[5]; };
-static uint64_t ror64(uint64_t x, int n) { return (x >> n) | (x << ((64 - n) & 63)); }
-static uint64_t load(const uint8_t *p, size_t n) { uint64_t x = 0; for (size_t i=0;i<n;i++) x |= (uint64_t)p[i] << (8*i); return x; }
-static void store(uint8_t *p, uint64_t x, size_t n) { for (size_t i=0;i<n;i++) p[i]=(uint8_t)(x>>(8*i)); }
-static uint64_t clear(uint64_t x, size_t n) { for (size_t i=0;i<n;i++) x &= ~((uint64_t)0xff << (8*i)); return x; }
-static void round(AsconState &s, uint8_t c) {
-  s.x[2]^=c; s.x[0]^=s.x[4]; s.x[4]^=s.x[3]; s.x[2]^=s.x[1]; AsconState t;
-  t.x[0]=s.x[0]^(~s.x[1]&s.x[2]); t.x[1]=s.x[1]^(~s.x[2]&s.x[3]); t.x[2]=s.x[2]^(~s.x[3]&s.x[4]); t.x[3]=s.x[3]^(~s.x[4]&s.x[0]); t.x[4]=s.x[4]^(~s.x[0]&s.x[1]);
-  t.x[1]^=t.x[0]; t.x[0]^=t.x[4]; t.x[3]^=t.x[2]; t.x[2]=~t.x[2];
-  s.x[0]=t.x[0]^ror64(t.x[0],19)^ror64(t.x[0],28); s.x[1]=t.x[1]^ror64(t.x[1],61)^ror64(t.x[1],39); s.x[2]=t.x[2]^ror64(t.x[2],1)^ror64(t.x[2],6); s.x[3]=t.x[3]^ror64(t.x[3],10)^ror64(t.x[3],17); s.x[4]=t.x[4]^ror64(t.x[4],7)^ror64(t.x[4],41);
+namespace {
+
+constexpr uint64_t kInitialValue = 0x00001000808c0001ULL;
+constexpr int kRoundsA = 12;  // Initialisation and finalisation.
+constexpr int kRoundsB = 8;   // Per data block.
+constexpr size_t kRate = 16;
+constexpr size_t kHalfRate = 8;
+
+struct AsconState {
+    uint64_t x[5];
+};
+
+uint64_t rotateRight(uint64_t value, int count)
+{
+    return (value >> count) | (value << ((64 - count) & 63));
 }
-static void permute(AsconState &s, int rounds) { static const uint8_t rc[12]={0xf0,0xe1,0xd2,0xc3,0xb4,0xa5,0x96,0x87,0x78,0x69,0x5a,0x4b}; for(int i=12-rounds;i<12;i++) round(s,rc[i]); }
-static void init(AsconState &s,const uint8_t k[16],const uint8_t n[16]) { uint64_t k0=load(k,8),k1=load(k+8,8); s.x[0]=0x00001000808c0001ULL;s.x[1]=k0;s.x[2]=k1;s.x[3]=load(n,8);s.x[4]=load(n+8,8);permute(s,12);s.x[3]^=k0;s.x[4]^=k1; }
-static void absorbAd(AsconState &s,const uint8_t *ad,size_t len) { if(len) { while(len>=16){s.x[0]^=load(ad,8);s.x[1]^=load(ad+8,8);permute(s,8);ad+=16;len-=16;} if(len>=8){s.x[0]^=load(ad,8);s.x[1]^=load(ad+8,len-8);s.x[1]^=(uint64_t)1<<(8*(len-8));}else{s.x[0]^=load(ad,len);s.x[0]^=(uint64_t)1<<(8*len);}permute(s,8);} s.x[4]^=0x8000000000000000ULL; }
-static void finish(AsconState &s,const uint8_t k[16],uint8_t tag[16]) { uint64_t k0=load(k,8),k1=load(k+8,8);s.x[2]^=k0;s.x[3]^=k1;permute(s,12);s.x[3]^=k0;s.x[4]^=k1;store(tag,s.x[3],8);store(tag+8,s.x[4],8); }
-bool asconAead128Encrypt(const uint8_t k[16],const uint8_t n[16],const uint8_t *ad,size_t al,const uint8_t *m,size_t ml,uint8_t *c,uint8_t tag[16]) { AsconState s;init(s,k,n);absorbAd(s,ad,al);while(ml>=16){s.x[0]^=load(m,8);s.x[1]^=load(m+8,8);store(c,s.x[0],8);store(c+8,s.x[1],8);permute(s,8);m+=16;c+=16;ml-=16;}if(ml>=8){s.x[0]^=load(m,8);s.x[1]^=load(m+8,ml-8);store(c,s.x[0],8);store(c+8,s.x[1],ml-8);s.x[1]^=(uint64_t)1<<(8*(ml-8));}else{s.x[0]^=load(m,ml);store(c,s.x[0],ml);s.x[0]^=(uint64_t)1<<(8*ml);}finish(s,k,tag);return true; }
-bool asconAead128Decrypt(const uint8_t k[16],const uint8_t n[16],const uint8_t *ad,size_t al,const uint8_t *c,size_t cl,const uint8_t tag[16],uint8_t *m) { AsconState s;init(s,k,n);absorbAd(s,ad,al);while(cl>=16){uint64_t a=load(c,8),b=load(c+8,8);store(m,s.x[0]^a,8);store(m+8,s.x[1]^b,8);s.x[0]=a;s.x[1]=b;permute(s,8);c+=16;m+=16;cl-=16;}if(cl>=8){uint64_t a=load(c,8),b=load(c+8,cl-8);store(m,s.x[0]^a,8);store(m+8,s.x[1]^b,cl-8);s.x[0]=a;s.x[1]=clear(s.x[1],cl-8)|b;s.x[1]^=(uint64_t)1<<(8*(cl-8));}else{uint64_t a=load(c,cl);store(m,s.x[0]^a,cl);s.x[0]=clear(s.x[0],cl)|a;s.x[0]^=(uint64_t)1<<(8*cl);}uint8_t expected[16];finish(s,k,expected);uint8_t d=0;for(int i=0;i<16;i++)d|=expected[i]^tag[i];return d==0; }
+
+// Little-endian load / store of length (<= 8) bytes.
+uint64_t load(const uint8_t* bytes, size_t length)
+{
+    uint64_t value = 0;
+    for (size_t i = 0; i < length; i++) {
+        value |= static_cast<uint64_t>(bytes[i]) << (8 * i);
+    }
+    return value;
+}
+
+void store(uint8_t* bytes, uint64_t value, size_t length)
+{
+    for (size_t i = 0; i < length; i++) {
+        bytes[i] = static_cast<uint8_t>(value >> (8 * i));
+    }
+}
+
+uint64_t clearBytes(uint64_t value, size_t length)
+{
+    for (size_t i = 0; i < length; i++) {
+        value &= ~(static_cast<uint64_t>(0xff) << (8 * i));
+    }
+    return value;
+}
+
+uint64_t padding(size_t length)
+{
+    return static_cast<uint64_t>(1) << (8 * length);
+}
+
+void permutationRound(AsconState& s, uint8_t constant)
+{
+    s.x[2] ^= constant;
+    s.x[0] ^= s.x[4];
+    s.x[4] ^= s.x[3];
+    s.x[2] ^= s.x[1];
+    AsconState t;
+    t.x[0] = s.x[0] ^ (~s.x[1] & s.x[2]);
+    t.x[1] = s.x[1] ^ (~s.x[2] & s.x[3]);
+    t.x[2] = s.x[2] ^ (~s.x[3] & s.x[4]);
+    t.x[3] = s.x[3] ^ (~s.x[4] & s.x[0]);
+    t.x[4] = s.x[4] ^ (~s.x[0] & s.x[1]);
+    t.x[1] ^= t.x[0];
+    t.x[0] ^= t.x[4];
+    t.x[3] ^= t.x[2];
+    t.x[2] = ~t.x[2];
+    s.x[0] = t.x[0] ^ rotateRight(t.x[0], 19) ^ rotateRight(t.x[0], 28);
+    s.x[1] = t.x[1] ^ rotateRight(t.x[1], 61) ^ rotateRight(t.x[1], 39);
+    s.x[2] = t.x[2] ^ rotateRight(t.x[2], 1) ^ rotateRight(t.x[2], 6);
+    s.x[3] = t.x[3] ^ rotateRight(t.x[3], 10) ^ rotateRight(t.x[3], 17);
+    s.x[4] = t.x[4] ^ rotateRight(t.x[4], 7) ^ rotateRight(t.x[4], 41);
+}
+
+void permute(AsconState& s, int rounds)
+{
+    static const uint8_t kRoundConstants[12] = {0xf0, 0xe1, 0xd2, 0xc3, 0xb4, 0xa5,
+                                                0x96, 0x87, 0x78, 0x69, 0x5a, 0x4b};
+    for (int i = 12 - rounds; i < 12; i++) {
+        permutationRound(s, kRoundConstants[i]);
+    }
+}
+
+void initialize(AsconState& s, const uint8_t key[16], const uint8_t nonce[16])
+{
+    const uint64_t k0 = load(key, 8);
+    const uint64_t k1 = load(key + 8, 8);
+    s.x[0] = kInitialValue;
+    s.x[1] = k0;
+    s.x[2] = k1;
+    s.x[3] = load(nonce, 8);
+    s.x[4] = load(nonce + 8, 8);
+    permute(s, kRoundsA);
+    s.x[3] ^= k0;
+    s.x[4] ^= k1;
+}
+
+void absorbAssociatedData(AsconState& s, const uint8_t* ad, size_t length)
+{
+    if (length > 0) {
+        while (length >= kRate) {
+            s.x[0] ^= load(ad, 8);
+            s.x[1] ^= load(ad + 8, 8);
+            permute(s, kRoundsB);
+            ad += kRate;
+            length -= kRate;
+        }
+        if (length >= kHalfRate) {
+            s.x[0] ^= load(ad, 8);
+            s.x[1] ^= load(ad + 8, length - kHalfRate);
+            s.x[1] ^= padding(length - kHalfRate);
+        } else {
+            s.x[0] ^= load(ad, length);
+            s.x[0] ^= padding(length);
+        }
+        permute(s, kRoundsB);
+    }
+    // Domain separation.
+    s.x[4] ^= 0x8000000000000000ULL;
+}
+
+void finalize(AsconState& s, const uint8_t key[16], uint8_t tag[16])
+{
+    const uint64_t k0 = load(key, 8);
+    const uint64_t k1 = load(key + 8, 8);
+    s.x[2] ^= k0;
+    s.x[3] ^= k1;
+    permute(s, kRoundsA);
+    s.x[3] ^= k0;
+    s.x[4] ^= k1;
+    store(tag, s.x[3], 8);
+    store(tag + 8, s.x[4], 8);
+}
+
+}  // namespace
+
+bool asconAead128Encrypt(const uint8_t key[16], const uint8_t nonce[16], const uint8_t* ad, size_t adLength,
+                         const uint8_t* plainText, size_t plainTextLength, uint8_t* cipherText, uint8_t tag[16])
+{
+    AsconState s;
+    initialize(s, key, nonce);
+    absorbAssociatedData(s, ad, adLength);
+    const uint8_t* m = plainText;
+    uint8_t* c = cipherText;
+    size_t length = plainTextLength;
+    while (length >= kRate) {
+        s.x[0] ^= load(m, 8);
+        s.x[1] ^= load(m + 8, 8);
+        store(c, s.x[0], 8);
+        store(c + 8, s.x[1], 8);
+        permute(s, kRoundsB);
+        m += kRate;
+        c += kRate;
+        length -= kRate;
+    }
+    if (length >= kHalfRate) {
+        s.x[0] ^= load(m, 8);
+        s.x[1] ^= load(m + 8, length - kHalfRate);
+        store(c, s.x[0], 8);
+        store(c + 8, s.x[1], length - kHalfRate);
+        s.x[1] ^= padding(length - kHalfRate);
+    } else {
+        s.x[0] ^= load(m, length);
+        store(c, s.x[0], length);
+        s.x[0] ^= padding(length);
+    }
+    finalize(s, key, tag);
+    return true;
+}
+
+bool asconAead128Decrypt(const uint8_t key[16], const uint8_t nonce[16], const uint8_t* ad, size_t adLength,
+                         const uint8_t* cipherText, size_t cipherTextLength, const uint8_t tag[16],
+                         uint8_t* plainText)
+{
+    AsconState s;
+    initialize(s, key, nonce);
+    absorbAssociatedData(s, ad, adLength);
+    const uint8_t* c = cipherText;
+    uint8_t* m = plainText;
+    size_t length = cipherTextLength;
+    while (length >= kRate) {
+        const uint64_t c0 = load(c, 8);
+        const uint64_t c1 = load(c + 8, 8);
+        store(m, s.x[0] ^ c0, 8);
+        store(m + 8, s.x[1] ^ c1, 8);
+        s.x[0] = c0;
+        s.x[1] = c1;
+        permute(s, kRoundsB);
+        c += kRate;
+        m += kRate;
+        length -= kRate;
+    }
+    if (length >= kHalfRate) {
+        const uint64_t c0 = load(c, 8);
+        const uint64_t c1 = load(c + 8, length - kHalfRate);
+        store(m, s.x[0] ^ c0, 8);
+        store(m + 8, s.x[1] ^ c1, length - kHalfRate);
+        s.x[0] = c0;
+        s.x[1] = clearBytes(s.x[1], length - kHalfRate) | c1;
+        s.x[1] ^= padding(length - kHalfRate);
+    } else {
+        const uint64_t c0 = load(c, length);
+        store(m, s.x[0] ^ c0, length);
+        s.x[0] = clearBytes(s.x[0], length) | c0;
+        s.x[0] ^= padding(length);
+    }
+    uint8_t expected[16];
+    finalize(s, key, expected);
+    // Constant time.
+    uint8_t difference = 0;
+    for (int i = 0; i < 16; i++) {
+        difference |= expected[i] ^ tag[i];
+    }
+    return difference == 0;
+}

@@ -1,50 +1,41 @@
-#ifndef SCHEDULE_ENGINE_H
-#define SCHEDULE_ENGINE_H
+#pragma once
+
+// Local schedule engine (docs/Schedule.md). Up to SCHEDULE_MAX_COUNT schedules
+// are kept in the EEPROM region SCHEDULE_EEPROM_ADDRESS..SCHEDULE_EEPROM_END;
+// the pure logic lives in ScheduleCore.h.
+//
+// Threads: the network task (MQTT / LAN commands) edits schedules in RAM
+// only; SystemTask calls process() and, through Automation, stage(), so EEPROM
+// commits never run inside a command handler. TaskDevice drains the produced commands with
+// receiveDeviceCommand().
+//
+// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <time.h>
 
 #include "Common.h"
+#include "CommandResult.h"
 #include "ScheduleCore.h"
 
-// Local schedule engine (spec_v1.txt). Up to SCHEDULE_MAX_COUNT schedules are
-// kept in the EEPROM region SCHEDULE_EEPROM_ADDRESS..SCHEDULE_EEPROM_END.
-//
-// Threads: the MQTT callback (TaskNetwork) edits schedules in RAM only;
-// SystemTask calls process() and flush(), so EEPROM commits never run inside
-// the MQTT callback. TaskDevice drains the commands with receiveDeviceCommand().
 class ScheduleEngine {
 public:
-    enum Status : uint8_t {
-        STATUS_SUCCESS = 0,
-        STATUS_CONFLICT,
-        STATUS_INVALID,
-        STATUS_NOT_FOUND,
-        STATUS_ID_EXISTS,
-        STATUS_NOT_READY
-    };
-
-    struct Result {
-        Status status;
-        uint8_t conflictId;     // Valid for STATUS_CONFLICT.
-        uint8_t conflictPorts;  // Valid for STATUS_CONFLICT.
-        const char* message;
-    };
-
     static void setup();
 
     // id is 1..SCHEDULE_MAX_COUNT. For ONCE (weekday 0) entry.day is the date
     // as a day number; flags only carry kFlagEnabled.
-    static Result add(uint8_t id, const schedule::Entry& entry);
-    static Result update(uint8_t id, const schedule::Entry& entry);
-    static Result remove(uint8_t id);
-    static Result setEnabled(uint8_t id, bool enabled);
-    static Result clear();
+    static CommandResult add(uint8_t id, const schedule::Entry& entry);
+    static CommandResult update(uint8_t id, const schedule::Entry& entry);
+    static CommandResult remove(uint8_t id);
+    static CommandResult setEnabled(uint8_t id, bool enabled);
+    static CommandResult clear();
 
     // SystemTask, every cycle.
     static void process(time_t epoch);
-    static void flush();
+    // Automation: copies a changed value into the EEPROM RAM copy (committed
+    // by Automation). true when something was staged.
+    static bool stage();
 
     // TaskDevice: commands produced by due schedules, non-blocking.
     static bool receiveDeviceCommand(DeviceCommand& command);
@@ -56,12 +47,9 @@ public:
     static uint8_t activeCount();
     static uint32_t triggeredCount();
     static uint32_t commandFailureCount();
-    // Reply to {"com":13,"fr":firstId}: {"rc":13,"mx":max,"cv":clock valid,
+    // Reply to {"com":13,"fr":firstId}: {"rc":13,"rs":0,"mx":max,"cv":clock valid,
     // "nx":next firstId (0 = last page),"it":[[id,ho,mi,we,po,pos,au,en,dn,date],...]}
     // with the used schedules id >= firstId, at most kListPageSize rows.
     static constexpr uint8_t kListPageSize = 10;
     static String listJson(uint8_t firstId);
-    static const char* statusName(Status status);
 };
-
-#endif

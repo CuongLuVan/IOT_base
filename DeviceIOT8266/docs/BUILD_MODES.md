@@ -5,6 +5,8 @@
 - `#define SUPPORT_RTOS 0` (default): build with the official ESP8266 Arduino core. The sketch uses the cooperative scheduler in `loop()`.
 - `#define SUPPORT_RTOS 1`: build with `alexCajas/esp8266RTOSArduCore`. The sketch creates four FreeRTOS tasks: device I/O, sensors, network/LoRa, and system telemetry.
 
+The RTOS core has no EEPROM library and no `analogRead()`: `Memory.cpp` then stores the EEPROM image as one NVS blob (`EepromNvs.h`, same API and layout) and `TaskSensor` reads `A0` with the SDK driver (`adc_init()` / `adc_read()`). This mode has not been compiled or tested on hardware yet.
+
 Do not enable RTOS with the official ESP8266 Arduino core; it does not supply the FreeRTOS task API used by this sketch. Install the RTOS board package and run its documented Windows `setup_env.bat` before building.
 
 ## Required Arduino libraries
@@ -80,6 +82,6 @@ Identical to DeviceIOT. Strings are null-terminated; "max" excludes the `'\0'`. 
 | 2501 | 10 × 33 | Ascon key table, 32 hex chars per key | Ascon |
 | 2831 | 4 + 20 × 6 + 20 × 5 | Local schedules (`ScheduleEngine`, see `Schedule.md`) | always |
 
-`EEPROM_SIZE` is always **3055 B**: the schedule region sits after the Ascon table so that no address moves, which reserves the HMAC/Ascon regions even when those features are off. The build fails with `#error` above 3072 B. This fits the 4 KB sector of the NON-OS core. Growing `EEPROM_SIZE` keeps the stored configuration; the schedule region is formatted on first boot.
+`EEPROM_SIZE` is always **3071 B** (schedules, then on-timer, countdown and threshold rules up to 3071): the schedule region sits after the Ascon table so that no address moves, which reserves the HMAC/Ascon regions even when those features are off. The build fails with `#error` above 3072 B. This fits the 4 KB sector of the NON-OS core. Growing `EEPROM_SIZE` keeps the stored configuration; the schedule region is formatted on first boot.
 
 `/setup` stores only `mqtt_host`, `mqtt_port`, `mqtt_client`, `mqtt_user`, `mqtt_pwd`, `public_topic` and `subcribe_topic`, and answers 400 if that JSON exceeds 447 B. All addresses changed from earlier layouts (the schedules used to overlap the settings JSON at 700), so re-provision Wi-Fi, MQTT settings, certificates and keys.

@@ -1,15 +1,17 @@
 #pragma once
 
 #include <Arduino.h>
-#include <cstdint>
+#include <ArduinoJson.h>
+#include <stdint.h>
 
-// Temperature and humidity are stored in centi-units to avoid float payloads.
+// Latest sensor values (TaskSensor::copyLatest). Temperature and humidity are
+// centi-units (2570 = 25.70) to avoid float payloads.
 struct InfoSensor {
     int16_t valueHumi;
     int16_t valueTemp;
     uint16_t valueAdc;
-    uint32_t sampleSequence;
-    bool dhtValid;
+    uint32_t sampleSequence;  // Increases with every new sample.
+    bool dhtValid;            // valueHumi / valueTemp hold a real reading.
 };
 
 struct InfoDeviceControl {
@@ -28,16 +30,13 @@ struct DeviceCommand {
     uint16_t autoOffSeconds;  // Schedule commands only; 0 = no auto OFF.
 };
 
-struct ProcessTimeData {
-    unsigned long timeStart;
-    unsigned long time_counter_start;
-    unsigned long time_counter_end;
-    unsigned char numberCheck;
-    unsigned long timestamp;
-    unsigned char state;
-    unsigned long countNetWorkWorng;
-    unsigned long lastExternalPingTime;
-};
+// Device info message: {"se":DEVICE_SERVICE_ID,"va":"<sensor list>","co":"<status list>",
+// "dht_valid":bool,"sample":sampleSequence}.
+// "va" = humidity,temperature,ADC raw value.
+// "co" = device_port,button_click,button_status,count_info.
+void writeDeviceInfo(JsonObject target, const InfoSensor& sensorValue, const InfoDeviceControl& statusDevice);
+String getInfoDevice(const InfoSensor& sensorValue, const InfoDeviceControl& statusDevice);
 
-String getInfoDevice(const InfoSensor& sensorValue,
-                     const InfoDeviceControl& statusDevice);
+// Value number sensor (1-based) of the "va" list, for threshold rules
+// (THRESHOLD_SENSOR_COUNT of them). false: no such sensor or no valid reading.
+bool sensorReading(const InfoSensor& sensorValue, uint8_t sensor, int32_t& value);

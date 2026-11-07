@@ -1,183 +1,159 @@
-
 #include "TaskSensor.h"
-#include "MemoryData.h"
-#include "define_All.h"
-#include "HighSpeedSampler.h"
 
-#if SUPPORT_RTOS
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "freertos/queue.h"
-#endif
-
-#include "driver/uart.h"
-#include "esp_log.h"
-#include "driver/gpio.h"
-#include "sdkconfig.h"
-#include "esp_intr_alloc.h"
-#include "soc/uart_reg.h"
-#include "soc/uart_struct.h"
-#include "esp_task_wdt.h"
 #include <DHT.h>
-#include "PMS.h"
-#include "Common.h"
+#include <PMS.h>
+#include <math.h>
+
+#include "AirQuality.h"
 #include "DebugInfo.h"
+#include "HighSpeedSampler.h"
+#include "Sync.h"
+#include "TaskWatchdog.h"
+#include "ThresholdControl.h"
+#include "define_All.h"
 
-DHT dht (DHT_PIN, DHT_TYPE); //Initialize DHT sensor.
-PMS pms(Serial);
-PMS::DATA data;
-
-InfoSensor dataSensor;
-
-#if SUPPORT_RTOS
-static SemaphoreHandle_t sensorDataMutex = NULL;
+// Once per build: see the DHT_PIN comment in board_pins.h.
+#if (DHT_PIN == 0 || DHT_PIN == 2 || DHT_PIN == 5 || DHT_PIN == 12 || DHT_PIN == 15) && \
+    !defined(DHT_PIN_STRAPPING_ACKNOWLEDGED)
+#warning "DHT_PIN is an ESP32 strapping pin: the DHT pull-up can prevent boot (see board_pins.h)."
 #endif
 
-static uint8_t sensorReadStep = 0; // 0..3 read schedule
+namespace {
 
-void TaskSensor::setup(void){
-    DEVICE_LOG_INFO("start TaskSensor::setup");
-    dataSensor.valueHumi =0;
-    dataSensor.valueTemp =0;
-    dataSensor.valueDust =0;
-    dataSensor.valueDust_PM2_5 =0;
-    dataSensor.valueDust_PM10 =0;
-    dataSensor.valueDust_PM1 =0;
+// The PMS sends a frame about every second in active mode.
+constexpr uint32_t kPmsStaleAfterMs = 10000;
+// While a high-speed capture runs the task never blocks; it still sleeps one
+// tick and feeds the task watchdog this often.
+constexpr uint32_t kCaptureYieldIntervalMs = 1000;
 
-    dataSensor.valueControl =0;
+// TaskSensor only.
+DHT dht(DHT_PIN, DHT_TYPE);
+PMS pms(PMS_SERIAL);
+InfoSensor working = {};
+uint32_t lastDhtReadMs = 0;
+uint32_t lastPmsFrameMs = 0;
+bool firstPass = true;
+bool dhtFailureReported = false;
+bool captureRunning = false;
+
+// Published copy: written by TaskSensor, read by copyLatest() in other tasks.
+InfoSensor published = {};
+bool hasSample = false;
+
+void sampleDht()
+{
+    const float humidity = dht.readHumidity();
+    const float temperature = dht.readTemperature();
+    if (isnan(humidity) || isnan(temperature)) {
+        if (!dhtFailureReported) DEVICE_LOG_WARNING("[Sensor] DHT11 read failed; values marked invalid");
+        dhtFailureReported = true;
+        working.dhtValid = false;
+        return;
+    }
+    working.valueHumi = static_cast<int16_t>(humidity * 100.0f);
+    working.valueTemp = static_cast<int16_t>(temperature * 100.0f);
+    working.dhtValid = true;
+    dhtFailureReported = false;
+}
+
+// PMS::read() consumes one byte per call: drain everything received.
+// Returns true when the dust values changed state.
+bool pollPms(uint32_t nowMs)
+{
+    PMS::DATA data;
+    bool frame = false;
+    while (PMS_SERIAL.available() > 0) {
+        if (pms.read(data)) frame = true;
+    }
+    if (frame) {
+        working.valueDust_PM1 = data.PM_AE_UG_1_0;
+        working.valueDust_PM2_5 = data.PM_AE_UG_2_5;
+        working.valueDust_PM10 = data.PM_AE_UG_10_0;
+        working.valueDust = air_quality::pm25ToAqi(data.PM_AE_UG_2_5);
+        if (!working.pmsValid) DEVICE_LOG_INFO("[Sensor] PMS dust sensor online");
+        working.pmsValid = true;
+        lastPmsFrameMs = nowMs;
+        return true;
+    }
+    if (working.pmsValid && nowMs - lastPmsFrameMs >= kPmsStaleAfterMs) {
+        DEVICE_LOG_WARNING("[Sensor] No PMS frame; dust values marked invalid");
+        working.pmsValid = false;
+        return true;
+    }
+    return false;
+}
+
+void publishSample()
+{
+    working.sampleSequence++;
+    {
+        platform_sync::CriticalSection section;
+        published = working;
+        hasSample = true;
+    }
+    ThresholdControl::evaluate(working);
+}
+
+}  // namespace
+
+void TaskSensor::setup()
+{
+    working = {};
+    firstPass = true;
     if (!HighSpeedSampler::GetInstance().setup()) {
-        DEVICE_LOG_INFO("[TaskSensor] High-speed sampler initialization failed");
+        DEVICE_LOG_ERROR("[Sensor] High-speed sampler initialization failed; capture disabled");
     }
     dht.begin();
-    Serial1.begin(SENSOR_SERIAL_BAUD_RATE);   // GPIO1, GPIO3 (TX/RX pin on ESP-12E Development Board)
-        //Configuro la porta Serial2 (tutti i parametri hanno anche un get per effettuare controlli)
-
-#if SUPPORT_RTOS
-    if (sensorDataMutex == NULL) {
-        sensorDataMutex = xSemaphoreCreateMutex();
-        if (sensorDataMutex == NULL) {
-            Serial.println("TaskSensor: ERROR create sensorDataMutex");
-        }
-    }
-#endif
-    DEVICE_LOG_INFO("end TaskSensor::setup");
+    PMS_SERIAL.begin(SENSOR_SERIAL_BAUD_RATE, SERIAL_8N1, PMS_RX_PIN, PMS_TX_PIN);
+    DEVICE_LOG_INFO("[Sensor] DHT11 and PMS initialized");
 }
 
-void TaskSensor::readSensor(void){
-    dataSensor.valueControl =0;
-}
-int checkDataNumber = 0;
-void TaskSensor::readSensorDust(void){
-
-    if (pms.read(data))
-    {
-      dataSensor.valueDust_PM2_5 = data.PM_AE_UG_2_5;
-      dataSensor.valueDust_PM1 = data.PM_AE_UG_1_0;
-      dataSensor.valueDust_PM10 = data.PM_AE_UG_10_0;
-      checkDataNumber = checkDataNumber/50;
-      switch(dataSensor.valueDust_PM2_5){
-        case 0:{ dataSensor.valueDust = dataSensor.valueDust_PM2_5*12/50;  break;}
-        case 1:{ dataSensor.valueDust = dataSensor.valueDust_PM2_5*35/100;  break;}
-        case 2:{ dataSensor.valueDust = dataSensor.valueDust_PM2_5*56/150;  break;}
-        case 3:{ dataSensor.valueDust = dataSensor.valueDust_PM2_5*150/200; break;}
-        default :{
-            dataSensor.valueDust = dataSensor.valueDust_PM2_5*200/250;
-            break;
-        }        
-      }
-      
-     /*
-      Serial1.print("PM 1.0 (ug/m3): ");
-      Serial1.println(data.PM_AE_UG_1_0);
-      
-      Serial1.print("PM 2.5 (ug/m3): ");
-      Serial1.println(data.PM_AE_UG_2_5);
-      Serial1.print("PM 10.0 (ug/m3): ");
-      Serial1.println(data.PM_AE_UG_10_0);
-      Serial1.println();*/
-    }
-
-}
-void TaskSensor::readSensorTemp(void){
-    dataSensor.valueTemp =(int) dht.readTemperature()*100;
-}
-void TaskSensor::readSensorHumi(void){
-    dataSensor.valueHumi =(int) dht.readHumidity()*100;
-}
-
-#if SUPPORT_RTOS
-extern QueueHandle_t sensorDataQueue;
-#endif
-
-using SensorReadFn = void (*)();
-static SensorReadFn readOps[4] = {
-    TaskSensor::readSensor,
-    TaskSensor::readSensorDust,
-    TaskSensor::readSensorTemp,
-    TaskSensor::readSensorHumi
-};
-
-
-void updateMemoryStatus(void){
-    MemoryData::GetInstance().sensorData_->valueHumi = dataSensor.valueHumi;
-    MemoryData::GetInstance().sensorData_->valueTemp = dataSensor.valueTemp;
-    MemoryData::GetInstance().sensorData_->valueDust = dataSensor.valueDust;
-    MemoryData::GetInstance().sensorData_->valueDust_PM2_5 = dataSensor.valueDust_PM2_5;
-    MemoryData::GetInstance().sensorData_->valueDust_PM10 = dataSensor.valueDust_PM10;
-    MemoryData::GetInstance().sensorData_->valueDust_PM1 = dataSensor.valueDust_PM1;
-    MemoryData::GetInstance().sensorData_->valueControl = dataSensor.valueControl;
-}
-
-void TaskSensor::taskRun(void * parameter) {
-#if SUPPORT_RTOS
-    TickType_t lastSlowRead = xTaskGetTickCount();
-    TickType_t lastIdleYield = lastSlowRead;
+void TaskSensor::taskRun(void* parameter)
+{
+    (void)parameter;
+    task_watchdog::add(task_watchdog::Slot::Sensor);
+    uint32_t lastYieldMs = millis();
     for (;;) {
-        HighSpeedSampler& sampler = HighSpeedSampler::GetInstance();
-        if (sampler.processSensorTask()) {
-            const TickType_t now = xTaskGetTickCount();
-            if (now - lastIdleYield >= pdMS_TO_TICKS(1000)) {
-                lastIdleYield = now;
-                vTaskDelay(1);
-            }
-            continue;
+        service();
+        const uint32_t now = millis();
+        if (!captureRunning) {
+            task_watchdog::reset(task_watchdog::Slot::Sensor);
+            vTaskDelay(platform_sync::timeoutTicks(SENSOR_TASK_POLL_MS));
+        } else if (now - lastYieldMs >= kCaptureYieldIntervalMs) {
+            lastYieldMs = now;
+            task_watchdog::reset(task_watchdog::Slot::Sensor);
+            vTaskDelay(1);
         }
-
-        const TickType_t now = xTaskGetTickCount();
-        if (now - lastSlowRead >= pdMS_TO_TICKS(SENSOR_TASK_INTERVAL_MS)) {
-            if (sensorReadStep >= SENSOR_READ_STEP_COUNT) {
-                sensorReadStep = 0;
-            }
-            if (sensorDataMutex != NULL) {
-                if (xSemaphoreTake(sensorDataMutex, pdMS_TO_TICKS(SENSOR_MUTEX_WAIT_MS)) == pdTRUE) {
-                    readOps[sensorReadStep]();
-                    MemoryData::GetInstance().sensorData_ = &dataSensor;
-                    xSemaphoreGive(sensorDataMutex);
-                }
-            } else {
-                readOps[sensorReadStep]();
-                MemoryData::GetInstance().sensorData_ = &dataSensor;
-            }
-
-            if (sensorDataQueue != NULL) {
-                xQueueSend(sensorDataQueue, &dataSensor, 0);
-            }
-            ++sensorReadStep;
-            lastSlowRead = now;
-        }
-
-        vTaskDelay(1);
     }
-#else
-    HighSpeedSampler& sampler = HighSpeedSampler::GetInstance();
-    if (!sampler.processSensorTask()) {
-        if (sensorReadStep >= SENSOR_READ_STEP_COUNT) {
-            sensorReadStep = 0;
-        }
-        readOps[sensorReadStep]();
-        updateMemoryStatus();
-        ++sensorReadStep;
-        delay(SENSOR_TASK_INTERVAL_MS);
+}
+
+void TaskSensor::service()
+{
+    const bool wasCapturing = captureRunning;
+    captureRunning = HighSpeedSampler::GetInstance().processSensorTask();
+    if (captureRunning) return;
+    if (wasCapturing) {
+        // The UART buffer overflowed during the capture: drop the partial
+        // frames, and read the DHT now so the threshold rules see fresh values.
+        while (PMS_SERIAL.available() > 0) (void)PMS_SERIAL.read();
+        firstPass = true;
     }
-#endif
+
+    const uint32_t now = millis();
+    bool changed = pollPms(now);
+    if (firstPass || now - lastDhtReadMs >= DHT_READ_INTERVAL_MS) {
+        lastDhtReadMs = now;
+        sampleDht();
+        changed = true;
+    }
+    firstPass = false;
+    if (changed) publishSample();
+}
+
+bool TaskSensor::copyLatest(InfoSensor& destination)
+{
+    platform_sync::CriticalSection section;
+    if (!hasSample) return false;
+    destination = published;
+    return true;
 }

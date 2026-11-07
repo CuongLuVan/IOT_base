@@ -1,132 +1,107 @@
+// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
+
 #include "ThresholdControl.h"
 
 #include <Arduino.h>
 
+#include "ByteCodec.h"
 #include "Common.h"
 #include "DebugInfo.h"
 #include "Memory.h"
-#include "OnTimer.h"
-#include "PlatformCompat.h"
+#include "Sync.h"
 #include "define_All.h"
 
-static_assert(THRESHOLD_EEPROM_SIZE == threshold::kRuleCount * on_timer::kStorageSize, "2 x 4-byte rules");
+static_assert(THRESHOLD_EEPROM_SIZE == threshold::kRuleCount * le32::kSize, "2 x 4-byte rules");
 
 namespace {
-// Written by TaskNetwork (MQTT callback), read by SystemTask (flush); aligned
-// 32-bit and bool accesses are atomic on the lx106.
-volatile uint32_t ruleValues[threshold::kRuleCount] = {};
-volatile bool dirty = false;
-// TaskNetwork only: set() and evaluate() run in loopNetWork().
+// Written by the network task (set), read by TaskSensor (evaluate) and
+// SystemTask (stage).
+platform_sync::AtomicU32 ruleValues[threshold::kRuleCount];
+platform_sync::DirtyFlag dirty;
+
+// edges and the pending actions: set() in the network task, evaluate() in
+// TaskSensor, takeActions() in TaskDevice.
+platform_sync::Mutex stateMutex;
 threshold::EdgeTracker edges;
-// Rising edges waiting for TaskDevice.
 uint8_t pendingOn = 0;
 uint8_t pendingOff = 0;
+}  // namespace
 
-#if SUPPORT_RTOS
-SemaphoreHandle_t pendingMutex = nullptr;
-
-class PendingLock {
-public:
-    PendingLock()
-        : locked_(pendingMutex != nullptr && xSemaphoreTake(pendingMutex, portMAX_DELAY) == pdTRUE) {}
-    ~PendingLock() {
-        if (locked_) xSemaphoreGive(pendingMutex);
-    }
-    bool locked() const { return locked_; }
-
-private:
-    bool locked_;
-};
-#else
-// NON-OS core: the network loop and TaskDevice both run from loop().
-class PendingLock {
-public:
-    bool locked() const { return true; }
-};
-#endif
-
-// Sensor N = the N-th value of "va": humidity x100, temperature x100, ADC.
-bool reading(const InfoSensor& sensors, uint8_t sensor, int32_t& value) {
-    switch (sensor) {
-        case 1: value = sensors.valueHumi; return sensors.dhtValid;
-        case 2: value = sensors.valueTemp; return sensors.dhtValid;
-        case 3: value = sensors.valueAdc; return true;
-        default: return false;
-    }
-}
-} // namespace
-
-void ThresholdControl::setup() {
-#if SUPPORT_RTOS
-    if (pendingMutex == nullptr) pendingMutex = xSemaphoreCreateMutex();
-    if (pendingMutex == nullptr) {
+void ThresholdControl::setup()
+{
+    if (!stateMutex.create()) {
         DEVICE_LOG_ERROR("[Threshold] Cannot create mutex; threshold control disabled");
     }
-#endif
     uint8_t bytes[THRESHOLD_EEPROM_SIZE];
-    const bool read = Memory::GetInstance()->readBytes(THRESHOLD_EEPROM_ADDRESS, bytes, static_cast<int>(sizeof(bytes)));
+    const bool read = Memory::GetInstance()->readBytes(THRESHOLD_EEPROM_ADDRESS, bytes, sizeof(bytes));
     for (uint8_t i = 0; i < threshold::kRuleCount; ++i) {
-        uint32_t value = read ? on_timer::decode(bytes + i * on_timer::kStorageSize) : 0;
+        uint32_t value = read ? le32::decode(bytes + i * le32::kSize) : 0;
         // Blank (0xFFFFFFFF) or corrupt bytes: empty rule, rewritten only on a change.
-        if (!threshold::isValid(value, THRESHOLD_SENSOR_COUNT, SCHEDULE_ALLOWED_PORT_MASK)) value = 0;
-        ruleValues[i] = value;
+        if (!threshold::isValid(value, THRESHOLD_SENSOR_COUNT, AUTOMATION_PORT_MASK)) value = 0;
+        ruleValues[i].store(value);
         edges.reset(i);
     }
-    dirty = false;
-    DEVICE_LOG_INFO(String("[Threshold] Rules 0x") + String(ruleValues[0], HEX) + " 0x" +
-                    String(ruleValues[1], HEX) + ", EEPROM " + THRESHOLD_EEPROM_ADDRESS + ".." +
-                    (THRESHOLD_EEPROM_END - 1));
+    (void)dirty.takeIfSet();
+    DEVICE_LOGF_INFO("[Threshold] Rules 0x%08lX 0x%08lX, EEPROM %d..%d\n",
+                     static_cast<unsigned long>(ruleValues[0].load()),
+                     static_cast<unsigned long>(ruleValues[1].load()), THRESHOLD_EEPROM_ADDRESS,
+                     THRESHOLD_EEPROM_END - 1);
 }
 
-bool ThresholdControl::set(uint8_t id, uint32_t value) {
+bool ThresholdControl::set(uint8_t id, uint32_t value)
+{
     if (id < 1 || id > threshold::kRuleCount ||
-        !threshold::isValid(value, THRESHOLD_SENSOR_COUNT, SCHEDULE_ALLOWED_PORT_MASK)) {
+        !threshold::isValid(value, THRESHOLD_SENSOR_COUNT, AUTOMATION_PORT_MASK)) {
         return false;
     }
-    // A new rule acts on the next sample if its condition already holds.
-    edges.reset(id - 1);
-    if (ruleValues[id - 1] != value) {
-        // Value before flag, so flush() never saves an older value and clears it.
-        ruleValues[id - 1] = value;
-        dirty = true;
+    uint32_t previous = 0;
+    {
+        // Rule and edge state change together, so evaluate() never applies
+        // the old rule to the reset edge state.
+        platform_sync::ScopedLock lock(stateMutex);
+        if (!lock.locked()) return false;
+        previous = ruleValues[id - 1].exchange(value);
+        // A new rule acts on the next sample if its condition already holds.
+        edges.reset(id - 1);
     }
+    // Value before flag, so stage() never saves an older value and clears it.
+    if (previous != value) dirty.set();
     return true;
 }
 
-uint32_t ThresholdControl::value(uint8_t id) {
-    return id >= 1 && id <= threshold::kRuleCount ? ruleValues[id - 1] : 0;
+uint32_t ThresholdControl::value(uint8_t id)
+{
+    return id >= 1 && id <= threshold::kRuleCount ? ruleValues[id - 1].load() : 0;
 }
 
-void ThresholdControl::evaluate(const InfoSensor& sensors) {
+void ThresholdControl::evaluate(const InfoSensor& sensors)
+{
     threshold::Rule rules[threshold::kRuleCount];
     bool readable[threshold::kRuleCount];
     int32_t readings[threshold::kRuleCount];
-    for (uint8_t i = 0; i < threshold::kRuleCount; ++i) {
-        rules[i] = threshold::decode(ruleValues[i]);
-        readable[i] = reading(sensors, rules[i].sensor, readings[i]);
-    }
-    const threshold::Actions actions = edges.update(rules, readable, readings);
-    if (actions.onMask == 0 && actions.offMask == 0) {
-        return;
-    }
+    threshold::Actions actions;
     {
-        PendingLock lock;
+        platform_sync::ScopedLock lock(stateMutex);
         if (!lock.locked()) return;
+        for (uint8_t i = 0; i < threshold::kRuleCount; ++i) {
+            rules[i] = threshold::decode(ruleValues[i].load());
+            readable[i] = sensorReading(sensors, rules[i].sensor, readings[i]);
+        }
+        actions = edges.update(rules, readable, readings);
         // The newest action of a port replaces an older one not yet applied.
         pendingOn = static_cast<uint8_t>((pendingOn & ~actions.offMask) | actions.onMask);
         pendingOff = static_cast<uint8_t>((pendingOff & ~actions.onMask) | actions.offMask);
     }
-    DEVICE_LOG_INFO(String("[Threshold] on=0x") + String(actions.onMask, HEX) +
-                    " off=0x" + String(actions.offMask, HEX));
+    if (actions.onMask == 0 && actions.offMask == 0) return;
+    DEVICE_LOGF_INFO("[Threshold] on=0x%02X off=0x%02X\n", actions.onMask, actions.offMask);
 }
 
-bool ThresholdControl::takeActions(uint8_t& onMask, uint8_t& offMask) {
-    PendingLock lock;
-    if (!lock.locked()) {
-        onMask = 0;
-        offMask = 0;
-        return false;
-    }
+bool ThresholdControl::takeActions(uint8_t& onMask, uint8_t& offMask)
+{
+    onMask = 0;
+    offMask = 0;
+    platform_sync::ScopedLock lock(stateMutex);
+    if (!lock.locked()) return false;
     onMask = pendingOn;
     offMask = pendingOff;
     pendingOn = 0;
@@ -134,17 +109,17 @@ bool ThresholdControl::takeActions(uint8_t& onMask, uint8_t& offMask) {
     return onMask != 0 || offMask != 0;
 }
 
-void ThresholdControl::flush() {
-    if (!dirty) return;
-    dirty = false;
+bool ThresholdControl::stage()
+{
+    if (!dirty.takeIfSet()) return false;
     uint8_t bytes[THRESHOLD_EEPROM_SIZE];
     for (uint8_t i = 0; i < threshold::kRuleCount; ++i) {
-        on_timer::encode(ruleValues[i], bytes + i * on_timer::kStorageSize);
+        le32::encode(ruleValues[i].load(), bytes + i * le32::kSize);
     }
-    if (!Memory::GetInstance()->writeBytes(THRESHOLD_EEPROM_ADDRESS, bytes, static_cast<int>(sizeof(bytes)))) {
-        dirty = true;
-        DEVICE_LOG_ERROR("[Threshold] EEPROM commit failed; will retry");
-        return;
+    if (!Memory::GetInstance()->stageBytes(THRESHOLD_EEPROM_ADDRESS, bytes, sizeof(bytes))) {
+        DEVICE_LOG_ERROR("[Threshold] EEPROM region unavailable; rules not saved");
+        return false;
     }
-    DEVICE_LOG_DEBUG("[Threshold] Rules saved to EEPROM");
+    DEVICE_LOG_DEBUG("[Threshold] Rules staged for EEPROM");
+    return true;
 }

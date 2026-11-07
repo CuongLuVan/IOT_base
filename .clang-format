@@ -1,0 +1,21 @@
+# Firmware style for DeviceIOT and DeviceIOT8266 (review items 66, 69).
+BasedOnStyle: Google
+IndentWidth: 4
+ColumnLimit: 120
+AccessModifierOffset: -4
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: true
+  AfterClass: false
+  AfterStruct: false
+  AfterEnum: false
+  AfterNamespace: false
+  AfterControlStatement: Never
+  BeforeElse: false
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: WithoutElse
+IndentPPDirectives: None
+PPIndentWidth: 0
+SortIncludes: Never
+DerivePointerAlignment: false
+PointerAlignment: Left

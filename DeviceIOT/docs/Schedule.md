@@ -11,7 +11,7 @@ Internet sau khi đồng hồ đã hợp lệ, MQTT điều khiển trực tiế
 | `ScheduleEngine.h/.cpp` | Bảng lịch trong RAM (mutex), đọc/ghi EEPROM, đánh giá lịch đến hạn, hàng đợi lệnh cho `TaskDevice`. |
 | `SystemTask.cpp` | Mỗi chu kỳ 5 s gọi `ScheduleEngine::process()` rồi `flush()` (không tạo task mới). |
 | `TaskDevice.cpp` | Áp lệnh lên `device_port`, quản lý quyền điều khiển từng cổng, Auto OFF. |
-| `NetWork_Mqtt.cpp` | Lệnh lịch `com` 8..13, trả bản tin trạng thái rút gọn (`rc`/`rs`). |
+| `NetworkMqtt.cpp` | Lệnh lịch `com` 8..13, trả bản tin trạng thái rút gọn (`rc`/`rs`). |
 
 ```
 MQTT com 8..12 ──> ScheduleEngine (RAM, dirty) ──flush (SystemTask)──> EEPROM

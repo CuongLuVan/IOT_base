@@ -8,9 +8,9 @@ Giám sát heap/task/network và telemetry `system.status` được mô tả tro
 
 Luồng được tách theo quyền sở hữu:
 
-1. MQTT được nhận trong `TaskNetWork`; lệnh start/stop chuyển sang `TaskSensor` qua control queue một phần tử.
+1. MQTT được nhận trong `TaskNetwork`; lệnh start/stop chuyển sang `TaskSensor` qua control queue một phần tử.
 2. `TaskSensor` là nơi duy nhất đọc ADC/ICM/ADS trong phiên. Nó đóng gói mẫu, rồi gửi datagram đã hoàn tất vào packet queue nội bộ không chờ.
-3. `TaskNetWork` là nơi duy nhất dùng UDP/Wi-Fi cho dữ liệu tốc độ cao. Mỗi vòng nó gửi tối đa 8 datagram, chạy vòng mạng mỗi tick FreeRTOS (thường 1 ms), và UART được đọc non-blocking.
+3. `TaskNetwork` là nơi duy nhất dùng UDP/Wi-Fi cho dữ liệu tốc độ cao. Mỗi vòng nó gửi tối đa 8 datagram, chạy vòng mạng mỗi `NETWORK_TASK_PERIOD_MS` (1 ms) (`HighSpeedUdpSender.cpp`).
 4. Trong lúc thu tốc độ cao, các bước đọc cảm biến chậm PMS/DHT tạm ngưng; chúng tiếp tục sau phiên.
 
 Task sensor chạy ưu tiên cao hơn task mạng và ghim core 1; task mạng ghim core 0. Packet queue có 24 datagram để hấp thụ burst ngắn. Mỗi datagram mang IP/port của phiên, nên thay đổi cấu hình phiên kế tiếp không đổi đích các gói đang chờ. Sensor task nhường một tick mỗi giây để idle task/watchdog trên core 1 được chạy; khoảng ngắt này có thể làm trễ mẫu và được tính vào `dropped_samples`.
@@ -21,8 +21,9 @@ Tần số lấy mẫu được cấu hình trong `define_All.h`:
 |---|---:|---|
 | `HS_AUDIO_ADC_SAMPLE_RATE_HZ` | 10000 Hz | ADC âm thanh trên `HS_ADC_PIN` |
 | `HS_ICM42688_SAMPLE_RATE_HZ` | 32000 Hz | Cả accelerometer và gyroscope ICM-42688-P |
-| `HS_ADS8866_SAMPLE_RATE_HZ` | 100000 Hz | ADC ADS8866; tối đa 100000 SPS |
-| `SENSOR_TASK_INTERVAL_MS` | 1000 ms | Khoảng giữa các bước đọc chậm PMS/DHT; các bước luân phiên theo `SENSOR_READ_STEP_COUNT` |
+| `HS_ADS8866_SAMPLE_RATE_HZ` | 50000 Hz | ADC ADS8866; lấy mẫu bằng polling cần ~12 µs/mẫu nên 100000 SPS không đạt được |
+| `SENSOR_TASK_POLL_MS` | 20 ms | Chu kỳ TaskSensor khi không capture (đọc UART PMS) |
+| `DHT_READ_INTERVAL_MS` | 4000 ms | Khoảng giữa hai lần đọc DHT11 |
 
 Có thể đổi các define này trước khi build. ICM-42688-P chỉ hỗ trợ các ODR phần cứng tương ứng với 32000, 16000, 12500, 8000, 6250, 4000, 3125, 2000, 1000, 500, 200, 100, 50 hoặc 25 Hz; giá trị khác sẽ làm các mode `imu` và `all` không khả dụng. Tốc độ ADC âm thanh phải lớn hơn 0 và không vượt 1000000 Hz; ADS8866 phải trong khoảng 1–100000 Hz.
 

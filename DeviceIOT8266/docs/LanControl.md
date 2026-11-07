@@ -38,16 +38,28 @@ Content-Type: application/json
 |---|---|
 | 200 | Lệnh đã chạy, `data` có ít nhất một bản tin |
 | 400 | Body không phải `{"data":<lệnh>}` hoặc quá `LAN_REQUEST_MAX_LENGTH` |
-| 422 | Không có bản tin trả lời: sai chữ ký / Ascon, hoặc không có lệnh đó. Lệnh lịch / hẹn giờ bị từ chối vẫn trả 200 với `rs` ≠ 0 |
+| 408 | Header (và body tới `HTTP_PREBUFFER_MAX_LENGTH` byte) không đến đủ trong `HTTP_REQUEST_TIMEOUT_MS` (3 s); kết nối bị đóng |
+| 413 | `Content-Length` lớn hơn `LAN_REQUEST_MAX_LENGTH`: từ chối trước khi đọc body |
+| 431 | Header dài hơn `HTTP_HEADER_MAX_LENGTH` (1024 byte) |
+| 422 | Không có bản tin trả lời: JSON sai, sai chữ ký / Ascon, hoặc `{"com":7}` khi bật Ascon (bắt tay luôn trả lời qua MQTT; tắt Ascon thì com 7 trả `rs` 2). Lệnh không tồn tại hoặc bị từ chối (sai trường, sai mật khẩu, lịch xung đột...) vẫn trả 200 với `rs` ≠ 0, ví dụ `[{"rc":99,"rs":2}]` |
 
 ## Cách hoạt động
 
-- Lệnh đi vào **đúng hàm xử lý tin nhắn MQTT** (`MqttDataCallback` /
-  `mqttCallback`): cùng giới hạn kích thước, cùng kiểm tra chữ ký
+- Lệnh đi vào **đúng hàm xử lý tin nhắn MQTT** (`mqtt::dispatch` trong
+  `CommandDispatcher.cpp`): cùng giới hạn kích thước, cùng kiểm tra chữ ký
   (`ENABLE_MESSAGE_AUTHENTICATION`) và Ascon (`ENABLE_ASCON_AEAD128`), cùng các
   lệnh `com` (1, 2, 4, 5, 8..14; 15 chỉ DeviceIOT) — mọi lệnh đều là `{"com":<số>}`, không còn `"cmd"`
 - Bản tin trả lời được gom vào phản hồi HTTP thay vì publish. Không thêm trường
   replay/chữ ký của broker; nếu bật Ascon thì vẫn được mã hóa như qua MQTT.
+- Bản tin bắt tay Ascon (`{"rc":7,...}`, khi trả lời `{"com":7}` hoặc khi khóa
+  đến hạn xoay trong lúc chạy lệnh LAN) luôn được publish lên broker, không
+  nằm trong phản hồi LAN. Nếu broker không kết nối thì khóa mới không được
+  công bố và trả lời LAN cần mã hóa bị bỏ (422).
+- Vì vậy khi bật Ascon, LAN **không phải đường dự phòng** khi mất broker: khóa
+  phiên chỉ có sau khi bản tin bắt tay được publish qua MQTT, nên nếu broker
+  chưa từng kết nối từ lúc khởi động (hoặc khóa đến hạn xoay khi broker mất)
+  thì `/update`, `/control`, `/lan` đều trả lỗi (fail-closed). Cần LAN dự
+  phòng thì tắt `ENABLE_ASCON_AEAD128` và dùng mật khẩu lệnh.
 - Chạy trong TaskNetwork, cùng luồng với MQTT callback, nên không cần khóa
   thêm.
 - `{"com":2}` (cả qua MQTT) trả thêm `"ip"` để web_manager biết địa chỉ LAN

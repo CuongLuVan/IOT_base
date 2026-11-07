@@ -1,25 +1,28 @@
-#ifndef HIGHSPEEDSAMPLER_H
-#define HIGHSPEEDSAMPLER_H
+#pragma once
+
+// High-speed capture (docs/HighSpeedAcquisition.md): TaskSensor samples the
+// ADC / ICM-42688 / ADS8866 and queues UDP datagrams (CaptureTypes.h) that
+// TaskNetwork sends.
 
 #include <Arduino.h>
+#include <IPAddress.h>
 #include <atomic>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 
-constexpr size_t HIGH_SPEED_UDP_MAX_DATAGRAM_SIZE = 28 + 1150;
+#include "CaptureTypes.h"
+
+// Largest payload: 16 IMU samples x 14 bytes (HighSpeedSampler.cpp checks
+// every channel against it).
+constexpr size_t HIGH_SPEED_UDP_MAX_PAYLOAD_SIZE = 224;
+constexpr size_t HIGH_SPEED_UDP_MAX_DATAGRAM_SIZE = capture_udp::kHeaderSize + HIGH_SPEED_UDP_MAX_PAYLOAD_SIZE;
 
 enum HighSpeedMode : uint8_t {
     HS_MODE_OFF = 0,
     HS_MODE_ADC_10KHZ = 1,
     HS_MODE_ICM32K = 2,
     HS_MODE_ADS100K = 3,
-    HS_MODE_ALL = 4
-};
-
-enum UdpPacketType : uint8_t {
-    UDP_PACKET_ADC = 0x01,
-    UDP_PACKET_IMU = 0x02,
-    UDP_PACKET_ADS = 0x03
+    HS_MODE_ALL = 4,
 };
 
 struct HighSpeedConfig {
@@ -29,6 +32,7 @@ struct HighSpeedConfig {
     uint32_t durationMs;
 };
 
+// Filled by receivePacket(); the queues inside the sampler carry plain copies.
 struct HighSpeedUdpPacket {
     uint16_t length;
     IPAddress targetIP;
@@ -47,24 +51,23 @@ public:
     bool isModeAvailable(HighSpeedMode mode) const;
 
     // Called only by TaskSensor; performs no networking or blocking queue sends.
+    // true while a capture runs.
     bool processSensorTask();
-    // Called only by TaskNetWork.
+    // Called only by TaskNetwork.
     bool receivePacket(HighSpeedUdpPacket& packet);
     UBaseType_t packetQueueDepth() const;
 
 private:
-    HighSpeedSampler();
+    HighSpeedSampler() = default;
     HighSpeedSampler(const HighSpeedSampler&) = delete;
     HighSpeedSampler& operator=(const HighSpeedSampler&) = delete;
 
     void initializeSensors();
 
-    QueueHandle_t controlQueue;
-    QueueHandle_t packetQueue;
-    std::atomic<bool> samplingActive;
-    std::atomic<bool> stopRequested;
-    bool initialized;
-    bool icmAvailable;
+    QueueHandle_t controlQueue = nullptr;
+    QueueHandle_t packetQueue = nullptr;
+    std::atomic<bool> samplingActive{false};
+    std::atomic<bool> stopRequested{false};
+    bool initialized = false;
+    bool icmAvailable = false;
 };
-
-#endif

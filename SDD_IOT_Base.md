@@ -136,9 +136,9 @@ Dự án có thể phân thành 5 layer:
   - `DeviceIOT.ino`: entry point.
   - `TaskSensor.*`: đọc cảm biến.
   - `TaskDevice.*`: điều khiển relay nút.
-  - `TaskNetWork.*`: WiFi, MQTT và web config.
-  - `NetWork_Wifi.*`: quản lý kết nối WiFi, hosting web cấu hình, OTA.
-  - `NetWork_Mqtt.*`: quản lý kết nối MQTT và gửi/nhận dữ liệu.
+  - `TaskNetwork.*`: WiFi, MQTT và web config.
+  - `NetworkWifi.*`: quản lý kết nối WiFi, hosting web cấu hình, OTA.
+  - `NetworkMqtt.*`: quản lý kết nối MQTT và gửi/nhận dữ liệu.
 
 #### Giải thích dễ hiểu
 Thiết bị giống như một robot nhỏ:
@@ -150,8 +150,8 @@ Thiết bị giống như một robot nhỏ:
 ### 3.3 Layer 2: Communication Layer
 
 Project dùng WiFi và MQTT.
-- `NetWork_Wifi.cpp` khởi tạo WiFi, kiểm tra kết nối, hỗ trợ host AP để cấu hình.
-- `NetWork_Mqtt.cpp` dùng `PubSubClient` để gửi và nhận bản tin MQTT.
+- `NetworkWifi.cpp` khởi tạo WiFi, kiểm tra kết nối, hỗ trợ host AP để cấu hình.
+- `NetworkMqtt.cpp` dùng `PubSubClient` để gửi và nhận bản tin MQTT.
 
 #### Cụ thể
 - `Settings.subcribe_topic`: topic thiết bị gửi dữ liệu.
@@ -193,8 +193,8 @@ Các thành phần frontend không phải là trọng tâm nhưng có thể dùn
 
 Trong `DeviceIOT/` có thể thấy 3 phần tương tự `core`, `commu`, `driver`:
 
-- `core`: `TaskSensor`, `TaskDevice`, `TaskNetWork` là lõi xử lý.
-- `commu`: `NetWork_Wifi`, `NetWork_Mqtt` chịu trách nhiệm giao tiếp.
+- `core`: `TaskSensor`, `TaskDevice`, `TaskNetwork` là lõi xử lý.
+- `commu`: `NetworkWifi`, `NetworkMqtt` chịu trách nhiệm giao tiếp.
 - `driver`: Các driver cảm biến như DHT, PMS, UART, GPIO.
 
 > Lưu ý: repository này không chứa thư mục `core/`, `commu/`, `driver/` theo đúng yêu cầu, nhưng các chức năng tương đương được triển khai trong `DeviceIOT/`.
@@ -211,7 +211,7 @@ Dữ liệu đi theo thứ tự sau:
 4. `task_NetWork.setup()` khởi tạo WiFi + MQTT.
 5. Vòng lặp `loop()` gọi `taskRun()` hoặc RTOS task.
 6. `TaskSensor::taskRun()` đọc giá trị sensor từng giây.
-7. `TaskNetWork::loopNetWork()` gửi dữ liệu qua MQTT nếu kết nối.
+7. `TaskNetwork::loopNetWork()` gửi dữ liệu qua MQTT nếu kết nối.
 8. `TaskDevice::taskRun()` đọc nút nhấn và thay đổi relay.
 9. Nếu có lệnh đến, `MqttDataCallback()` chuyển lệnh vào hàng đợi.
 
@@ -226,7 +226,7 @@ Dữ liệu đi theo thứ tự sau:
 {"data":2,"va":"4500,2300,10,12,20,30,0","co":"1,0,0,0"}
 ```
 
-5. `NetWork_Mqtt::sendMessageInfoPublish(...)` publishes JSON lên `Settings.subcribe_topic`.
+5. `NetworkMqtt::sendMessageInfoPublish(...)` publishes JSON lên `Settings.subcribe_topic`.
 6. Broker Aedes nhận bản tin.
 7. Node server có thể lưu bản tin, cập nhật trạng thái.
 8. Frontend gọi API để xem dữ liệu.
@@ -275,7 +275,7 @@ Broker Aedes trong `mqttClient/server.js` chạy cùng Express.
 
 1. Người dùng gửi lệnh qua web hoặc MQTT client.
 2. Server publish message lên topic lệnh.
-3. `NetWork_Mqtt::MqttDataCallback()` được gọi khi thiết bị nhận tin.
+3. `NetworkMqtt::MqttDataCallback()` được gọi khi thiết bị nhận tin.
 4. Lệnh được chuyển thành `DeviceCommand cmd`.
 5. Nếu `cmd.commandType == COMMAND_TYPE_CONTROL` thì lệnh được gửi vào queue `deviceCommandQueue`.
 6. `TaskDevice::taskRun()` đọc queue và thay đổi `control.device_port`.
@@ -283,7 +283,7 @@ Broker Aedes trong `mqttClient/server.js` chạy cùng Express.
 
 ### 4.5 Xử lý khi mất kết nối
 
-`TaskNetWork.cpp` có nhiều hàm kiểm tra:
+`TaskNetwork.cpp` có nhiều hàm kiểm tra:
 - `checkNetWorkInConnect()`
 - `checkNetWorkDisconnect()`
 - `checkNetWorkReConnect()`
@@ -312,7 +312,7 @@ Khi thiết bị chưa có cấu hình, nó có thể vào nhiều chế độ:
 Repository không có thư mục `core/`, nhưng phần tương đương là:
 - `TaskSensor.*`
 - `TaskDevice.*`
-- `TaskNetWork.*`
+- `TaskNetwork.*`
 - `MemoryData.h`
 - `Common.*`
 
@@ -347,14 +347,14 @@ Quan trọng:
 - `buttonState` là trạng thái chân.
 - Nếu nhấn lâu >= 3 giây thì toggle `device_port`.
 
-#### 5.1.3 `TaskNetWork` - điều phối mạng
+#### 5.1.3 `TaskNetwork` - điều phối mạng
 
-`TaskNetWork` là điểm trung gian giữa sensor/device và mạng.
+`TaskNetwork` là điểm trung gian giữa sensor/device và mạng.
 - `setup()`: đọc chế độ WiFi, khởi tạo EEPROM, WiFi/MQTT.
 - `loopNetWork()`: kiểm tra trạng thái và gọi các hàm reconnect.
 - `taskRun()`: gọi `loopNetWork()` liên tục.
 
-`TaskNetWork::setup()` chứa logic quan trọng:
+`TaskNetwork::setup()` chứa logic quan trọng:
 - Đọc `modeStatus` từ EEPROM.
 - Nếu `WIFI_START_CONNECT`, kết nối WiFi và MQTT.
 - Nếu chế độ khác, chuyển sang cấu hình hoặc OTA.
@@ -362,10 +362,10 @@ Quan trọng:
 ### 5.2 Module `commu` (tương đương)
 
 Repository cũng không có thư mục `commu/`, nhưng phần giao tiếp nằm trong:
-- `NetWork_Wifi.*`
-- `NetWork_Mqtt.*`
+- `NetworkWifi.*`
+- `NetworkMqtt.*`
 
-#### 5.2.1 `NetWork_Wifi` - giao tiếp WiFi và web config
+#### 5.2.1 `NetworkWifi` - giao tiếp WiFi và web config
 
 Nhiệm vụ:
 - Kết nối WiFi với AP hoặc STA.
@@ -380,7 +380,7 @@ Các chức năng quan trọng:
 - `setupHostPost()`: thiết lập chế độ access point để cấu hình.
 - `setupOTA()`: kiểm tra phiên bản và tải firmware mới.
 
-#### 5.2.2 `NetWork_Mqtt` - giao tiếp MQTT
+#### 5.2.2 `NetworkMqtt` - giao tiếp MQTT
 
 Nhiệm vụ:
 - Kết nối tới broker.
@@ -535,7 +535,7 @@ Logic:
 
 Cho người mới, đây là cách cơ bản để đọc một nút an toàn.
 
-### 6.5 `NetWork_Wifi::handleSetUp()`
+### 6.5 `NetworkWifi::handleSetUp()`
 
 Hàm này xử lý khi người dùng gửi cấu hình WiFi qua web.
 
@@ -548,7 +548,7 @@ Nó thực hiện:
 
 Vì vậy, khi người dùng cấu hình xong, thiết bị ghi JSON cấu hình vào EEPROM và reset lại.
 
-### 6.6 `NetWork_Wifi::handleControl()`
+### 6.6 `NetworkWifi::handleControl()`
 
 Hàm này nhận lệnh điều khiển từ HTTP.
 
@@ -560,7 +560,7 @@ Sau đó đẩy lệnh vào queue.
 
 Điều này cho phép điều khiển thiết bị từ trình duyệt.
 
-### 6.7 `MqttDataCallback()` trong `NetWork_Mqtt.cpp`
+### 6.7 `MqttDataCallback()` trong `NetworkMqtt.cpp`
 
 Hàm này xử lý mọi message đến từ broker.
 
@@ -576,7 +576,7 @@ Ví dụ message nhận được:
 ```
 Điều này có thể bật relay số 2.
 
-### 6.8 `NetWork_Mqtt::sendMessageInfo(char * data)`
+### 6.8 `NetworkMqtt::sendMessageInfo(char * data)`
 
 Hàm này gửi dữ liệu lên broker.
 
@@ -653,7 +653,7 @@ Nếu muốn chạy `admin/` hoặc `web_manager/`, cần xem `package.json` tư
 #### 7.2.2 Kết nối thiết bị
 
 1. Thiết bị ESP32 bật lên.
-2. `TaskNetWork::setup()` đọc chế độ WiFi từ EEPROM.
+2. `TaskNetwork::setup()` đọc chế độ WiFi từ EEPROM.
 3. Nếu có cấu hình, thiết bị kết nối WiFi.
 4. Thiết bị khởi tạo MQTT và gửi dữ liệu.
 
@@ -738,7 +738,7 @@ Hệ thống giám sát chất lượng không khí.
 2. `TaskSensor` đọc `valueHumi` = 45.00%.
 3. `TaskSensor` đọc `valueDust_PM2_5` = 12.
 4. `getInfoDevice()` tạo JSON.
-5. `NetWork_Mqtt::sendMessageInfoPublish()` publish lên MQTT.
+5. `NetworkMqtt::sendMessageInfoPublish()` publish lên MQTT.
 
 Payload gửi một ví dụ:
 ```json
@@ -947,7 +947,7 @@ Phần `setup()` in ra trạng thái khởi tạo. Nếu thiết bị không và
 
 ### 13.4 Kiểm tra WiFi
 
-Trong `TaskNetWork::setup()`:
+Trong `TaskNetwork::setup()`:
 - `modeStatus = Memory::GetInstance()->readChar(MODE_WIFI_ADRESS);`
 - `netWork_Wifi.connectWifi();`
 - `netWork_Wifi.checkWifi()`.
@@ -961,7 +961,7 @@ Nếu không, debug:
 
 ### 13.5 Kiểm tra MQTT
 
-Trong `TaskNetWork::setup()`:
+Trong `TaskNetwork::setup()`:
 - `netWork_Mqtt.getAllDataSetup();`
 - `netWork_Mqtt.setupInfoMQTT();`
 - `netWork_Mqtt.checkStatusMqtt();`
@@ -989,14 +989,14 @@ Nếu MQTT không connect:
 - Nếu `xQueueSend(deviceCommandQueue, &cmd, 50)` không thành công, queue có thể đầy.
 - Kiểm tra `deviceCommandQueue` được tạo đúng cách.
 
-## 14. Giải thích chi tiết `TaskNetWork.cpp`
+## 14. Giải thích chi tiết `TaskNetwork.cpp`
 
 ### 14.1 File bao gồm những gì
 
-`TaskNetWork.cpp` là trung tâm quản lý mạng và trạng thái.
+`TaskNetwork.cpp` là trung tâm quản lý mạng và trạng thái.
 Các file include:
-- `NetWork_Wifi.h`
-- `NetWork_Mqtt.h`
+- `NetworkWifi.h`
+- `NetworkMqtt.h`
 - `NetWork_config.h`
 - `Memory.h`
 - `driver/uart.h`
@@ -1055,7 +1055,7 @@ Nó có thể dùng để giám sát dữ liệu đem về từ module ngoài.
 Hàm này tính toán thời gian từ `millis()` và cập nhật timestamp.
 Nó đảm bảo không bị tràn số khi `millis()` vượt 32-bit.
 
-### 14.5 `TaskNetWork::setup()`
+### 14.5 `TaskNetwork::setup()`
 
 Đây là phần quan trọng nhất.
 
@@ -1121,7 +1121,7 @@ Nó gọi `netWork_Mqtt.MqttReconnect()` để thử lại phí dây.
 `checkButton()` xử lý khi người dùng nhấn nút vật lý.
 Nút nhấn có thể chuyển sang chế độ cấu hình.
 
-### 14.8 `TaskNetWork::loopNetWork()`
+### 14.8 `TaskNetwork::loopNetWork()`
 
 Hàm này chạy trong vòng lặp:
 - Kiểm tra `netWork_Wifi.checkWifi()`.
@@ -1131,7 +1131,7 @@ Hàm này chạy trong vòng lặp:
 
 Nó là cầu nối giữa mạng và dữ liệu.
 
-### 14.9 `TaskNetWork::taskRun(void * parameter)`
+### 14.9 `TaskNetwork::taskRun(void * parameter)`
 
 Trong RTOS, đây là hàm task độc lập.
 Nó gọi `loopNetWork()` liên tục.
@@ -1264,11 +1264,11 @@ Nếu `device_port` thay đổi, nó gửi trạng thái qua queue hoặc ghi v�
 
 Nó cũng đọc lệnh `deviceCommandQueue` nếu có.
 
-## 17. Giải thích chi tiết `NetWork_Wifi.cpp`
+## 17. Giải thích chi tiết `NetworkWifi.cpp`
 
 ### 17.1 Mục đích
 
-`NetWork_Wifi` quản lý WiFi, web server, OTA và các chế độ cấu hình.
+`NetworkWifi` quản lý WiFi, web server, OTA và các chế độ cấu hình.
 
 ### 17.2 Các route quan trọng
 
@@ -1313,9 +1313,9 @@ Quy trình OTA:
 Mục đích cho phép cấu hình WiFi qua SmartConfig hoặc BLE.
 Nếu không dùng, thiết bị sẽ dùng AP tạm.
 
-## 18. Giải thích chi tiết `NetWork_Mqtt.cpp`
+## 18. Giải thích chi tiết `NetworkMqtt.cpp`
 
-### 18.1 Mục đích `NetWork_Mqtt`
+### 18.1 Mục đích `NetworkMqtt`
 
 Quản lý kết nối MQTT và xử lý message.
 
@@ -1495,7 +1495,7 @@ Thực hành:
 
 ### 21.4 Bài tập 4: Gửi lệnh điều khiển qua web
 
-Mục tiêu: hiểu `NetWork_Wifi::handleControl()`.
+Mục tiêu: hiểu `NetworkWifi::handleControl()`.
 
 Thực hành:
 1. Gửi HTTP request đến `/control?com=1&value=1`.
@@ -1542,8 +1542,8 @@ Thực hành:
 ### 23.1 Đọc code theo module
 
 - Bắt đầu từ `DeviceIOT.ino`.
-- Tiếp theo `TaskSensor.cpp`, `TaskDevice.cpp`, `TaskNetWork.cpp`.
-- Sau đó đọc `NetWork_Wifi.cpp`, `NetWork_Mqtt.cpp`.
+- Tiếp theo `TaskSensor.cpp`, `TaskDevice.cpp`, `TaskNetwork.cpp`.
+- Sau đó đọc `NetworkWifi.cpp`, `NetworkMqtt.cpp`.
 - Cuối cùng xem server Node.
 
 ### 23.2 Chạy từng phần một
@@ -1929,11 +1929,11 @@ Nếu muốn mở rộng, frontend có thể:
 ### 30.1 Firmware
 
 - `DeviceIOT.ino`: entry point.
-- `TaskNetWork.h/cpp`: quản lý mạng.
+- `TaskNetwork.h/cpp`: quản lý mạng.
 - `TaskSensor.h/cpp`: đọc cảm biến.
 - `TaskDevice.h/cpp`: điều khiển.
-- `NetWork_Wifi.h/cpp`: WiFi và web config.
-- `NetWork_Mqtt.h/cpp`: MQTT.
+- `NetworkWifi.h/cpp`: WiFi và web config.
+- `NetworkMqtt.h/cpp`: MQTT.
 - `Common.h/cpp`: các cấu trúc dữ liệu chung.
 - `Memory.h`: lưu trữ EEPROM.
 - `MemoryData.h`: chia sẻ dữ liệu giữa task.
@@ -1965,7 +1965,7 @@ Nếu muốn mở rộng, frontend có thể:
 
 - `TaskSensor` chỉ lo đọc sensor.
 - `TaskDevice` chỉ lo điều khiển.
-- `TaskNetWork` chỉ lo mạng.
+- `TaskNetwork` chỉ lo mạng.
 
 Điều này giúp bảo trì dễ dàng.
 
@@ -2070,7 +2070,7 @@ Nó chọn cách thực thi tuỳ vào cấu hình RTOS.
 - Nếu không dùng RTOS: gọi tuần tự `taskRun()` của từng module và `delay(10);`.
 - Nếu dùng RTOS: chỉ dùng `delay(1000);` vì các task đã hoạt động độc lập.
 
-### 33.2 `TaskNetWork::setup()`
+### 33.2 `TaskNetwork::setup()`
 
 Đây là hàm khởi tạo rất nặng.
 Nó xử lý tất cả chế độ hoạt động của thiết bị.
@@ -2093,7 +2093,7 @@ Nếu `modeStatus` khác:
 - Chuyển sang provisioning hoặc SmartConfig.
 - Hoặc setup host post để nhập cấu hình.
 
-### 33.3 `TaskNetWork::loopNetWork()`
+### 33.3 `TaskNetwork::loopNetWork()`
 
 Hàm này là vòng lặp kiểm tra trạng thái.
 Nó chạy liên tục.
@@ -2134,7 +2134,7 @@ Nó thực hiện:
 - Nếu `deviceCommandQueue` không tồn tại, lệnh sẽ bị bỏ.
 - Nếu không dùng RTOS, lệnh được lưu trong `MemoryData`.
 
-### 33.6 `NetWork_Wifi::handleSetUp()`
+### 33.6 `NetworkWifi::handleSetUp()`
 
 Hàm này xử lý cấu hình WiFi/MQTT qua HTTP.
 Nó:
@@ -2147,7 +2147,7 @@ Nó:
 Practical tip:
 - Nếu server cấu hình không đúng, thiết bị sẽ không kết nối.
 
-### 33.7 `NetWork_Wifi::handleControl()`
+### 33.7 `NetworkWifi::handleControl()`
 
 Hàm này nhận lệnh điều khiển từ HTTP.
 Nó gán `cmd.commandType` và `cmd.commandValue`.
@@ -2157,7 +2157,7 @@ Nếu lệnh là `COMMAND_TYPE_CONTROL`, hàm sẽ đưa lệnh vào queue.
 Sau đó trả về trạng thái hiện tại của thiết bị:
 `getInfoDevice(sensorValue,statusDevice)`.
 
-### 33.8 `NetWork_Mqtt::MqttDataCallback()`
+### 33.8 `NetworkMqtt::MqttDataCallback()`
 
 Hàm xử lý MQTT message nhận vào.
 Nó:
@@ -2170,14 +2170,14 @@ Chú ý:
 - Nếu JSON không hợp lệ, hàm sẽ in lỗi và bỏ qua.
 - Đây là nút giao giữa mạng và thiết bị.
 
-### 33.9 `NetWork_Mqtt::connectMqtt()`
+### 33.9 `NetworkMqtt::connectMqtt()`
 
 Hàm này thiết lập MQTT connection.
 Nó dùng `MqttClient.connect()` với client ID, credentials, topic.
 
 Nếu thành công, nó gọi `sendMessageInfo("test")`.
 
-### 33.10 `NetWork_Mqtt::MqttReconnect()`
+### 33.10 `NetworkMqtt::MqttReconnect()`
 
 Cách reconnect hiện tại:
 - `EspClient.stop()`
@@ -2188,7 +2188,7 @@ Lời khuyên:
 - Cần kiểm tra trạng thái connect.
 - Đặt lại socket khi cần.
 
-## 34. Phân tích sâu `NetWork_Wifi.cpp` từng hàm
+## 34. Phân tích sâu `NetworkWifi.cpp` từng hàm
 
 ### 34.1 `setHeader()`
 
@@ -2368,7 +2368,7 @@ Giả sử bạn muốn xây dựng thiết bị mới dùng cùng kiến trúc 
 Dựa vào dự án hiện tại, ta có thể dùng:
 - `TaskSensor` cho cảm biến.
 - `TaskDevice` cho actuator.
-- `TaskNetWork` cho mạng.
+- `TaskNetwork` cho mạng.
 
 Tạo các file tương tự:
 - `TaskSensorNew.h/cpp`
@@ -2426,7 +2426,7 @@ Kiểm tra log Serial:
 
 ### 37.2 Làm sao biết MQTT đã kết nối?
 
-Trong `NetWork_Mqtt::connectMqtt()`, nếu `MqttClient.connect()` thành công,
+Trong `NetworkMqtt::connectMqtt()`, nếu `MqttClient.connect()` thành công,
 thiết bị đã kết nối.
 
 ### 37.3 Nếu thiết bị không xuất hiện trên broker thì sao?
@@ -2837,7 +2837,7 @@ Luôn tách logic thành module:
 - Network module.
 - Storage module.
 
-Project hiện tại đã tách khá tốt nhờ `TaskSensor`, `TaskDevice`, `TaskNetWork`.
+Project hiện tại đã tách khá tốt nhờ `TaskSensor`, `TaskDevice`, `TaskNetwork`.
 
 ### 46.2 Singleton pattern
 
@@ -3002,7 +3002,7 @@ Mở rộng field `va` để chứa giá trị mới.
 
 Thêm kiểu lệnh mới nếu cần.
 
-### 50.2 Bước 2: Cập nhật `NetWork_Mqtt::MqttDataCallback()`
+### 50.2 Bước 2: Cập nhật `NetworkMqtt::MqttDataCallback()`
 
 Xử lý `com` mới.
 
@@ -3087,13 +3087,13 @@ Chọn đúng board trong Arduino IDE:
 - `Tools > Flash Frequency`.
 - `Tools > Upload Speed`.
 
-## 53. Walkthrough `NetWork_Mqtt.cpp` từng khối
+## 53. Walkthrough `NetworkMqtt.cpp` từng khối
 
 ### 53.1 Thư viện và biến toàn cục
 
 File bắt đầu với:
 ```cpp
-#include "NetWork_Mqtt.h"
+#include "NetworkMqtt.h"
 #include "NetWork_config.h"
 #include "Common.h"
 #include <PubSubClient.h>
@@ -3198,7 +3198,7 @@ Thoát kết nối cũ, kết nối lại TCP, gọi `connectMqtt()`.
 - Dùng backoff khi retry.
 - Kiểm tra `MqttClient.connected()` trước.
 
-## 54. Walkthrough `NetWork_Wifi.cpp` từng hàm
+## 54. Walkthrough `NetworkWifi.cpp` từng hàm
 
 ### 54.1 Thư viện
 
@@ -3480,7 +3480,7 @@ Yêu cầu:
 - In log khi broker publish message.
 
 Hướng dẫn:
-- Mở `NetWork_Mqtt.cpp`.
+- Mở `NetworkMqtt.cpp`.
 - Thêm `Serial.println("MQTT connected")` sau `connect()`.
 - Thêm log trong `MqttDataCallback()`.
 
@@ -4158,9 +4158,9 @@ Khi một developer mới vào dự án, đây là checklist cần có.
 
 - `TaskSensor`.
 - `TaskDevice`.
-- `TaskNetWork`.
-- `NetWork_Wifi`.
-- `NetWork_Mqtt`.
+- `TaskNetwork`.
+- `NetworkWifi`.
+- `NetworkMqtt`.
 - `server.js`.
 
 ### 68.5 Đọc tài liệu hiên tại
@@ -4238,8 +4238,8 @@ Nếu bạn dùng tài liệu này để đào tạo, đây là kế hoạch h�
 
 - Đọc `TaskSensor`.
 - Đọc `TaskDevice`.
-- Hiểu `NetWork_Wifi`.
-- Hiểu `NetWork_Mqtt`.
+- Hiểu `NetworkWifi`.
+- Hiểu `NetworkMqtt`.
 - Bài tập: thêm cảm biến.
 
 ### 70.3 Tuần 3: Server và API

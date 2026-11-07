@@ -20,9 +20,9 @@ Khác biệt trên ESP8266:
 |---|---|
 | `ScheduleCore.h` | Logic thuần (không phụ thuộc Arduino): mã hóa 6 byte + metadata, CRC8, ngày/thứ, xung đột, gộp lịch, `PortController` (ưu tiên trực tiếp + Auto OFF). Test trên máy tính: `tests/schedule_core_test.cpp`. |
 | `ScheduleEngine.h/.cpp` | Bảng lịch trong RAM, đọc/ghi EEPROM, đánh giá lịch đến hạn, hàng đợi lệnh cho `TaskDevice`. |
-| `SystemTask.cpp` | Mỗi chu kỳ 5 s gọi `ScheduleEngine::process()` rồi `flush()` (không tạo task mới; NON-OS: gọi từ `TaskNetWork::loopNetWork()`). |
+| `SystemTask.cpp` | Mỗi chu kỳ 5 s gọi `ScheduleEngine::process()` rồi `flush()` (không tạo task mới; NON-OS: gọi từ `loop()` trong `DeviceIOT8266.ino`). |
 | `TaskDevice.cpp` | Áp lệnh lên `device_port`, quản lý quyền điều khiển từng cổng, Auto OFF. |
-| `NetWork_Mqtt.cpp` | Lệnh lịch `com` 8..13, trả bản tin trạng thái rút gọn (`rc`/`rs`). |
+| `NetworkMqtt.cpp` | Lệnh lịch `com` 8..13, trả bản tin trạng thái rút gọn (`rc`/`rs`). |
 
 ```
 MQTT com 8..12 ──> ScheduleEngine (RAM, dirty) ──flush (SystemTask)──> EEPROM
