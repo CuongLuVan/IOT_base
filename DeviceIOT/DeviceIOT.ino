@@ -1,4 +1,4 @@
-// Start-up and scheduling. DeviceIOT.ino and DeviceIOT8266.ino are identical.
+// ESP32 start-up and scheduling.
 
 #include "DebugInfo.h"
 #include "Memory.h"

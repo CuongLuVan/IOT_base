@@ -13,7 +13,7 @@
 // NON-OS: one flash sector); esp8266RTOS has none, so EepromNvs.h provides the
 // same API on NVS.
 //
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
+// DeviceIOT uses the ESP32 EEPROM library backed by NVS.
 
 #include <Arduino.h>
 #include <stddef.h>

@@ -4,7 +4,7 @@
 // of the setup pages, and the link-health checks (docs/Connectivity.md).
 // Call every method from the network task.
 //
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
+// DeviceIOT pauses ARP probes during high-speed capture.
 
 #include <Arduino.h>
 #include <IPAddress.h>

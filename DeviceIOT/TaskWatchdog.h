@@ -25,7 +25,7 @@
 // ESP8266 NON-OS core: every module runs from loop(); the hardware and soft
 // watchdogs are fed by yield()/delay(), so all calls are no-ops.
 //
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
+// DeviceIOT also subscribes each task to the ESP32 task watchdog.
 
 #include <Arduino.h>
 #include <stdint.h>

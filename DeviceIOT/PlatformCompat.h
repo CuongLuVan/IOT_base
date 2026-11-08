@@ -5,7 +5,7 @@
 //   ESP8266, SUPPORT_RTOS == 0:     official esp8266/Arduino (NON-OS SDK)
 //   ESP8266, SUPPORT_RTOS == 1:     alexCajas/esp8266RTOSArduCore (FreeRTOS)
 //
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
+// DeviceIOT uses the Arduino-ESP32 web, Wi-Fi and random APIs.
 
 #include <Arduino.h>
 

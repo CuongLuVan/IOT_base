@@ -9,7 +9,7 @@
 // The small atomic types use a critical section rather than std::atomic: the
 // lx106 has no atomic instructions and its core lacks __atomic_* helpers.
 //
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
+// DeviceIOT uses the ESP32 portMUX critical-section API.
 
 #include <Arduino.h>
 #include <stddef.h>

@@ -1,4 +1,4 @@
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
+// DeviceIOT persists the last evaluated minute in RTC no-init memory.
 
 #include "ScheduleEngine.h"
 

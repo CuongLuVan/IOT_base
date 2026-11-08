@@ -3,7 +3,7 @@
 // Replies go to a ReplySink: the broker for MQTT, the HTTP response for LAN
 // control (docs/LanControl.md).
 //
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
+// The ESP32 firmware also routes high-speed capture commands.
 
 #include <string.h>
 

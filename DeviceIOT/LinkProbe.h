@@ -9,7 +9,7 @@
 // Supported on ESP32 (inside the tcpip thread) and on the ESP8266 NON-OS
 // core; on the ESP8266 RTOS core every probe reports "not supported".
 //
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
+// DeviceIOT runs the probes inside the TCP/IP thread.
 
 #include <Arduino.h>
 #include <IPAddress.h>

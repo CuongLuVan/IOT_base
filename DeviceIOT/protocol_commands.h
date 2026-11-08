@@ -5,7 +5,7 @@
 // CommandResult.h: 0 ok, 1 conflict, 2 invalid, 3 not found, 4 id exists,
 // 5 not ready, 6 wrong password, 7 busy).
 //
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
+// DeviceIOT also defines the high-speed capture command (com 15).
 
 #include <stdint.h>
 

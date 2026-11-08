@@ -26,7 +26,7 @@
 //
 // Multi-byte numbers are little-endian (low byte first).
 //
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
+// DeviceIOT supports the BLE, SmartConfig and OTA mode values.
 
 #include <stdint.h>
 

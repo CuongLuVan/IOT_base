@@ -11,7 +11,7 @@
 //   HighSpeedCommand.cpp   com 15 (DeviceIOT only)
 // Platform differences (TLS client, HMAC backend, random) are in MqttPlatform.h.
 //
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
+// DeviceIOT adds the high-speed capture command handler.
 
 #include <Arduino.h>
 #include <ArduinoJson.h>

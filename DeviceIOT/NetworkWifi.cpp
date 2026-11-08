@@ -1,4 +1,4 @@
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
+// DeviceIOT uses Arduino event callbacks and esp_read_mac().
 
 #include "NetworkWifi.h"
 

@@ -1,4 +1,4 @@
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
+// ESP32-specific network task implementation; DeviceIOT8266 has its own version.
 
 #include "TaskNetwork.h"
 
