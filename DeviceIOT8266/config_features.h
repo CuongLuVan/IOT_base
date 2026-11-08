@@ -3,13 +3,13 @@
 // DeviceIOT8266 feature switches. Every flag is 0 or 1.
 
 #ifndef ESP8266
-#error "DeviceIOT8266 requires an ESP8266 target; build DeviceIOT for ESP32."
+#error "DeviceIOT8266 requires an ESP8266 target."
 #endif
 
 // Select the runtime before compiling the sketch (docs/BUILD_MODES.md):
 // 0 = official ESP8266 Arduino core (cooperative / NON-OS scheduler)
 // 1 = alexCajas/esp8266RTOSArduCore (FreeRTOS scheduler)
-#define SUPPORT_RTOS 1
+#define SUPPORT_RTOS 0
 // The official core: BearSSL, ESP8266WebServer, os_random(), no FreeRTOS.
 #define ESP8266_NONOS_CORE (!SUPPORT_RTOS)
 

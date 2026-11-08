@@ -32,7 +32,6 @@
 // Task supervision (TaskWatchdog.h, SUPPORT_RTOS): SystemTask / TaskDevice
 // restart the device when a subscribed task does not call
 // task_watchdog::reset() for TASK_HEARTBEAT_TIMEOUT_MS.
-#define TASK_WATCHDOG_TIMEOUT_MS 20000UL
 #define TASK_HEARTBEAT_TIMEOUT_MS 30000UL
 
 #define SYSTEM_TASK_CHECK_INTERVAL_MS 5000UL
@@ -88,7 +87,7 @@
 // after MQTT_RECONNECT_BACKOFF_MIN_MS, doubling up to MQTT_RECONNECT_BACKOFF_MAX_MS,
 // plus up to MQTT_RECONNECT_JITTER_PERCENT % random jitter; a successful
 // connect + subscribe resets it. A connect blocks the NON-OS loop() for
-// seconds, so the first retry waits longer than on ESP32.
+// seconds, so the first retry does not immediately block the main loop.
 #define MQTT_RECONNECT_BACKOFF_MIN_MS 10000UL
 #define MQTT_RECONNECT_BACKOFF_MAX_MS 60000UL
 #define MQTT_RECONNECT_JITTER_PERCENT 25

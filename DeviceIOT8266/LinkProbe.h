@@ -6,11 +6,9 @@
 //          cache and sends the requests; finishArp() reads the answers
 //          WIFI_ARP_REPLY_WAIT_MS later.
 //   DNS  - does the broker host name resolve? Asynchronous lwIP lookup.
-// Supported on ESP32 (inside the tcpip thread) and on the ESP8266 NON-OS
-// core; on the ESP8266 RTOS core every probe reports "not supported".
+// Supported on the ESP8266 NON-OS core; on the RTOS core every probe reports
+// "not supported".
 //
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
-
 #include <Arduino.h>
 #include <IPAddress.h>
 #include <stdint.h>

@@ -1,5 +1,3 @@
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
-
 #include "TaskNetwork.h"
 
 #include <ArduinoJson.h>
@@ -23,13 +21,6 @@
 #include "TaskWatchdog.h"
 #include "define_All.h"
 
-#if defined(ESP32)
-#include "HighSpeedSampler.h"
-#include "HighSpeedUdpSender.h"
-#include "OtaUpdater.h"
-#include "WifiProvisioning.h"
-#endif
-
 namespace {
 
 // Wait before publishing again after a failed device-state publish.
@@ -40,9 +31,6 @@ enum class Role : uint8_t {
     Station,       // WifiMode::Station: MQTT, LAN API.
     SetupPortal,   // No valid mode stored: SETUP_PORTAL_AP_SSID, /setup first.
     WifiPage,      // WifiMode::ApPortal: WIFI_AP_SSID, /wifi.
-    BleProvision,  // ESP32 only.
-    SmartConfig,   // ESP32 only.
-    Ota,           // ESP32 only.
 };
 
 NetworkWifi wifi;
@@ -92,12 +80,6 @@ const char* roleName(Role value)
             return "station";
         case Role::WifiPage:
             return "Wi-Fi page";
-        case Role::BleProvision:
-            return "BLE provisioning";
-        case Role::SmartConfig:
-            return "SmartConfig";
-        case Role::Ota:
-            return "OTA";
         case Role::SetupPortal:
         default:
             return "setup portal";
@@ -111,20 +93,11 @@ Role readRole()
             return Role::Station;
         case WifiMode::ApPortal:
             return Role::WifiPage;
-#if defined(ESP32)
-        case WifiMode::BleProvision:
-            return Role::BleProvision;
-        case WifiMode::SmartConfig:
-            return Role::SmartConfig;
-        case WifiMode::Ota:
-            return Role::Ota;
-#else
         case WifiMode::BleProvision:
         case WifiMode::SmartConfig:
         case WifiMode::Ota:
-            DEVICE_LOG_WARNING("[Network] Stored Wi-Fi mode needs DeviceIOT (ESP32); opening the Wi-Fi page");
+            DEVICE_LOG_WARNING("[Network] Stored Wi-Fi mode is unsupported; opening the Wi-Fi page");
             return Role::WifiPage;
-#endif
         default:
             return Role::SetupPortal;
     }
@@ -147,14 +120,8 @@ void serviceNetworkButton(uint32_t nowMs)
     if (networkButton.update(nowMs) != ButtonInput::Event::Released) return;
     const uint32_t heldMs = networkButton.heldMs(nowMs);
     WifiMode next;
-    if (heldMs >= NETWORK_BUTTON_HOLD_OTA_MS) {
-        next = WifiMode::Ota;
-    } else if (heldMs >= NETWORK_BUTTON_HOLD_AP_PORTAL_MS) {
+    if (heldMs >= NETWORK_BUTTON_HOLD_AP_PORTAL_MS) {
         next = WifiMode::ApPortal;
-    } else if (heldMs >= NETWORK_BUTTON_HOLD_SMART_CONFIG_MS) {
-        next = WifiMode::SmartConfig;
-    } else if (heldMs >= NETWORK_BUTTON_HOLD_BLE_MS) {
-        next = WifiMode::BleProvision;
     } else {
         return;
     }
@@ -162,20 +129,6 @@ void serviceNetworkButton(uint32_t nowMs)
     DEVICE_LOGF_INFO("[Network] Button held %lu ms: Wi-Fi mode %u\n", static_cast<unsigned long>(heldMs),
                      static_cast<unsigned>(next));
     safe_restart::restart("network button");
-}
-#endif
-
-#if defined(ESP32)
-// WifiMode::Ota: one update attempt once online, then back to station mode.
-void runOtaOnce()
-{
-    static bool done = false;
-    if (done) return;
-    done = true;
-    ota_updater::updateIfNewer(OTA_VERSION_URL);
-    Memory::GetInstance()->writeByte(EEPROM_ADDR_WIFI_MODE, static_cast<uint8_t>(WifiMode::Station));
-    delay(WIFI_OTA_RESTART_DELAY_MS);
-    safe_restart::restart("OTA finished, back to station mode");
 }
 #endif
 
@@ -199,9 +152,6 @@ void collectTaskState()
 void onNewLease()
 {
     DEVICE_LOGF_INFO("[Network] Link up as %s (%s)\n", wifi.localIp().toString().c_str(), wifi.hostname());
-#if defined(ESP32)
-    high_speed_udp::rebind();
-#endif
     if (role == Role::Station) {
         mqtt.disconnect();
         mqttAttempted = false;
@@ -256,12 +206,6 @@ void serviceConnectivity(uint32_t nowMs)
 #ifdef NETWORK_CONFIG_BUTTON_PIN
     serviceNetworkButton(nowMs);
 #endif
-#if defined(ESP32)
-    if (role == Role::BleProvision || role == Role::SmartConfig) {
-        wifi_provisioning::service(nowMs);
-        return;
-    }
-#endif
     wifi.service(nowMs);
     const bool online = wifi.isOnline();
     if (online && wifi.linkGeneration() != socketLinkGeneration) {
@@ -271,13 +215,6 @@ void serviceConnectivity(uint32_t nowMs)
     if (online) {
         device_clock::startSync();
     }
-#if defined(ESP32)
-    wifi.pauseLinkChecks(HighSpeedSampler::GetInstance().isSamplingActive());
-    high_speed_udp::service(online);
-    if (role == Role::Ota && online) {
-        runOtaOnce();
-    }
-#endif
     serviceInternetHealth(nowMs);
 }
 
@@ -309,10 +246,6 @@ void serviceMqtt(uint32_t nowMs)
         // once the asynchronous DNS probe resolved the broker host, so the
         // connect does not wait for DNS and an unknown host costs nothing.
         bool connectAllowed = !link_probe::dnsSupported() || dnsHealth == link_probe::DnsState::Resolved;
-#if defined(ESP32)
-        // A running capture needs the task.
-        connectAllowed = connectAllowed && !HighSpeedSampler::GetInstance().isSamplingActive();
-#endif
         if (connectAllowed && (!mqttAttempted || nowMs - lastMqttAttemptMs >= MQTT_RETRY_INTERVAL_MS)) {
             mqttAttempted = true;
             lastMqttAttemptMs = nowMs;
@@ -421,11 +354,7 @@ void publishTelemetry(uint32_t nowMs)
 // Under SUPPORT_RTOS: time between two service() calls.
 uint32_t taskPeriodMs()
 {
-#if defined(ESP32)
-    return HighSpeedSampler::GetInstance().isSamplingActive() ? NETWORK_TASK_PERIOD_MS : NETWORK_TASK_IDLE_PERIOD_MS;
-#else
     return NETWORK_TASK_PERIOD_MS;
-#endif
 }
 
 }  // namespace
@@ -454,20 +383,9 @@ void TaskNetwork::setup()
                 brokerHost = readBrokerHost();
             }
             break;
-        case Role::Ota:
-            wifi.beginStation(nowMs);
-            break;
         case Role::WifiPage:
             wifi.beginAccessPoint(WIFI_AP_SSID, WIFI_AP_PASSWORD);
             break;
-#if defined(ESP32)
-        case Role::BleProvision:
-            wifi_provisioning::beginBle(nowMs);
-            break;
-        case Role::SmartConfig:
-            wifi_provisioning::beginSmartConfig(nowMs);
-            break;
-#endif
         case Role::SetupPortal:
         default:
             wifi.beginAccessPoint(SETUP_PORTAL_AP_SSID, SETUP_PORTAL_AP_PASSWORD);

@@ -3,8 +3,6 @@
 // Replies go to a ReplySink: the broker for MQTT, the HTTP response for LAN
 // control (docs/LanControl.md).
 //
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
-
 #include <string.h>
 
 #include "DebugInfo.h"
@@ -36,9 +34,6 @@ const CommandRoute kRoutes[] = {
     {COMMAND_TYPE_SCHEDULE_CLEAR, handleScheduleCommand},
     {COMMAND_TYPE_SCHEDULE_LIST, handleScheduleCommand},
     {COMMAND_TYPE_THRESHOLD, handleThresholdCommand},
-#if defined(ESP32)
-    {COMMAND_TYPE_HIGH_SPEED_CAPTURE, handleHighSpeedCommand},
-#endif
 };
 
 CommandHandler findHandler(long com)

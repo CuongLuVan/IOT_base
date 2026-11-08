@@ -26,17 +26,15 @@
 //
 // Multi-byte numbers are little-endian (low byte first).
 //
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
-
 #include <stdint.h>
 
 // Value stored at EEPROM_ADDR_WIFI_MODE: what the network task starts in.
 enum class WifiMode : uint8_t {
     Station = 1,       // Join the stored Wi-Fi, run MQTT / LAN.
-    BleProvision = 2,  // DeviceIOT (ESP32) only.
-    SmartConfig = 3,   // DeviceIOT (ESP32) only.
+    BleProvision = 2,  // Reserved legacy value, unsupported on ESP8266.
+    SmartConfig = 3,   // Reserved legacy value, unsupported on ESP8266.
     ApPortal = 4,      // Access point with the /setup and /wifi pages.
-    Ota = 5,           // DeviceIOT (ESP32) only: download the firmware, then Station.
+    Ota = 5,           // Reserved legacy value, unsupported on ESP8266.
 };
 
 #define EEPROM_ADDR_WIFI_MODE 1

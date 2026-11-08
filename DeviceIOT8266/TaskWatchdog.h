@@ -3,30 +3,23 @@
 // Task supervision for the long-running tasks.
 //
 //   begin()        once from setup(), before the tasks start: sets the task
-//                  watchdog timeout (ESP32: esp_task_wdt_reconfigure).
+//                  heartbeat timeout.
 //   add(slot)      from the task itself, once at its start: subscribes the
-//                  calling task to the task watchdog (ESP32) and starts its
-//                  heartbeat.
+//                  slot to heartbeat monitoring.
 //   reset(slot)    from the same task, every cycle and between long blocking
 //                  steps (TLS connect, DNS, flash writes).
-//   remove(slot)   from the same task before an operation that may legally
-//                  block longer than TASK_WATCHDOG_TIMEOUT_MS (OTA download,
-//                  provisioning), then add(slot) again afterwards.
+//   remove(slot)   from the same task before a long operation, then add(slot)
+//                  again afterwards.
 //   restartIfStalled()  from a supervising task (SystemTask, TaskDevice):
 //                  restarts the device when a subscribed slot has not called
 //                  reset() for TASK_HEARTBEAT_TIMEOUT_MS.
 //   restartOnFatal(what)  logs and restarts (Memory::restartSafely()), e.g.
 //                  when xTaskCreate fails.
 //
-// ESP32: the task watchdog panics (and restarts) a subscribed task that stops
-// calling reset(); the heartbeat is a second, logged check.
-// ESP8266 RTOS core: there is no per-task watchdog API, so the heartbeat is
-// the only hang detection.
+// ESP8266 RTOS core: the heartbeat detects tasks that stop calling reset().
 // ESP8266 NON-OS core: every module runs from loop(); the hardware and soft
 // watchdogs are fed by yield()/delay(), so all calls are no-ops.
 //
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
-
 #include <Arduino.h>
 #include <stdint.h>
 
@@ -35,13 +28,6 @@
 #include "Sync.h"
 #include "define_All.h"
 
-#if SUPPORT_RTOS && defined(ESP32)
-#include <esp_task_wdt.h>
-#endif
-
-#ifndef TASK_WATCHDOG_TIMEOUT_MS
-#define TASK_WATCHDOG_TIMEOUT_MS 20000UL
-#endif
 #ifndef TASK_HEARTBEAT_TIMEOUT_MS
 #define TASK_HEARTBEAT_TIMEOUT_MS 30000UL
 #endif
@@ -94,18 +80,6 @@ inline SlotState* slotState(Slot slot)
 
 inline void begin()
 {
-#if defined(ESP32)
-    esp_task_wdt_config_t config = {};
-    config.timeout_ms = TASK_WATCHDOG_TIMEOUT_MS;
-    // Keep the core configuration: idle task of CPU0 only.
-    config.idle_core_mask = 1U << 0;
-    config.trigger_panic = true;
-    esp_err_t result = esp_task_wdt_reconfigure(&config);
-    if (result == ESP_ERR_INVALID_STATE) result = esp_task_wdt_init(&config);
-    if (result != ESP_OK) {
-        DEVICE_LOGF_ERROR("[WDT] task watchdog setup failed: %d\n", static_cast<int>(result));
-    }
-#endif
 }
 
 inline void add(Slot slot)
@@ -114,12 +88,6 @@ inline void add(Slot slot)
     if (state == nullptr) return;
     state->lastBeatMs.store(millis());
     if (state->active.exchange(1) != 0) return;
-#if defined(ESP32)
-    const esp_err_t result = esp_task_wdt_add(nullptr);
-    if (result != ESP_OK && result != ESP_ERR_INVALID_ARG) {
-        DEVICE_LOGF_WARNING("[WDT] %s not subscribed: %d\n", slotName(slot), static_cast<int>(result));
-    }
-#endif
 }
 
 inline void reset(Slot slot)
@@ -127,18 +95,12 @@ inline void reset(Slot slot)
     detail::SlotState* state = detail::slotState(slot);
     if (state == nullptr || state->active.load() == 0) return;
     state->lastBeatMs.store(millis());
-#if defined(ESP32)
-    esp_task_wdt_reset();
-#endif
 }
 
 inline void remove(Slot slot)
 {
     detail::SlotState* state = detail::slotState(slot);
     if (state == nullptr || state->active.exchange(0) == 0) return;
-#if defined(ESP32)
-    esp_task_wdt_delete(nullptr);
-#endif
 }
 
 // Milliseconds since the slot's last reset(), 0 when it is not subscribed.

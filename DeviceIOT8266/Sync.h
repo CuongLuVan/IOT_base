@@ -2,15 +2,13 @@
 
 // Platform layer for state shared between tasks. One implementation for both
 // firmwares, selected by SUPPORT_RTOS:
-//   SUPPORT_RTOS 1 (ESP32, ESP8266 RTOS core): FreeRTOS mutex / queue and a
+//   SUPPORT_RTOS 1 (ESP8266 RTOS core): FreeRTOS mutex / queue and a
 //                  critical section for the small atomic types.
 //   SUPPORT_RTOS 0 (ESP8266 NON-OS core): every module runs from loop(), so
 //                  locks are no-ops and the queue is a ring buffer.
 // The small atomic types use a critical section rather than std::atomic: the
 // lx106 has no atomic instructions and its core lacks __atomic_* helpers.
 //
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
-
 #include <Arduino.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -37,31 +35,19 @@ inline TickType_t timeoutTicks(uint32_t timeoutMs)
 }
 #endif
 
-#if SUPPORT_RTOS && defined(ESP32)
-inline portMUX_TYPE& criticalMux()
-{
-    static portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
-    return mux;
-}
-#endif
-
 // Very short sections only (a few loads / stores).
 class CriticalSection {
 public:
     CriticalSection()
     {
-#if SUPPORT_RTOS && defined(ESP32)
-        portENTER_CRITICAL(&criticalMux());
-#elif SUPPORT_RTOS
+#if SUPPORT_RTOS
         taskENTER_CRITICAL();
 #endif
     }
 
     ~CriticalSection()
     {
-#if SUPPORT_RTOS && defined(ESP32)
-        portEXIT_CRITICAL(&criticalMux());
-#elif SUPPORT_RTOS
+#if SUPPORT_RTOS
         taskEXIT_CRITICAL();
 #endif
     }

@@ -1,7 +1,7 @@
 #pragma once
 
 // EEPROM-compatible RAM copy stored in NVS, for the esp8266RTOS core (it has
-// no EEPROM library). Same behaviour as the ESP32 EEPROM library: one blob
+// no EEPROM library). Same EEPROM-compatible behavior: one blob
 // "eeprom" in namespace "eeprom"; write() marks the copy dirty only when a
 // byte changes and commit() rewrites the blob only when dirty. NVS writes are
 // atomic, so a reset during commit() keeps the previous copy.

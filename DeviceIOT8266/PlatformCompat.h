@@ -1,22 +1,14 @@
 #pragma once
 
-// The few APIs that differ between the supported cores:
-//   ESP32:                          Arduino-ESP32 (always FreeRTOS)
-//   ESP8266, SUPPORT_RTOS == 0:     official esp8266/Arduino (NON-OS SDK)
-//   ESP8266, SUPPORT_RTOS == 1:     alexCajas/esp8266RTOSArduCore (FreeRTOS)
+// APIs shared by the supported ESP8266 cores:
+//   SUPPORT_RTOS == 0: official esp8266/Arduino (NON-OS SDK)
+//   SUPPORT_RTOS == 1: alexCajas/esp8266RTOSArduCore (FreeRTOS)
 //
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
-
 #include <Arduino.h>
 
 #include "define_All.h"
 
-#if defined(ESP32)
-#include <WebServer.h>
-#include <WiFi.h>
-#include <esp_system.h>
-using DeviceWebServerBase = WebServer;
-#elif ESP8266_NONOS_CORE
+#if ESP8266_NONOS_CORE
 #include <ESP8266WebServer.h>
 #include <ESP8266WiFi.h>
 extern "C" {
@@ -46,7 +38,7 @@ public:
         maxBodyLength_ = length;
     }
 
-    // Replaces the core handleClient() (virtual on ESP32 and the RTOS core).
+    // Replaces the core handleClient().
     void handleClient();
 
 private:

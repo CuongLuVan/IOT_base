@@ -1,4 +1,4 @@
-// Start-up and scheduling. DeviceIOT.ino and DeviceIOT8266.ino are identical.
+// ESP8266 start-up and scheduling.
 
 #include "DebugInfo.h"
 #include "Memory.h"
@@ -17,20 +17,11 @@
 #if SUPPORT_RTOS
 namespace {
 
-// ESP32: Wi-Fi runs on core 0, so the sensor sampling gets core 1.
-constexpr BaseType_t kNetworkCore = 0;
-constexpr BaseType_t kSensorCore = 1;
-
 bool createTask(TaskFunction_t entry, const char* name, uint32_t stackSize, UBaseType_t priority,
-                task_watchdog::Slot slot, BaseType_t core)
+                task_watchdog::Slot slot)
 {
     TaskHandle_t handle = nullptr;
-#if defined(ESP32)
-    const BaseType_t created = xTaskCreatePinnedToCore(entry, name, stackSize, nullptr, priority, &handle, core);
-#else
-    (void)core;
     const BaseType_t created = xTaskCreate(entry, name, stackSize, nullptr, priority, &handle);
-#endif
     if (created != pdPASS) {
         DEVICE_LOGF_ERROR("[Boot] Cannot create task %s\n", name);
         return false;
@@ -61,13 +52,13 @@ void setup()
     task_watchdog::begin();
     bool started = true;
     started = started && createTask(TaskDevice::taskRun, "TaskDevice", TASK_STACK_SIZE, TASK_DEVICE_PRIORITY,
-                                    task_watchdog::Slot::Device, kNetworkCore);
+                                    task_watchdog::Slot::Device);
     started = started && createTask(TaskSensor::taskRun, "TaskSensor", TASK_STACK_SIZE, TASK_SENSOR_PRIORITY,
-                                    task_watchdog::Slot::Sensor, kSensorCore);
+                                    task_watchdog::Slot::Sensor);
     started = started && createTask(TaskNetwork::taskRun, "TaskNetwork", TASK_NETWORK_STACK_SIZE,
-                                    TASK_NETWORK_PRIORITY, task_watchdog::Slot::Network, kNetworkCore);
+                                    TASK_NETWORK_PRIORITY, task_watchdog::Slot::Network);
     started = started && createTask(SystemTask::taskRun, "SystemTask", TASK_SYSTEM_STACK_SIZE, TASK_SYSTEM_PRIORITY,
-                                    task_watchdog::Slot::System, kNetworkCore);
+                                    task_watchdog::Slot::System);
     // A device without one of its tasks accepts commands it never applies.
     if (!started) task_watchdog::restartOnFatal("task creation failed");
 #elif defined(ESP8266)

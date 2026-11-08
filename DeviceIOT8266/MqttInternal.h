@@ -8,11 +8,8 @@
 //   CommandDispatcher.cpp  MQTT callback, LAN entry, command password, route table
 //   CommandHandlers.cpp    com 1, 2, 4, 5, 7, 8..13, 14
 //   StatusReport.cpp       status report and short replies
-//   HighSpeedCommand.cpp   com 15 (DeviceIOT only)
 // Platform differences (TLS client, HMAC backend, random) are in MqttPlatform.h.
 //
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
-
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <stddef.h>
@@ -119,9 +116,6 @@ void handleOnTimerCommand(const CommandContext& context);
 void handleHandshakeCommand(const CommandContext& context);
 void handleScheduleCommand(const CommandContext& context);
 void handleThresholdCommand(const CommandContext& context);
-#if defined(ESP32)
-void handleHighSpeedCommand(const CommandContext& context);
-#endif
 
 namespace status {
 // The full status report. replyTo 0 = unsolicited (no "rc" / "rs"); id > 0

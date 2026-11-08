@@ -5,8 +5,6 @@
 // CommandResult.h: 0 ok, 1 conflict, 2 invalid, 3 not found, 4 id exists,
 // 5 not ready, 6 wrong password, 7 busy).
 //
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
-
 #include <stdint.h>
 
 enum CommandType : uint8_t {
@@ -33,10 +31,6 @@ enum CommandType : uint8_t {
     COMMAND_TYPE_SCHEDULE_LIST = 13,
     // {"com":14,"id":1|2,"value":N}: sensor threshold rule (ThresholdControl.h).
     COMMAND_TYPE_THRESHOLD = 14,
-    // {"com":15,"value":<ms>,"mode":1..4,"udp_host":"..","udp_port":n}: high-speed
-    // capture, DeviceIOT (ESP32) only. value 0 = stop, no value = read state.
-    // Reply {"rc":15,"rs":n,"act":0|1}.
-    COMMAND_TYPE_HIGH_SPEED_CAPTURE = 15,
 };
 
 // Valid "com" range on the wire; anything else is rejected with rs=2.

@@ -1,5 +1,3 @@
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
-
 #include "ScheduleEngine.h"
 
 #include <string.h>
@@ -9,10 +7,6 @@
 #include "Memory.h"
 #include "Sync.h"
 #include "define_All.h"
-
-#if defined(ESP32)
-#include <esp_attr.h>
-#endif
 
 namespace {
 
@@ -41,10 +35,9 @@ bool ready = false;
 // SystemTask only; -1 until the clock is valid.
 int64_t lastEvaluatedMinute = -1;
 
-// The last evaluated minute survives a software restart (watchdog, panic,
-// restart command) in RTC memory, so a restart inside the minute a schedule
-// ran does not run it again. After a power-on the RTC memory is invalid and
-// the current minute is evaluated.
+// The NON-OS core persists the last evaluated minute in RTC memory, so a
+// software restart does not run a schedule twice in the same minute. On a
+// power-on, or on the RTOS core, the current minute is evaluated.
 struct PersistedMinute {
     uint32_t magic;
     uint32_t low;
@@ -58,9 +51,7 @@ uint32_t persistedCheck(const PersistedMinute& value)
     return value.magic ^ value.low ^ ~value.high ^ 0xA5A5A5A5UL;
 }
 
-#if defined(ESP32)
-RTC_NOINIT_ATTR PersistedMinute rtcMinute;
-#elif defined(ESP8266) && ESP8266_NONOS_CORE
+#if defined(ESP8266) && ESP8266_NONOS_CORE
 // RTC user memory block (4 bytes each); blocks 0..31 hold the OTA (eboot) command.
 constexpr uint32_t kRtcMinuteBlock = 96;
 #endif
@@ -70,9 +61,7 @@ void savePersistedMinute(int64_t minute)
     PersistedMinute value = {kPersistedMagic, static_cast<uint32_t>(static_cast<uint64_t>(minute)),
                              static_cast<uint32_t>(static_cast<uint64_t>(minute) >> 32), 0};
     value.check = persistedCheck(value);
-#if defined(ESP32)
-    rtcMinute = value;
-#elif defined(ESP8266) && ESP8266_NONOS_CORE
+#if defined(ESP8266) && ESP8266_NONOS_CORE
     (void)ESP.rtcUserMemoryWrite(kRtcMinuteBlock, reinterpret_cast<uint32_t*>(&value), sizeof(value));
 #else
     (void)value;
@@ -83,9 +72,7 @@ void savePersistedMinute(int64_t minute)
 int64_t loadPersistedMinute()
 {
     PersistedMinute value = {};
-#if defined(ESP32)
-    value = rtcMinute;
-#elif defined(ESP8266) && ESP8266_NONOS_CORE
+#if defined(ESP8266) && ESP8266_NONOS_CORE
     if (!ESP.rtcUserMemoryRead(kRtcMinuteBlock, reinterpret_cast<uint32_t*>(&value), sizeof(value))) return -1;
 #endif
     if (value.magic != kPersistedMagic || value.check != persistedCheck(value)) return -1;

@@ -4,8 +4,6 @@
 // of the setup pages, and the link-health checks (docs/Connectivity.md).
 // Call every method from the network task.
 //
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
-
 #include <Arduino.h>
 #include <IPAddress.h>
 #include <stdint.h>
@@ -33,10 +31,6 @@ public:
     // backoffLevel > 0 first waits like after that many failed attempts.
     void requestReconnect(const char* reason, uint32_t backoffLevel);
     void disconnectWifi();
-    // No new ARP check starts while paused (a check flushes the ARP cache,
-    // which would cost a running high-speed capture datagrams).
-    void pauseLinkChecks(bool paused);
-
     LinkState linkState() const;
     static const char* linkStateName(LinkState state);
     bool isOnline() const;
@@ -104,5 +98,4 @@ private:
     uint32_t conflictStreak_ = 0;
     uint32_t conflicts_ = 0;
     bool gatewayOk_ = false;
-    bool checksPaused_ = false;
 };

@@ -1,5 +1,3 @@
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
-
 #include "NetworkWifi.h"
 
 #include "DebugInfo.h"
@@ -10,14 +8,10 @@
 #include "Sync.h"
 #include "define_All.h"
 
-#if defined(ESP32)
-#include <esp_mac.h>
-#endif
-
 namespace {
 
-// Written by the Wi-Fi event handlers (the Arduino event task on ESP32), read
-// by the network task. The handlers only count and record; the network task
+// Written by the Wi-Fi event handlers, read by the network task. The handlers
+// only count and record; the network task
 // acts on the changes.
 platform_sync::AtomicU32 connectedEvents;
 platform_sync::AtomicU32 disconnectedEvents;
@@ -28,36 +22,7 @@ platform_sync::AtomicU32 disconnectReason;
 // Reason the station itself sends when it leaves (WIFI_REASON_ASSOC_LEAVE).
 constexpr uint32_t kReasonOwnLeave = 8;
 
-#if defined(ESP32)
-void onWifiEvent(arduino_event_id_t event, arduino_event_info_t info)
-{
-    switch (event) {
-        case ARDUINO_EVENT_WIFI_STA_CONNECTED:
-            connectedEvents.fetchAdd(1);
-            break;
-        case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-            disconnectReason.store(info.wifi_sta_disconnected.reason);
-            disconnectedEvents.fetchAdd(1);
-            break;
-        case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-            gotIpEvents.fetchAdd(1);
-            break;
-        case ARDUINO_EVENT_WIFI_STA_LOST_IP:
-            lostIpEvents.fetchAdd(1);
-            break;
-        default:
-            break;
-    }
-}
-
-void registerEventHandlers()
-{
-    static bool registered = false;
-    if (registered) return;
-    WiFi.onEvent(onWifiEvent);
-    registered = true;
-}
-#elif ESP8266_NONOS_CORE
+#if ESP8266_NONOS_CORE
 WiFiEventHandler connectedHandler;
 WiFiEventHandler disconnectedHandler;
 WiFiEventHandler gotIpHandler;
@@ -81,7 +46,7 @@ void registerEventHandlers()
     });
 }
 #else
-// ESP8266 RTOS core: no event handlers; the state machine polls WiFi.status().
+// The RTOS core has no event handlers; the state machine polls WiFi.status().
 void registerEventHandlers() {}
 #endif
 
@@ -105,11 +70,7 @@ uint32_t backoffDelayMs(uint32_t level)
 void formatHostname(char* out, size_t size)
 {
     uint8_t mac[6] = {};
-#if defined(ESP32)
-    esp_read_mac(mac, ESP_MAC_WIFI_STA);
-#else
     WiFi.macAddress(mac);
-#endif
     snprintf(out, size, "%s%02x%02x%02x", DEVICE_HOSTNAME_PREFIX, mac[3], mac[4], mac[5]);
 }
 
@@ -148,11 +109,7 @@ void NetworkWifi::beginAccessPoint(const char* ssid, const char* password)
 void NetworkWifi::applyRadioMode()
 {
     WiFi.persistent(false);
-#if defined(ESP32)
-    WiFi.setHostname(hostname_);
-    WiFi.mode(portalActive_ ? WIFI_AP_STA : WIFI_STA);
-    WiFi.setSleep(false);
-#elif ESP8266_NONOS_CORE
+#if ESP8266_NONOS_CORE
     WiFi.mode(portalActive_ ? WIFI_AP_STA : WIFI_STA);
     WiFi.hostname(hostname_);
     WiFi.setSleepMode(WIFI_NONE_SLEEP);
@@ -286,11 +243,6 @@ void NetworkWifi::disconnectWifi()
     enterState(LinkState::Off, millis());
 }
 
-void NetworkWifi::pauseLinkChecks(bool paused)
-{
-    checksPaused_ = paused;
-}
-
 void NetworkWifi::processEvents(uint32_t nowMs)
 {
     const uint32_t disconnected = disconnectedEvents.load();
@@ -392,7 +344,7 @@ void NetworkWifi::serviceLinkChecks(uint32_t nowMs)
 {
     if (!link_probe::arpSupported()) return;
     if (checkPhase_ == CheckPhase::Idle) {
-        if (checksPaused_ || nowMs - checkPhaseSinceMs_ < nextCheckDelayMs_) return;
+        if (nowMs - checkPhaseSinceMs_ < nextCheckDelayMs_) return;
         checkPhaseSinceMs_ = nowMs;
         if (link_probe::startArp(WiFi.localIP(), WiFi.gatewayIP())) {
             checkPhase_ = CheckPhase::WaitingForArp;
