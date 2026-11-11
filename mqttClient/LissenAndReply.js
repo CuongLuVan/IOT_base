@@ -92,6 +92,14 @@ client.on('message', function (topic, message,packet) {
     // Keep non-JSON MQTT payloads as strings.
   }
 
+  // {"co":6,"va":"<digits>"}: ASCON key announcement of old firmware (sent
+  // unencrypted). The digits select the session key, so the message is not
+  // stored (the raw packet would keep them too).
+  if (parsedPayload && typeof parsedPayload === 'object' &&
+      typeof parsedPayload.co === 'number' && parsedPayload.va !== undefined) {
+    return;
+  }
+
   blocks[activeBlock].memory.push({
     topic: topic.toString('utf-8'),
     content: {
