@@ -3,6 +3,8 @@ const WarningInfo = require("../config/warningInfo.js");
 const {returnFalse, returnOKCustom} = require('../utils/returnResponse.js');
 const deviceStatus = require('../services/mqtt/deviceStatusService.js');
 const deviceSchedule = require('../services/mqtt/deviceScheduleService.js');
+const { writeAudit } = require('../services/roomIotAudit.js');
+const roomController = require('./room.controller.js');
 
 // Devices added from the Wi-Fi setup page (View/mqtt/device-wifi.ejs).
 // One active mqtt_microservice row per (account, mqtt_pub, mqtt_sub);
@@ -16,6 +18,20 @@ var mqttDeviceCtrl = {};
 // part of the key ("admin_3" and "customer_3" are different accounts).
 function getAccountKey(req) {
     return req.auth.type + "_" + req.currentUser.users_id;
+}
+
+async function authorizeRoomOperator(req, mqttMicroserviceId) {
+    const linked = await knex('devices').where({mqtt_microservice_id: mqttMicroserviceId, status: 'ACTIVE', deleteflag: 0}).first('room_id');
+    if (!linked) return true;
+    const permission = await roomController.canOperateRoom(req, linked.room_id);
+    return permission.allowed;
+}
+
+async function authorizeRoomManager(req, mqttMicroserviceId) {
+    const linked = await knex('devices').where({mqtt_microservice_id: mqttMicroserviceId, status: 'ACTIVE', deleteflag: 0}).first('room_id');
+    if (!linked) return true;
+    const permission = await roomController.canManageRoom(req, linked.room_id);
+    return permission.allowed;
 }
 
 function readField(body, field, required) {
@@ -64,6 +80,16 @@ mqttDeviceCtrl.registerDevice = async function(req, res) {
     const userId = req.currentUser.users_id;
     try {
         const result = await knex.transaction(async function(trx) {
+            // Device history is stored per topic only (MongoDB), so one
+            // mqtt_pub must belong to a single account across the system.
+            const taken = await trx(TABLE)
+                .where({mqtt_pub: device.mqtt_pub, deleteflag: 0})
+                .whereNot({mqtt_user: owner})
+                .forUpdate()
+                .first();
+            if (taken) {
+                return {conflict: true};
+            }
             const existing = await trx(TABLE)
                 .where({mqtt_user: owner, mqtt_pub: device.mqtt_pub, mqtt_sub: device.mqtt_sub, deleteflag: 0})
                 .forUpdate()
@@ -100,6 +126,9 @@ mqttDeviceCtrl.registerDevice = async function(req, res) {
             });
             return {action: "created", mqtt_microservice_id: inserted[0]};
         });
+        if (result.conflict) {
+            return res.status(409).json({error: "mqtt_pub is already used by another device.", error_code: WarningInfo.ERROR_SERVER});
+        }
         returnOKCustom(res, Object.assign(result, {
             mqtt_id: device.mqtt_id,
             mqtt_pub: device.mqtt_pub,
@@ -131,6 +160,7 @@ mqttDeviceCtrl.deleteDevice = async function(req, res) {
         return returnBadRequest(res, "mqtt_microservice_id is required.");
     }
     try {
+        if (!(await authorizeRoomManager(req, id))) return res.status(403).json({error: 'Room manager role required.'});
         const updated = await knex(TABLE)
             .where({mqtt_microservice_id: id, mqtt_user: getAccountKey(req), deleteflag: 0})
             .update({
@@ -201,16 +231,68 @@ mqttDeviceCtrl.controlDevice = async function(req, res) {
     if (!Number.isInteger(value) || value < 0 || value > 3) {
         return returnBadRequest(res, "value must be an integer from 0 to 3.");
     }
+    let commandId = null;
+    let roomDeviceId = null;
     try {
         const device = await findOwnDevice(req, id);
         if (!device) {
             return res.status(404).json({error: "Device not found.", error_code: WarningInfo.ERROR_SERVER});
         }
+        const assignedRoomDevice = await knex('devices').where({mqtt_microservice_id: id, deleteflag: 0, status: 'ACTIVE'}).first();
+        if (assignedRoomDevice) {
+            const access = await roomController.canOperateRoom(req, assignedRoomDevice.room_id);
+            if (!access.allowed) return res.status(403).json({error: 'Room operator role required.'});
+            const capabilities = await knex('actuators').where({device_id: assignedRoomDevice.device_id, deleteflag: 0, status: 'ACTIVE'}).select('channel_number');
+            const supportedMask = capabilities.reduce((mask, actuator) => {
+                const channel = Number(actuator.channel_number);
+                return Number.isInteger(channel) && channel >= 1 && channel <= 2 ? mask | (1 << (channel - 1)) : mask;
+            }, 0);
+            if (!capabilities.length || supportedMask !== 3 || (value & ~supportedMask) !== 0) {
+                return res.status(403).json({error: 'Command exceeds the active actuator capabilities registered for this device.'});
+            }
+        }
+        try {
+            const roomDevice = await knex('devices').where({mqtt_microservice_id: id, deleteflag: 0, status: 'ACTIVE'}).first();
+            if (roomDevice) {
+                roomDeviceId = roomDevice.device_id;
+                const inserted = await knex('device_commands').insert({
+                    device_id: roomDevice.device_id,
+                    command_type: 'OUTPUT_SET',
+                    payload: JSON.stringify({value}),
+                    status: 'PENDING',
+                    issued_at: knex.fn.now(),
+                    requested_by: req.currentUser.users_id,
+                    requested_by_type: req.auth.type,
+                    created_at: knex.fn.now(),
+                    id_created: req.currentUser.users_id,
+                    created_by: req.currentUser.users_id,
+                    created_by_type: req.auth.type,
+                    deleteflag: 0,
+                    oldid: null,
+                });
+                commandId = inserted[0];
+            }
+        } catch (historyError) {
+            console.warn('Unable to create room device command history:', historyError.message);
+        }
         await deviceStatus.ensureConnected();
         await deviceStatus.watch(device.mqtt_pub);
         await deviceStatus.control(device, value);
-        returnOKCustom(res, {mqtt_microservice_id: id, value, sent: true});
+        if (commandId) {
+            await knex('device_commands').where({command_id: commandId}).update({
+                status: 'SENT', result: JSON.stringify({sent: true}), updated_at: knex.fn.now(), id_updated: req.currentUser.users_id,
+            }).catch((historyError) => console.warn('Unable to update command history:', historyError.message));
+            await writeAudit(req, 'COMMAND_SENT', 'device_command', commandId, null, {device_id: roomDeviceId, value})
+                .catch((historyError) => console.warn('Unable to write command audit:', historyError.message));
+        }
+        returnOKCustom(res, {mqtt_microservice_id: id, value, sent: true, command_id: commandId});
     } catch (error) {
+        if (commandId) {
+            await knex('device_commands').where({command_id: commandId}).update({
+                status: 'FAILED', result: JSON.stringify({error: error.message}), completed_at: knex.fn.now(),
+                updated_at: knex.fn.now(), id_updated: req.currentUser.users_id,
+            }).catch((historyError) => console.warn('Unable to update failed command history:', historyError.message));
+        }
         if (error.status === 400) {
             return returnBadRequest(res, error.message);
         }
@@ -347,6 +429,7 @@ mqttDeviceCtrl.sendScheduleCommand = async function(req, res) {
     try {
         const device = await prepareScheduleDevice(req, res);
         if (!device) return;
+        if (!(await authorizeRoomOperator(req, device.mqtt_microservice_id))) return res.status(403).json({error: 'Room operator role required.'});
         // The reply is the device's status report, so "set" is already updated.
         const ack = await deviceSchedule.send(device, command);
         returnOKCustom(res, Object.assign({mqtt_microservice_id: device.mqtt_microservice_id, cmd: req.body.cmd, id: command.id || 0}, ack));
@@ -373,6 +456,7 @@ mqttDeviceCtrl.onTimerCommand = async function(req, res) {
     try {
         const device = await prepareScheduleDevice(req, res);
         if (!device) return;
+        if (command.value != null && !(await authorizeRoomOperator(req, device.mqtt_microservice_id))) return res.status(403).json({error: 'Room operator role required.'});
         // The reply is the device's status report ("tim"), also kept by the status service.
         const ack = await deviceSchedule.onTimer(device, command);
         returnOKCustom(res, Object.assign({mqtt_microservice_id: device.mqtt_microservice_id}, ack));
@@ -403,6 +487,7 @@ mqttDeviceCtrl.countdownCommand = async function(req, res) {
     try {
         const device = await prepareScheduleDevice(req, res);
         if (!device) return;
+        if (command.value != null && !(await authorizeRoomOperator(req, device.mqtt_microservice_id))) return res.status(403).json({error: 'Room operator role required.'});
         const ack = await deviceSchedule.countdown(device, command);
         returnOKCustom(res, Object.assign({mqtt_microservice_id: device.mqtt_microservice_id}, ack));
     } catch (error) {
@@ -431,6 +516,7 @@ mqttDeviceCtrl.thresholdCommand = async function(req, res) {
     try {
         const device = await prepareScheduleDevice(req, res);
         if (!device) return;
+        if (command.value != null && !(await authorizeRoomOperator(req, device.mqtt_microservice_id))) return res.status(403).json({error: 'Room operator role required.'});
         const ack = await deviceSchedule.threshold(device, command);
         returnOKCustom(res, Object.assign({mqtt_microservice_id: device.mqtt_microservice_id}, ack));
     } catch (error) {

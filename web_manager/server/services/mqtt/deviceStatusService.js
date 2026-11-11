@@ -57,7 +57,7 @@ mqttService.on('message', (item) => {
     return;
   }
   const previous = statuses.get(item.topic);
-  if (data.va === undefined && data.co === undefined) return;
+  if (data.va === undefined && data.co === undefined && data.rc === undefined) return;
   // Status messages the device sends on its own (e.g. after a button press)
   // and the reply to com:1 carry no "set"/"tim"; keep the values of the last full report.
   const settings = Array.isArray(data.set) ? data.set : previous ? previous.settings : null;
@@ -72,7 +72,7 @@ mqttService.on('message', (item) => {
   }
   const ip = isLanIp(data.ip) ? data.ip : previous ? previous.ip : null;
   const thresholds = isThresholdList(data.th) ? data.th : previous ? previous.thresholds : null;
-  statuses.set(item.topic, { data, settings, onTimer, countdown, ip, thresholds, receivedAt: item.time });
+  statuses.set(item.topic, { data: Object.assign({}, previous && previous.data, data), settings, onTimer, countdown, ip, thresholds, receivedAt: item.time });
 });
 
 // "th": the device's two threshold rules, each a 4-byte value (0 = empty).
@@ -231,6 +231,8 @@ function describeStatus(entry) {
   ];
   const port = Number.isInteger(co[0]) ? co[0] : null;
   return {
+    rc: Number.isInteger(entry.data.rc) ? entry.data.rc : null,
+    rs: Number.isInteger(entry.data.rs) ? entry.data.rs : null,
     model: esp32 ? 'DeviceIOT' : 'DeviceIOT8266',
     channels: esp32 ? 2 : 1,
     port,

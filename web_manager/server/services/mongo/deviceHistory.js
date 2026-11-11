@@ -10,13 +10,30 @@ const { getCollection } = require('./mongoClient.js');
  * kỳ không có gì thay đổi bị bỏ qua. Trạng thái quay lại giá trị cũ sau một
  * thay đổi vẫn được tính (A, B, A).
  *
- * Nên có index { topic: 1, time: -1 } trên collection, nếu không mỗi truy
- * vấn phải quét và sắp xếp toàn bộ bản tin của collection.
+ * Index { topic: 1, time: -1 } được tạo ở lần truy vấn đầu tiên (getSourceCollection),
+ * nếu không mỗi truy vấn phải quét và sắp xếp toàn bộ bản tin của collection.
  */
 const SOURCE = Object.freeze({
   database: process.env.MONGODB_DB || 'iot',
   collection: process.env.MONGODB_DEVICE_COLLECTION || 'sensor_data',
 });
+// Thời gian tối đa của một truy vấn MongoDB (ms); quá hạn MongoDB tự hủy truy vấn.
+const QUERY_TIMEOUT_MS = Number(process.env.DEVICE_HISTORY_MAX_TIME_MS || 20000);
+const TOPIC_TIME_INDEX = Object.freeze({ topic: 1, time: -1 });
+let indexReady = null;
+
+// Collection nguồn, bảo đảm có index { topic: 1, time: -1 } (tạo một lần, lỗi thì thử lại lần sau).
+async function getSourceCollection() {
+  const collection = await getCollection(SOURCE);
+  if (!indexReady) {
+    indexReady = collection.createIndex(TOPIC_TIME_INDEX).catch((error) => {
+      indexReady = null;
+      console.error('Could not create index { topic: 1, time: -1 } on ' + SOURCE.collection + ':', error.message);
+    });
+  }
+  await indexReady;
+  return collection;
+}
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
 // Upper bound of documents read for one request (many identical messages in a row).
@@ -74,7 +91,7 @@ function readLimit(value) {
 
 // The newest distinct states published on topic.
 async function getDeviceHistory(topic, limit = DEFAULT_LIMIT) {
-  const collection = await getCollection(SOURCE);
+  const collection = await getSourceCollection();
   const cursor = collection
     .find(
       { topic, $or: [{ 'content.payload.va': { $exists: true } }, { 'content.payload.co': { $exists: true } }] },
@@ -82,7 +99,8 @@ async function getDeviceHistory(topic, limit = DEFAULT_LIMIT) {
     )
     .sort({ time: -1 })
     .limit(MAX_SCAN)
-    .batchSize(BATCH_SIZE);
+    .batchSize(BATCH_SIZE)
+    .maxTimeMS(QUERY_TIMEOUT_MS);
   try {
     return await collectDistinct(cursor, limit);
   } finally {
@@ -303,19 +321,20 @@ async function countSwitches(documents, { keys, keyOf, baselinePort = null }) {
 
 // period: kết quả readPeriod(). Nên có index { topic: 1, time: -1 }.
 async function getSwitchStats(topic, period = { groupBy: 'day', count: DEFAULT_DAYS }, now = Date.now()) {
-  const collection = await getCollection(SOURCE);
+  const collection = await getSourceCollection();
   const { start, end, keys, keyOf } = buildBuckets(now, period);
   const portFilter = { topic, 'content.payload.co': { $type: 'string' } };
   const projection = { _id: 0, time: 1, 'content.payload.co': 1 };
   const before = await collection.findOne(
     Object.assign({}, portFilter, { time: { $lt: start } }),
-    { projection, sort: { time: -1 } },
+    { projection, sort: { time: -1 }, maxTimeMS: QUERY_TIMEOUT_MS },
   );
   const cursor = collection
     .find(Object.assign({}, portFilter, { time: { $gte: start, $lte: end } }), { projection })
     .sort({ time: 1 })
     .limit(MAX_STATS_SCAN)
-    .batchSize(STATS_BATCH_SIZE);
+    .batchSize(STATS_BATCH_SIZE)
+    .maxTimeMS(QUERY_TIMEOUT_MS);
   try {
     const stats = await countSwitches(cursor, {
       keys,
@@ -453,7 +472,7 @@ function sensorBuckets(now, period) {
 
 // period: kết quả readPeriod(). Nên có index { topic: 1, time: -1 }.
 async function getSensorData(topic, period = { groupBy: 'day', count: DEFAULT_DAYS }, now = Date.now()) {
-  const collection = await getCollection(SOURCE);
+  const collection = await getSourceCollection();
   const { start, end, bucketMs, bucketOf } = sensorBuckets(now, period);
   const cursor = collection
     .find(
@@ -462,7 +481,8 @@ async function getSensorData(topic, period = { groupBy: 'day', count: DEFAULT_DA
     )
     .sort({ time: 1 })
     .limit(MAX_SENSOR_SCAN)
-    .batchSize(STATS_BATCH_SIZE);
+    .batchSize(STATS_BATCH_SIZE)
+    .maxTimeMS(QUERY_TIMEOUT_MS);
   try {
     const data = await collectSensorPoints(cursor, { bucketOf });
     return Object.assign({

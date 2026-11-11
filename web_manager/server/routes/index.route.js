@@ -10,6 +10,10 @@ const socialRoutes = require('./social.route.js');
 const mqttRoutes = require('./mqtt.route.js');
 const mongodbRoutes = require('./mongodb.route.js');
 const invoiceRoutes = require('./invoice.route.js');
+const roomRoutes = require('./room.route.js');
+const locationRoutes = require('./location.route.js');
+const roomIotDataRoutes = require('./roomIotData.route.js');
+require('../services/mqtt/roomSensorIngestion.js');
 
 const router = express.Router();
 
@@ -24,5 +28,8 @@ router.use('/social', socialRoutes);
 router.use('/mqtt', mqttRoutes);
 router.use('/mongodb', mongodbRoutes);
 router.use('/invoice', invoiceRoutes);
+router.use('/rooms', roomRoutes);
+router.use('/locations', locationRoutes);
+router.use('/iot', roomIotDataRoutes);
 
 module.exports = router;

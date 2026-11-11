@@ -1,0 +1,10 @@
+const express = require('express');
+const isAuthenticated = require('../middlewares/authenticate.js');
+const locations = require('../controllers/location.controller.js');
+const router = express.Router();
+router.use(isAuthenticated);
+router.get('/buildings', locations.buildings.list);
+router.post('/buildings', locations.buildings.create);
+router.get('/floors', locations.floors.list);
+router.post('/floors', locations.floors.create);
+module.exports = router;
