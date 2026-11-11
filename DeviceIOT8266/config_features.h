@@ -6,10 +6,14 @@
 #error "DeviceIOT8266 requires an ESP8266 target."
 #endif
 
-// Select the runtime before compiling the sketch (docs/BUILD_MODES.md):
-// 0 = official ESP8266 Arduino core (cooperative / NON-OS scheduler)
-// 1 = alexCajas/esp8266RTOSArduCore (FreeRTOS scheduler)
+// Use the official ESP8266 Arduino core with a cooperative, RTOS-like task
+// scheduler. This keeps the task structure without depending on FreeRTOS.
+#ifndef SUPPORT_RTOS
 #define SUPPORT_RTOS 0
+#endif
+#if SUPPORT_RTOS
+#error "Use SUPPORT_RTOS=0: DeviceIOT8266 provides cooperative tasks on the official ESP8266 Arduino core, not FreeRTOS."
+#endif
 // The official core: BearSSL, ESP8266WebServer, os_random(), no FreeRTOS.
 #define ESP8266_NONOS_CORE (!SUPPORT_RTOS)
 

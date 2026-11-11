@@ -1,10 +1,11 @@
-﻿# ESP8266 RTOS Arduino build
+# RTOS-like cooperative runtime
 
-`DeviceIOT8266.ino` is the active entry point for this folder. It supports both scheduler modes through `SUPPORT_RTOS` in `define_All.h`:
+`DeviceIOT8266` is built for the official ESP8266 Arduino core and provides
+RTOS-like periodic services through cooperative scheduling. It does not use
+`esp8266RTOSArduCore` or FreeRTOS. The incompatible FreeRTOS build mode is
+rejected by `config_features.h`.
 
-- `0`: official ESP8266 Arduino core with the cooperative scheduler.
-- `1`: `esp8266RTOSArduCore` with FreeRTOS tasks.
-
-For RTOS mode install the `esp8266RTOSArduCore` board package, run the package's `setup_env.bat` on Windows, then choose its ESP8266 RTOS board in the IDE. Build the sketch with `SUPPORT_RTOS` set to `1`; the sketch uses standard `xTaskCreate()` because ESP8266 has one CPU core.
-
-The active peripherals are DHT11, A0/TOUT ADC, and an SX127x LoRa module. Wi-Fi reconnects asynchronously and opens the configuration AP if credentials are unavailable or association keeps failing. Details and pin allocation are in [BUILD_MODES.md](BUILD_MODES.md).
+The firmware organizes work as cooperative services in `loop()` plus one
+recurrent device-I/O callback. This provides periodic task-like execution, but
+does not provide preemption or multiple CPU threads. See
+[BUILD_MODES.md](BUILD_MODES.md) for the task layout and build instructions.

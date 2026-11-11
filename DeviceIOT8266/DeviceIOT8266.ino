@@ -1,4 +1,4 @@
-// ESP8266 start-up and scheduling.
+// ESP8266 Arduino-core start-up and cooperative RTOS-like scheduling.
 
 #include "DebugInfo.h"
 #include "Memory.h"
@@ -81,6 +81,8 @@ void loop()
 #if SUPPORT_RTOS
     vTaskDelay(delayTicks(RTOS_IDLE_LOOP_DELAY_MS));
 #else
+    // Cooperative tasks: each service performs one bounded pass and returns.
+    // Their own millis()-based timers determine when useful work is due.
     TaskSensor::service();
     TaskNetwork::service();
     SystemTask::service();

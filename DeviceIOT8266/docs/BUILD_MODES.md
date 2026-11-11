@@ -1,13 +1,26 @@
-# DeviceIOT8266 build modes
+# DeviceIOT8266 build and runtime
 
-`define_All.h` chooses exactly one runtime:
+This firmware uses the official **ESP8266 Arduino core** (`esp8266/Arduino`).
+It does not use `esp8266RTOSArduCore` or FreeRTOS. Work is split into
+cooperative service functions that behave like lightweight periodic tasks:
 
-- `#define SUPPORT_RTOS 0` (default): build with the official ESP8266 Arduino core. The sketch uses the cooperative scheduler in `loop()`.
-- `#define SUPPORT_RTOS 1`: build with `alexCajas/esp8266RTOSArduCore`. The sketch creates four FreeRTOS tasks: device I/O, sensors, network/LoRa, and system telemetry.
+| Service | Scheduler | Work |
+| --- | --- | --- |
+| `TaskDevice::service()` | ESP8266 core recurrent callback | Outputs, buttons, command queue, automatic OFF |
+| `TaskSensor::service()` | Arduino `loop()` | ADC and DHT11 sampling |
+| `TaskNetwork::service()` | Arduino `loop()` | Wi-Fi, HTTP, MQTT, LoRa and telemetry |
+| `SystemTask::service()` | Arduino `loop()` | Automation, persistence and status snapshot |
 
-The RTOS core has no EEPROM library and no `analogRead()`: `Memory.cpp` then stores the EEPROM image as one NVS blob (`EepromNvs.h`, same API and layout) and `TaskSensor` reads `A0` with the SDK driver (`adc_init()` / `adc_read()`). This mode has not been compiled or tested on hardware yet.
+This provides RTOS-like periodic tasks using the official ESP8266 Arduino
+libraries, but is cooperative scheduling rather than preemptive multitasking.
+Keep service
+functions bounded and avoid long blocking loops or `delay()` calls. Network
+calls use the core's yielding APIs, allowing it to service recurrent work while
+waiting. Set `SUPPORT_RTOS` to `0` (the default). Setting it to `1` would select
+the incompatible FreeRTOS port and is rejected at compile time.
 
-Do not enable RTOS with the official ESP8266 Arduino core; it does not supply the FreeRTOS task API used by this sketch. Install the RTOS board package and run its documented Windows `setup_env.bat` before building.
+Open `DeviceIOT8266.ino` in Arduino IDE, select an ESP8266 board such as
+NodeMCU 1.0 (ESP-12E Module), and install the libraries below.
 
 ## Required Arduino libraries
 
