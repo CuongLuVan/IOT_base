@@ -60,7 +60,6 @@ export default function DialogComment() {
     }, [dispatch,userList]);
 
     const _onMessageWasSent=(message)=> {
-      console.log("message .....",message);
       if (message.length > 0) {
         var infoChat={post_id:selectChat.persional_chat_id,content:message ,coment_tag:"" ,
                         comment_atack:"",comment_parent_id:1634669318436225 };

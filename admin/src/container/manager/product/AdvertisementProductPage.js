@@ -55,7 +55,6 @@ class AdvertisementProductPage extends Component {
     componentDidMount(){
         ManagerData.getLstDataPromise('product_group').then(()=>{
             this.setState({ refesh:false,lstProductGroup:ManagerData.getTable('product_group')});
-            console.log("componentDidMount......................");
             setTimeout(()=>{
                 this.setState({ refesh:true});
             },200);
@@ -63,7 +62,6 @@ class AdvertisementProductPage extends Component {
     }
 
     onChange(content){
-        console.log("Content: " + content);
         this.setState({ content_html:content});
     }
 
@@ -104,17 +102,14 @@ class AdvertisementProductPage extends Component {
     }
 
     onChangTitle(content){
-        console.log("Content: " + content);
         this.setState({ title:content.target.value});
     }
 
     onChangeContent(content){
-        console.log("Content: " + content);
         this.setState({ content:content.target.value});
     }
 
     choiceSubPages=(value)=>{
-        console.log("Content: " + value);
         this.setState({ is_main:value});
     }
 
@@ -157,7 +152,7 @@ class AdvertisementProductPage extends Component {
                                 id="status"
                                 value={this.state.group_product_id}
                                 onChange={(event) => {
-                                    this.setState({ group_product_id:content.target.value});
+                                    this.setState({ group_product_id:event.target.value});
                                 }}
                             >
                                 {this.state.lstProductGroup.map((vars) => (
@@ -203,18 +198,14 @@ class AdvertisementProductPage extends Component {
                             const toolbarContainer = document.querySelector("#toolbar-container");
                             toolbarContainer.appendChild(editor.ui.view.toolbar.element);
                             window.editor = editor;
-                            console.log("Editor is ready to use!", editor);
                             }}
                         onChange={ ( event, editor ) => {
                             const data = editor.getData();
                             this.onChange(data);
-                            console.log( { event, editor, data } );
                         } }
                         onBlur={ ( event, editor ) => {
-                            console.log( 'Blur.', editor );
                         } }
                         onFocus={ ( event, editor ) => {
-                            console.log( 'Focus.', editor );
                         } }
                     />
                  </div>

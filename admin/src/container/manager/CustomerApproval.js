@@ -57,7 +57,6 @@ class CustomerApproval extends Component {
     }
 
     callBackEdit = (type) => {
-        console.log(".............changeState",type);
         setTimeout(()=>{
             this.setState({ dialogue: true  });
         },500);
@@ -116,12 +115,10 @@ class CustomerApproval extends Component {
     }
 
     handleRowSelectBox = (e) => {
-        console.log("handleRowSelectBox",e);
         ManagerData.dialogueCustomizationSave.lstSelect = e;
     }
 
     handleRowSelection = (e) => {
-        console.log("handleRowSelection",e);
         ManagerData.dialogueCustomizationSave.dataInput = e.row;
     }
 

@@ -12,11 +12,23 @@ import { isAuthenticated } from '../utils/jwtUtil';
 
 
 
+// The "please wait" popup is shared by all requests: it is shown by the first
+// one and closed when the last one finishes, so a request that ends early does
+// not close the spinner of the others.
+let pendingRequests = 0;
+
 function showLoadding(){
+    pendingRequests++;
+    if (pendingRequests > 1) return;
     Swal.fire({
         title: 'Xin vui lòng đợi '
     });
     Swal.showLoading();
+}
+
+function hideLoadding(){
+    pendingRequests = Math.max(0, pendingRequests - 1);
+    if (pendingRequests === 0 && Swal.isLoading()) Swal.close();
 }
 
 
@@ -41,59 +53,36 @@ function getHeader(url, data) {
 }
 
 
-export const httpPostData = (url, data) => {
+// Request with the "please wait" popup. The spinner is closed before an error
+// popup is shown (closing it afterwards used to hide the error message at once).
+// Resolves with the axios response, or with response.data when unwrap is true.
+function request(method, url, data, unwrap = false) {
   showLoadding();
-  return new Promise((resolve, reject) => {
-    axios
-      .post(url,data,getHeader(url, data))
-      .then((response) => {
-        resolve(response);
-      })
-      .catch((error) => {
-        checkErrorRetun(error);
-        reject(error);
-      })
-      .finally(() => {
-        Swal.close();
-      });
-  });
-};
+  const call = method === 'get'
+    ? axios.get(url, getHeader(url))
+    : method === 'delete'
+      ? axios.delete(url, getHeader(url))
+      : axios[method](url, data, getHeader(url, data));
+  return call.then(
+    (response) => {
+      hideLoadding();
+      return unwrap ? response.data : response;
+    },
+    (error) => {
+      hideLoadding();
+      checkErrorRetun(error);
+      throw error;
+    }
+  );
+}
 
+export const httpPostData = (url, data) => request('post', url, data);
 
-export const httpPostDataAPI = (url, data) => {
-  showLoadding();
-  return new Promise((resolve, reject) => {
-    axios
-      .post(API_URL +url,data,getHeader(API_URL + url, data))
-      .then((response) => {
-        resolve(response);
-      })
-      .catch((error) => {
-        checkErrorRetun(error);
-        reject(error);
-      })
-      .finally(() => {
-        Swal.close();
-      });
-  });
-};
+export const httpPostDataAPI = (url, data) => request('post', API_URL + url, data);
 
-export const httpGetData = (url) => {
-  showLoadding();
-  return new Promise((resolve, reject) => {
-    axios.get(url,getHeader(url))
-      .then((response) => {
-        resolve(response);
-      })
-      .catch((error) => {
-        checkErrorRetun(error);
-        reject(error);
-      })
-      .finally(() => {
-        Swal.close();
-      });
-  });
-};
+export const httpGetData = (url) => request('get', url);
+export const httpPutData = (url, data) => request('put', url, data);
+export const httpDeleteData = (url) => request('delete', url);
 
 
 export const login = ({ email, password }) => {
@@ -110,7 +99,6 @@ export const login = ({ email, password }) => {
       .catch((error) => {
         checkErrorRetun(error);
         reject(error);
-        //logout();
       });
   });
 }
@@ -127,45 +115,28 @@ export const logout = () => {
 
 
 
+// Request body of the table APIs: the extra fields plus { table }.
+const withTable = (table, data) => Object.assign({}, data, { table });
+
 export const getallInfoTable = (table,addInfo=null) => {
-  var dataUpload= null;
-  if(addInfo!=null) {
-    dataUpload = Object.assign({}, addInfo, { table });
+  return httpPostData(API_URL + 'users/report', withTable(table, addInfo));
+}
+
+// "COUNT(*)" of the result, which comes as an object, [row] or [[row]]; 0 when missing.
+function readCount(result) {
+  const candidates = [result, result && result[0], result && result[0] && result[0][0]];
+  for (const row of candidates) {
+    if (row && row["COUNT(*)"] !== undefined && row["COUNT(*)"] !== null) return Number(row["COUNT(*)"]) || 0;
   }
-  else  dataUpload={ table: table };
-  return httpPostData(API_URL + 'users/report',dataUpload);
+  return 0;
 }
 
 export const getNumberPageOnTable = (table,addInfo=null) => {
-  var dataUpload= null;
-  if(addInfo!=null) {
-    dataUpload = Object.assign({}, addInfo, { table });
-  }
-  else  dataUpload={ table: table };
-  return new Promise((resolve, reject) => {
-    httpPostData(API_URL + 'users/report-page',dataUpload)
-      .then((response) => {
-          var numberPage=0;
-          var detailInfo={numberPage:0,detailFillter:null};
-          if(!!response.data.result["COUNT(*)"]){
-            numberPage= response.data.result["COUNT(*)"];
-          }
-          else
-          if(!!response.data.result[0]["COUNT(*)"]){
-            numberPage= response.data.result[0]["COUNT(*)"];
-          }
-          else
-          if(!!response.data.result[0][0]["COUNT(*)"]){
-            numberPage= response.data.result[0][0]["COUNT(*)"];
-          }
-          detailInfo.numberPage =numberPage;// Math.round(numberPage/1000);
-          detailInfo.detailFillter=response.data.dataFind
-          resolve(detailInfo);
-      })
-      .catch((error) => {
-          reject(error);
-      });
-  });
+  return httpPostData(API_URL + 'users/report-page', withTable(table, addInfo))
+    .then((response) => ({
+      numberPage: readCount(response.data && response.data.result),
+      detailFillter: response.data ? response.data.dataFind : null,
+    }));
 }
 
 export const getCurUser = () => {
@@ -207,16 +178,16 @@ export const getDeviceSensorData = (deviceId, period = { days: 7 }) => {
   return httpPostData(API_URL + 'mongodb/device-history/sensor-data', Object.assign({ mqtt_microservice_id: deviceId }, period));
 }
 
-export const  addOneDataToTable = async (table, data)  =>  {
-  return await httpPostData(API_URL + 'users/manager_add', Object.assign({}, data, { table }));
+export const addOneDataToTable = (table, data) => {
+  return httpPostData(API_URL + 'users/manager_add', withTable(table, data));
 }
 
 export const deleteOneDataToTable = (table, data) => {
-  return httpPostData(API_URL + 'users/manager_delete', Object.assign({}, data, { table }));
+  return httpPostData(API_URL + 'users/manager_delete', withTable(table, data));
 }
 
 export const updateOneDataInfoTable = (table, data) => {
-  return httpPostData(API_URL + 'users/manager_update', Object.assign({}, data, { table }));
+  return httpPostData(API_URL + 'users/manager_update', withTable(table, data));
 }
 
 
@@ -251,75 +222,21 @@ export const registerPageToAdvertisement = ( data) => {
 export const updatePageToAdvertisement = ( data) => {
   return httpPostData(API_URL + 'document/updateAdvertisement' ,data);
 }
-export const uploadfileDataImageAdmin = (data) => {
-  showLoadding();
-  return new Promise((resolve, reject) => {
-    axios.post(API_URL + 'customers/import-image-admin',data,getHeader(API_URL + 'customers/import-image-admin', data))
-      .then((response) => {
-        resolve(response.data);
-      })
-      .catch((error) => {
-        checkErrorRetun(error);
-        reject(error);
-      })
-      .finally(() => {
-        Swal.close();
-      });
-  });
-};
+export const uploadfileDataImageAdmin = (data) => request('post', API_URL + 'customers/import-image-admin', data, true);
 
-export const uploadfileDataImage = (data) => {
-  showLoadding();
-  return new Promise((resolve, reject) => {
-    axios.post(API_URL + 'customers/import-image',data,getHeader(API_URL + 'customers/import-image', data))
-      .then((response) => {
-        resolve(response.data);
-      })
-      .catch((error) => {
-        checkErrorRetun(error);
-        reject(error);
-      })
-      .finally(() => {
-        Swal.close();
-      });
-  });
-};
+export const uploadfileDataImage = (data) => request('post', API_URL + 'customers/import-image', data, true);
 
-export const sendMessageChat = (data) => {
-  showLoadding();
-  return new Promise((resolve, reject) => {
-    axios.post(HOST_HTTP_CHAT + 'chat',data,getHeader(HOST_HTTP_CHAT + 'chat', data))
-      .then((response) => {
-        resolve(response);
-      })
-      .catch((error) => {
-        checkErrorRetun(error);
-        reject(error);
-      })
-      .finally(() => {
-        Swal.close();
-      });
-  });
-}
+export const sendMessageChat = (data) => request('post', HOST_HTTP_CHAT + 'chat', data);
 
 export const getListFindChat = ( data) => {
   return httpPostData(HOST_HTTP_CHAT + 'find_chat' ,data);
 }
 
 
-export const getListUserChat = ( data) => {
-  return new Promise((resolve, reject) => {
-    httpGetData(API_URL + 'users/lst_user')
-    .then((result) => {
-      for(var i=0;i<result.data.result.length;i++){
-        result.data.result[i].name = result.data.result[i].fullname;
-      }
-      resolve(result.data.result);
-    })
-    .catch((error) => {
-      reject(error);
-    });
-  });
+// Users for the chat, with "name" = fullname.
+export const getListUserChat = () => {
+  return httpGetData(API_URL + 'users/lst_user')
+    .then((result) => (result.data.result || []).map((user) => Object.assign({}, user, { name: user.fullname })));
 }
 
 export const getChatWithFriend = ( data) => {
@@ -351,8 +268,5 @@ export const reviewCustomerDocument = (id, status, rejectReason = '') => {
     reject_reason: rejectReason
   });
 }
-
-//y
-
 
 

@@ -28,7 +28,6 @@ const BillInfoDialogue = ({ dataInput,handleClose }) => {
     const [statusUserConfirm, setUserConfirm] = useState(0);
     const [lstManager, setLstManager] = useState([]);
     useEffect(()  =>  {
-            console.log("dataInput  ",dataInput);
             var  fieldToFind = {buyproduct_id:dataInput.buyproduct_id};
             setDataBill(dataInput);
             setStatusBill(dataInput.status);

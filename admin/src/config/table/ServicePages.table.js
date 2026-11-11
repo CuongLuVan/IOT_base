@@ -45,7 +45,7 @@ class ServicePages  {
     }
     getInfoToEdit(){
       return {
-        mainID:'product_pages_id',
+        mainID:'service_id',
         mainInfo:{
           field: 'filesave',
           headerName: 'filesave',

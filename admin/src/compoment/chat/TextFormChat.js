@@ -48,7 +48,6 @@ const TextFormChat = ({dataUserConversation, selectedConversation, onMessageSubm
 
     const handleFormSubmit = (e) => {
         e.preventDefault();
-        console.log("handleFormSubmit.........",ref.current.editor.editor.textContent);
         if (!isMessageEmpty(ref.current.editor.editor.textContent)) {
             onMessageSubmitted(ref.current.editor.editor.textContent);
             setEditorState((prev) => (EditorState.createEmpty()));

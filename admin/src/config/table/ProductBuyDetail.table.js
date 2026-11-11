@@ -63,7 +63,7 @@ export default class ProductBuyDetail  {
 
     getInfoToEdit(){
       return {
-        mainID:'buyproduct_id',
+        mainID:'id_buy_detail',
         mainInfo:{
             field: 'quantity',
             headerName: 'quantity',

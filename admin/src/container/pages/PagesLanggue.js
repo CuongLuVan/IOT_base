@@ -58,21 +58,17 @@ export default function PagesLanggue ({option,handleClose}) {
     }
 
     const  handleRowSelectBox = (e) => {
-        console.log("handleRowSelectBox",e);
         ManagerData.dialogueCustomizationSave.lstSelect = e;
     }
 
     const  handleRowSelection = (e) => {
-        console.log("handleRowSelection",e);
         ManagerData.dialogueCustomizationSave.dataInput = e.row;
        
     }
     const  editPages = (pages) => {
-        console.log("handleRowSelection");
         setDataPages(pages);
         httpGetData(HOST_HTTP+pages.filesave,{})
         .then((value)=>{
-          console.log(".............selectEditPages",value.data);
           setContentPages(value.data);
           setStep(1);
         });
@@ -80,11 +76,9 @@ export default function PagesLanggue ({option,handleClose}) {
         
     }
     const  updatelanguePages = (pages) => {
-        console.log("handleRowSelection");
         setDataPages(pages);
         httpGetData(HOST_HTTP+pages.filesave,{})
         .then((value)=>{
-          console.log(".............selectEditPages",value.data);
           var TypeSelection =[{id:0,name :"Tiếng Việt"},{id:2,name :"English"}];
           var langgueInfo =0;
           let fillterSelectTion = TypeSelection.filter(o=>(o.id!=pages.type_langue));
@@ -107,7 +101,6 @@ export default function PagesLanggue ({option,handleClose}) {
 
 
     const  addNewPages = () => {
-        console.log("handleRowSelection");
         var TypeSelection =[{id:0,name :"Tiếng Việt"},{id:2,name :"English"}];
         var langgueInfo =0;
         var includeLanggue = [];

@@ -10,7 +10,6 @@ initialState.selectedConversation = initialState.conversations[1];
 
 
 const messageInfo = (state = initialState, action) => {
-    console.log("messageInfo ....................." ,state);
     const newState = { ...state };
     newState.inChatbox = (window.location.href).includes('chatbox');
 

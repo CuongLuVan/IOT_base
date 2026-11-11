@@ -1,26 +1,24 @@
-import React, { useState } from 'react';
+import React from 'react';
 import DynamicForm from '../form/DynamicForm.js';
 
-//"content","number","contain","expridate"
+// Form fields of state.header; onchangeValue(value, view) on every change.
 const DynamicLayout = ({ state,data, onchangeValue }) => {
     return (
             <div  className='test-main-info'>
                 {state.header.map((vars) =>
-                    <div className='text-info-layout'>
+                    <div className='text-info-layout' key={vars.view}>
                         <DynamicForm
                             value = {vars}
                             valueDetail ={data[vars.view]}
                             selectTabble={vars.selectTabble}
                             objectData ={data}
                             onChange={(event) => {
-                                onchangeValue(event.target.value, vars.view); 
+                                onchangeValue(event.target.value, vars.view);
                             }}
                         />
                     </div>
                 )}
             </div>
-            
-            
     );
 }
 

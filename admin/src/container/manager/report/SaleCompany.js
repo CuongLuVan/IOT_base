@@ -1,27 +1,9 @@
 import React, {useState, useEffect }  from 'react';
-import ManagerData from '../../../actions/ManagerData.js';
-import { fillterDataInfo ,fillterDataSearch } from '../../../utils/commonUtil.js';
-import { DataGrid } from '@material-ui/data-grid';
-import {
-    Button,
-    Divider,
-    TextField,
-    Select,MenuItem
-  } from '@material-ui/core';
-  import Swal from 'sweetalert2';
-import PropTypes from 'prop-types';
-import {exportColumeData,getLstInfoToSearch } from '../../../config/table/ManagerToView.js';
-import ButtonOkCancelLayout from '../../../compoment/dialogue/ButtonOkCancelLayout.js';
-import DynamicLayout from '../../../compoment/dialogue/DynamicLayout.js';
-import ProductCompanySelect from '../../../compoment/form/ProductCompanySelect.js';
-import Modal from '../../../compoment/modol/Modal.js';
-import {ActionControl ,TypeDialgueShow,SelectHTml} from '../../../utils/commonUtil';
-import {addOneDataToTable,httpPostDataAPI} from '../../../api/httpBaseUtil.js'
+import { Button } from '@material-ui/core';
+import {httpPostDataAPI} from '../../../api/httpBaseUtil.js'
 import {CanvasJSChart} from 'canvasjs-react-charts';
 
-
-  
-
+// Chart options from the report rows: revenue (total_value / Total) and bill count (total).
 function findInfoData(data,Titles,is7day=false){
     var dataVND = {
         type: "line",
@@ -39,6 +21,7 @@ function findInfoData(data,Titles,is7day=false){
         showInLegend: true,
         dataPoints: []
     };
+    data = data || [];
     if(is7day){
         data.forEach(element => {
             dataVND.dataPoints.push({x:new Date(element.created_at),y:element.Total});
@@ -53,7 +36,6 @@ function findInfoData(data,Titles,is7day=false){
             dataVND.dataPoints.push({x:(element.month+lastTime*12),y:element.total_value});
             if(element.hasOwnProperty("total"))
                 dataBill.dataPoints.push({x:(element.month+lastTime*12),y:element.total});
-           // else dataBill.dataPoints.push({x:(element.month+lastTime*12),y:0});
             if(saveLastTime>=element.month) lastTime ++;
             saveLastTime =element.month;
         });
@@ -87,7 +69,7 @@ function findInfoData(data,Titles,is7day=false){
 }
 
 
-const LostProductTable =(props) =>{
+const SaleCompany =() =>{
     const [data7day, setData7Day] = useState({});
     const [data1year, setData1Year] = useState({});
     const [dataAll, setDataAll] = useState({});
@@ -96,31 +78,28 @@ const LostProductTable =(props) =>{
     const [countBillInfo, setDataTotalBillInfo] = useState(0);
 
     useEffect(()  =>  {
+        // Errors are shown by httpBaseUtil; the chart keeps its previous data.
         httpPostDataAPI("users/report_admin/buy_last7day",{}).then((response)=>{
             var data = findInfoData(response.data.result,"Doanh thu 1 tuần",true);
             setData7Day(data);
             setDataOption(data);
-        });
+        }).catch(()=>{});
         httpPostDataAPI("users/report_admin/buy_last1year",{}).then((response)=>{
             setData1Year(findInfoData(response.data.result,"Doanh thu 1 năm"));
-        });
+        }).catch(()=>{});
         httpPostDataAPI("users/report_admin/buy_all",{}).then((response)=>{
             setDataAll(findInfoData(response.data.result,"Doanh thu all"));
-        });
+        }).catch(()=>{});
 
     }, []);
     
 
+    // data.data[0]: revenue, data.data[1]: bill count. Nothing to show before the data is loaded.
     const checkDataToSetup=(data)=>{
-        var allVND=0;
-        var countBill=0;
-
-        data.data[0].dataPoints.forEach(element => {
-            allVND = allVND +element.y;
-        });
-        data.data[0].dataPoints.forEach(element => {
-            countBill = countBill +element.y;
-        });
+        if(!data || !data.data) return;
+        const sum = (series) => series.dataPoints.reduce((total, element) => total + (Number(element.y) || 0), 0);
+        const allVND = sum(data.data[0]);
+        const countBill = sum(data.data[1]);
         setDataTotalBuyInfo(allVND);
         setDataTotalBillInfo(countBill);
         setDataOption(data);
@@ -143,5 +122,4 @@ const LostProductTable =(props) =>{
     );
 };
 
-//
-export default LostProductTable;
+export default SaleCompany;

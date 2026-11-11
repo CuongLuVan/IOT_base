@@ -21,27 +21,20 @@ const ProductPagesContent = ()=> {
        // ManagerData.callBackFunc =  changeState;
     }, []);
     /*const changeState = (type) => {
-        console.log(".............changeState",type);
     }*/
     const selectChangeValue = (value) => {
-        console.log("..selectChangeValue...........changeState",value);
         setDataPages(value);
     }
 
     const selectEditPages = (dialogue) => {
-        console.log("selectEditPages .............................................",dialogue);
         if(dataPages!=null){
-            console.log("selectEditPages ......................................dataPages.......",dataPages);
-            console.log("selectEditPages ............HOST_HTTP+dataPages.filesave.......",HOST_HTTP+dataPages.filesave);
             httpGetData(HOST_HTTP+dataPages.filesave,{})
             .then((value)=>{
-                console.log("selectEditPages ......value.......",value);
                 setDataContent(value.data);
                 setEnableDialogue(true);      
             });
         }
         else{
-            console.log("selectEditPages ......else.......");
             if(!dialogue){
                 setEnableDialogue(true);
             }

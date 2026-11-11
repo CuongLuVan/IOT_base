@@ -95,14 +95,12 @@ class RegisterPage extends Component {
     componentDidMount(){
         ManagerData.getLstDataPromise('group_content_sub').then(()=>{
             this.setState({ refesh:false});
-            console.log("componentDidMount......................");
             setTimeout(()=>{
                 this.setState({ refesh:true});
             },200);
         });
         ManagerData.getLstDataPromise('group_content').then(()=>{
             this.setState({ refesh:false});
-            console.log("componentDidMount......................");
             setTimeout(()=>{
                 this.setState({ refesh:true});
             },200);
@@ -117,7 +115,6 @@ class RegisterPage extends Component {
     }
 
     onChange(content){
-        console.log("Content: " + content);
         this.setState({ content_html:content});
 
     }
@@ -175,21 +172,17 @@ class RegisterPage extends Component {
     }
 
     onChangTitle(content){
-        console.log("Content: " + content);
         this.setState({ title:content.target.value});
     }
 
     onChangeContent(content){
-        console.log("Content: " + content);
         this.setState({ content:content.target.value});
     }
 
     uploadImage(url){
-        console.log("Content: " + url);
         this.setState({ image_head:url});
     }
     choiceSubPages=(value)=>{
-        console.log("Content: " + value);
         this.setState({ is_main:value});
     }
 
@@ -285,7 +278,6 @@ class RegisterPage extends Component {
                         config={custom_config}
                         
                         onInit={ editor => {
-                            console.log( 'Editor is ready to use!', editor );
                             window.editor = editor;
           
                             // Add these two lines to properly position the toolbar
@@ -296,18 +288,14 @@ class RegisterPage extends Component {
                             const toolbarContainer = document.querySelector("#toolbar-container");
                             toolbarContainer.appendChild(editor.ui.view.toolbar.element);
                             window.editor = editor;
-                            console.log("Editor is ready to use!", editor);
                             }}
                         onChange={ ( event, editor ) => {
                             const data = editor.getData();
                             this.onChange(data);
-                            console.log( { event, editor, data } );
                         } }
                         onBlur={ ( event, editor ) => {
-                            console.log( 'Blur.', editor );
                         } }
                         onFocus={ ( event, editor ) => {
-                            console.log( 'Focus.', editor );
                         } }
                     />
                      </div> 

@@ -18,7 +18,6 @@ const CustomerPermision = ({ typePermision,onChange }) => {
             labelId="role"
             id="role"
             className="enterprise-form1 permison-box"
-            label={"Cấp quyền"}
             value={typePermision}
             onChange={(event) => {
                 onChange(event);

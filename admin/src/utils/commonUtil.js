@@ -180,46 +180,6 @@ export const checkErrorRetun=(error)=>{
   // Server responses can contain SQL or internal implementation details.
   // Present a stable user-facing message instead of echoing them to the UI.
   Swal.fire('Request failed', 'Unable to complete the request. Please try again.', 'error');
-  return;
-
-  /* Retained only temporarily below for source-history compatibility.
-      Swal.fire('Kết nối mạng có vấn đề');
-  }
-  else
-  {
-      if(401 === error.response.status) {
-        // redirect to login page
-          localStorage.removeItem(JWT_TOKEN);
-          Swal.fire("Xin vui lòng đăng nhập lại !").then((value) => {
-            localStorage.removeItem('username');
-            //localStorage.removeItem('username');
-            window.location.href = window.location.protocol +'////'+ window.location.host +'/admin/#/login';
-          });
-
-          return;
-      }
-      if (404 === error.response.status) {
-        // redirect to 404 page
-      }
-      if (500 === error.response.status) {
-        // redirect to 500 page
-      }
-  
-      var dataAcess=" Lỗi chi tiết "+ error;
-      if(!!error.response.data)
-      {
-          if((!!error.response.data.data)&&(!!error.response.data.data.message)){
-            dataAcess += "\r\n ||" +error.response.data.data.message;
-          }
-          if(!!error.response.data.error){
-            dataAcess += "\r\n ||" +error.response.data.error.message;
-          }
-          if((!!error.response.data.error)&&(!!error.response.data.error.sqlMessage)){
-            dataAcess += "\r\n ||" +error.response.data.error.sqlMessage;
-          }
-      }
-      Swal.fire( " Lỗi",dataAcess,"ok");
-  */
 }
 
 
@@ -254,8 +214,8 @@ export const  fillterDataSearch=(typeFind,lstInfoFind,value_fillter)=> {
             fieldToFind=element.field;
         }
     });
-    if(fieldToFind.length<1) return null
-    if(value_fillter.length<1) null;
+    if(fieldToFind.length<1) return null;
+    if(value_fillter.length<1) return null;
     var dataSearch={dataFind:{}};
     dataSearch.dataFind[fieldToFind]=value_fillter;
     return dataSearch;

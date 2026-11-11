@@ -1,80 +1,55 @@
-/*if (!global._babelPolyfill) {
-	require('babel-polyfill');
-}*/
-
-import { getallInfoTable,getNumberPageOnTable,getCurUser,httpPostDataAPI,
-  getLstApproved,setDataApproved,updateOneDataInfoTable }
+import { getallInfoTable,getNumberPageOnTable,getCurUser,httpPostDataAPI }
  from '../api/httpBaseUtil';
  import {ActionControl} from '../utils/commonUtil';
 
 
 let ManagerData={
-    mqtt:{mqtt:"mqtt://test.mosquitto.org" ,port:1883,
-          name:"userName" ,password:"password",id:"id_001" ,isloaded:false,
-          topic_pub:"public",topic_sub:"#public",
-          client:null },
+    // Filled by FooterChat from the chat server (getInfoClientMqtt).
+    mqtt:{isloaded:false, topic_pub:"public", topic_sub:"#public", client:null },
     lstData:{},
     callBackFunc:null,
     saveInfoUser:{},
     infoMachine:{Ipv4:"",ipv6:""},
     dialogueNomalSave:{},
     dialogueCustomizationSave:{},
-    pubblishMessage(data){
-      if(ManagerData.mqtt.client!=null){
-        ManagerData.mqtt.client.publish(ManagerData.mqtt.topic_pub,data);
-      } 
+    // Cache entry of a table, created on first use.
+    ensureTable(table){
+      if(!ManagerData.lstData[table]) ManagerData.lstData[table] ={data:[], page:0,numberPage:0 ,dataToFindMain:{}};
+      return ManagerData.lstData[table];
     },
     checkTableInfoUpdate(table,data){
-        if(!!!ManagerData.lstData[table]) ManagerData.lstData[table] ={data:[], page:0,numberPage:0 ,dataToFindMain:{}};
-        ManagerData.lstData[table].data  = data;   
+      ManagerData.ensureTable(table).data = data;
     },
     getTable(table){
-      if(!!!ManagerData.lstData[table]) ManagerData.lstData[table] ={data:[], page:0,numberPage:0 ,dataToFindMain:{}};
-      return ManagerData.lstData[table].data;
+      return ManagerData.ensureTable(table).data;
     },
     setNumberPagesData(table,data){
-      if(!!!ManagerData.lstData[table]) ManagerData.lstData[table] ={data:[], page:0,numberPage:0 ,dataToFindMain:{}};
-      ManagerData.lstData[table]['numberPage'] = data;
+      ManagerData.ensureTable(table).numberPage = data;
     },
     setFindMainData(table,data){
-      if(!!!ManagerData.lstData[table]) ManagerData.lstData[table] ={data:[], page:0,numberPage:0 ,dataToFindMain:{}};
-      ManagerData.lstData[table]['dataToFindMain'] = data;
+      ManagerData.ensureTable(table).dataToFindMain = data;
     },
     checkDataExistting(table){
       return !!ManagerData.lstData[table];
     },
+    // Rows of the table (DataGrid needs an "id": the row number), also kept in the cache.
     getLstDataPromise(tableName,fillter=null) {
-      return new Promise((resolve, reject) => {
-        getallInfoTable(tableName,fillter)
-        .then((result) => {
-          let data = result.data;
-          for (var i = 0; i < data.result.length; i++) data.result[i].id = i+1;
-          ManagerData.checkTableInfoUpdate(tableName,data.result);
-          resolve(data.result);
-        })
-        .catch((error) => {reject(error)});
+      return getallInfoTable(tableName,fillter).then((result) => {
+        const rows = (result.data && result.data.result) || [];
+        rows.forEach((row, i) => { row.id = i+1; });
+        ManagerData.checkTableInfoUpdate(tableName,rows);
+        return rows;
       });
     },
+    // Row count of the table (kept as lstData[table].numberPage) and its search fields.
     getNumberDataTableDetail(table,addInfo=null){
-        return new Promise((resolve, reject) => {
-          getNumberPageOnTable(table,addInfo)
-                .then((result) => {
-                    var dataFillter={};
-                    if(result.detailFillter){
-                      for(var i=0;i<result.detailFillter.length;i++){
-                        let dataExame =result.detailFillter[i];
-                        dataFillter[dataExame]=null;
-                      }
-                    }
-                    
-                    ManagerData.numberPagesMain=result.numberPage;
-                    ManagerData.dataToFindMain=dataFillter;
-                    ManagerData.setFindMainData(table,dataFillter);
-                    ManagerData.setNumberPagesData(table,result.numberPage);
-                    resolve(result.numberPage);
-                })
-                .catch((error) => { reject(error);});
-        });
+      return getNumberPageOnTable(table,addInfo).then((result) => {
+        const dataFillter={};
+        (result.detailFillter || []).forEach((field) => { dataFillter[field]=null; });
+        ManagerData.setFindMainData(table,dataFillter);
+        ManagerData.setNumberPagesData(table,result.numberPage);
+        return result.numberPage;
+      });
     },
     initdialogueNomal(table,inputToSheetX){
       ManagerData.dialogueNomalSave={
@@ -106,34 +81,23 @@ let ManagerData={
       ManagerData.dialogueCustomizationSave.titleDialogue=name;
       ManagerData.dialogueCustomizationSave.action= actionSelect;
       if(actionSelect==ActionControl.ACTION_ADD){
-        ManagerData.dialogueNomalSave.dataInput = {};
+        ManagerData.dialogueCustomizationSave.dataInput = {};
       }
     },
 
     selectActionManager(action){
       if(ManagerData.callBackFunc!=null) ManagerData.callBackFunc(action);
     },
+    // Refreshes saveInfoUser on every call (errors are already shown by httpBaseUtil).
     getInfoUser(){
-      if((!!!ManagerData.saveInfoUser.is_checked)||(ManagerData.saveInfoUser.is_checked)){
-          ManagerData.saveInfoUser.is_checked=false;
-          getCurUser().then((infoUser)=>{
-            for(var k in infoUser.data.user) {
-              ManagerData.saveInfoUser[k]=infoUser.data.user[k];
-            }
-            ManagerData.saveInfoUser.is_checked =true;
-          });
-      }
-      
-
+      ManagerData.saveInfoUser.is_checked=false;
+      getCurUser().then((infoUser)=>{
+        Object.assign(ManagerData.saveInfoUser, (infoUser.data && infoUser.data.user) || {});
+        ManagerData.saveInfoUser.is_checked =true;
+      }).catch(()=>{});
     },
     httpPostData(url,data) {
-      return new Promise((resolve, reject) => {
-        httpPostDataAPI(url,data)
-        .then((result) => {
-          resolve(result.data.result);
-        })
-        .catch((error) => {reject(error)});
-      });
+      return httpPostDataAPI(url,data).then((result) => result.data.result);
     },
 }
 

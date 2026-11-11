@@ -34,19 +34,14 @@ export default class Rich_text_editor extends PureComponent {
                     const toolbarContainer = document.querySelector("#toolbar-container");
                     toolbarContainer.appendChild(editor.ui.view.toolbar.element);
                     window.editor = editor;
-                    console.log("Editor is ready to use!", editor);
                     }}
                     onChange={(event, editor) => {
                     const data = editor.getData();
                     this.props.handerUpdate(data);
-                    console.log({ event, editor, data });
                     }}
                     onBlur={(event, editor) => {
-                    console.log("Blur.", editor);
-                    console.log(editor.getData());
                     }}
                     onFocus={(event, editor) => {
-                    console.log("Focus.", editor);
                     }}
                 />
                 </div>

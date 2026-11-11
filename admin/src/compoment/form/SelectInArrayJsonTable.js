@@ -43,10 +43,8 @@ class SelectInArrayJsonTable extends Component {
       }
 
     handleRowSelection = (e) => {
-        console.log("handleRowSelection",e);
         if(!!this.props.onChange){
             this.props.onChange(e);
-            console.log("handleRowSelection",e);
         } 
     }
 

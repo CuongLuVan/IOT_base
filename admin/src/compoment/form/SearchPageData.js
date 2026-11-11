@@ -15,7 +15,6 @@ const SearchPageData =({ id_select,sub_id_select ,changeID})=> {
         if(sub_id_select!=0) pagesContent= pagesContent.filter(o=>o.group_content_sub_id==sub_id_select);
         const [state, setState] = useState(id_select);
         const uploadMainID=(event)=>{
-            console.log("Content: " + event.target.value);
             setState(event.target.value);
             changeID(event.target.value);
         }

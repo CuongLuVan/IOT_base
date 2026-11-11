@@ -3,7 +3,8 @@ import {
     Button,
   } from '@material-ui/core';
 
-const ButtonOkCancelLayout = ({ handleClose, onChange }) => {
+// disabled: blocks "Xác nhận" while the request is running (optional).
+const ButtonOkCancelLayout = ({ handleClose, onChange, disabled = false }) => {
     return (
         <div className={'action-account1'}>
             <Button
@@ -18,6 +19,7 @@ const ButtonOkCancelLayout = ({ handleClose, onChange }) => {
                 variant="contained"
                 color="primary"
                 className={'margin-right-account1 button-info-layout'}
+                disabled={disabled}
                 onClick={onChange}
             >
                 Xác nhận

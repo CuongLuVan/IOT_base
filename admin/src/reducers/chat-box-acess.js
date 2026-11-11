@@ -24,7 +24,6 @@ export  const  chatBoxData = createSlice({
     },
     reducers: {
         initChat: (state,action) => {
-         console.log("initChat   ...........   ",state,action);
           state.group_chat = action.payload.group_chat;
           state.list_friend_chat = action.payload.list_friend_chat;
           state.persional_chat = action.payload.persional_chat;
@@ -40,7 +39,6 @@ export  const  chatBoxData = createSlice({
         },
         loadConversation: (state,action) => {
           //state.value -= 1
-          console.log("loadConversation   ...........   ",action);
           state.selectedConversation = newInfo.informChatboxDataChat(action.payload,state.list_user);// action.payload;
         },
         addMessageToConverSation: (state,action) => {
@@ -48,7 +46,6 @@ export  const  chatBoxData = createSlice({
          
           var infoData= newInfo.insertChatboxDataChat(state.selectedConversation,
             action.payload,state.list_user);
-            console.log("addMessageToConverSation   ...........   ",infoData);
           state.selectedConversation =infoData;
         },
         selectUserChat: (state, action) => {

@@ -51,11 +51,9 @@ const SelectPages = ({id, onChange,handleClose }) => {
 
        
         const handleRowSelectBox = (e) => {
-            console.log("handleRowSelectBox",e);
         }
 
         const handleRowSelection = (e) => {
-            console.log("handleRowSelection....",e.row.advertisement_id);
             setState(e.row);
             onChange(e.row.advertisement_id,e.row.title);
         }

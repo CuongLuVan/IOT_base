@@ -60,7 +60,6 @@ class RegisterProductPage extends Component {
         });
     }
     onChange(content){
-        console.log("Content: " + content);
         this.setState({ content_html:content});
     }
     saveContentPageToDataBase(){
@@ -93,7 +92,6 @@ class RegisterProductPage extends Component {
     }
     
     onChangTitle(content){
-        console.log("Content: " + content);
         this.setState({ title:content.target.value});
     }
     onChangeContent(content){
@@ -152,18 +150,14 @@ class RegisterProductPage extends Component {
                             const toolbarContainer = document.querySelector("#toolbar-container");
                             toolbarContainer.appendChild(editor.ui.view.toolbar.element);
                             window.editor = editor;
-                            console.log("Editor is ready to use!", editor);
                             }}
                         onChange={ ( event, editor ) => {
                             const data = editor.getData();
                             this.onChange(data);
-                            console.log( { event, editor, data } );
                         } }
                         onBlur={ ( event, editor ) => {
-                            console.log( 'Blur.', editor );
                         } }
                         onFocus={ ( event, editor ) => {
-                            console.log( 'Focus.', editor );
                         } }
                     />
                  </div> 

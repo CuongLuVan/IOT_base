@@ -57,8 +57,6 @@ export default function UserInputEditor({summitData}) {
             // right arrow
             e.preventDefault(); //Prevent default browser behavior mentionsRef.current.toHtml()
             //convertToHTML(this.state.editorState.getCurrentContent()
-            console.log("...listUser ",ref);
-            console.log("...listUser ",editorState.getCurrentContent().getPlainText());
             // ref.current.editor.editor.innerHTML
             
             var stringValue = editorState.getCurrentContent().getPlainText();
@@ -67,7 +65,6 @@ export default function UserInputEditor({summitData}) {
                 summitData(stringValue);
             }
             let contentState = editorState.getCurrentContent();
-            console.log("...listUser stringValue stringHtml",stringValue,stringHtml);
             setTimeout(() => {
               setEditorState(EditorState.createEmpty());
             }, 100);

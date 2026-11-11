@@ -36,6 +36,7 @@ const lazyResource = (loader) => {
 };
 
 const UserList = lazyResource(() => import(/* webpackChunkName: "admin-users" */ './container/manager/users.js'));
+const RoomManagement = lazyResource(() => import(/* webpackChunkName: "admin-room-management" */ './container/manager/RoomManagement'));
 const PagesContent = lazyResource(() => import(/* webpackChunkName: "admin-pages" */ './container/manager/PagesContent.js'));
 const ProductPagesContent = lazyResource(() => import(/* webpackChunkName: "admin-product-pages" */ './container/manager/product/ProductPagesContent'));
 const RegisterPage = lazyResource(() => import(/* webpackChunkName: "admin-register-page" */ './container/manager/RegisterPage.js'));
@@ -55,6 +56,7 @@ const CustomerApproval = lazyResource(() => import(/* webpackChunkName: "admin-c
 const AdminDocumentReview = lazyResource(() => import(/* webpackChunkName: "admin-document-review" */ './container/manager/AdminDocumentReview.js'));
 const DataAllCompany = lazyResource(() => import(/* webpackChunkName: "admin-report-table" */ './container/manager/report/DataAllCompany.js'));
 const ReportSpecial = lazyResource(() => import(/* webpackChunkName: "admin-report-special" */ './container/manager/report/ReportSpecial.js'));
+const SensorReport = lazyResource(() => import(/* webpackChunkName: "admin-iot-operations" */ './container/manager/report/SensorReport.js'));
 const MachineMonitoring = lazyResource(() => import(/* webpackChunkName: "admin-machine-monitoring" */ './container/pages/MachineMonitoring'));
 const OeeDashboard = lazyResource(() => import(/* webpackChunkName: "admin-oee-dashboard" */ './container/pages/OeeDashboard'));
 const LineOeeDashboard = lazyResource(() => import(/* webpackChunkName: "admin-line-oee" */ './container/pages/LineOeeDashboard'));
@@ -80,6 +82,7 @@ const AdminPortal = ({ onSwitchPortal }) => {
       layout={AdminLayout}
     >
       <Resource name="users" options={{ label: 'Tài khoản' }} icon={UserIcon} list={UserList} />
+      <Resource name="room_management" options={{ label: 'Quản lý phòng' }} icon={RoomServiceIcon} list={RoomManagement} />
 
       <Resource name="mqtt" options={{ label: 'Quản lý mqtt', isMenuParent: true }} icon={BuildIcon} list={LockScreen} />
       <Resource name="mqtt_microservice" options={{ label: 'Tạo microservice', menuParent: 'mqtt' }} icon={BuildIcon} list={NomalTable} />
@@ -141,6 +144,7 @@ const AdminPortal = ({ onSwitchPortal }) => {
       <Resource name="report_table" options={{ label: 'Báo cáo doanh số', menuParent: 'report' }} icon={Business} list={DataAllCompany} />
       <Resource name="report_special" options={{ label: 'Báo đặc thù', menuParent: 'report' }} icon={Business} list={ReportSpecial} />
 
+      <Resource name="report_iot_operations" options={{ label: 'Báo cáo vận hành IoT', menuParent: 'report' }} icon={RoomServiceIcon} list={SensorReport} />
       <Resource name="comments" options={{ label: 'comments' }} icon={Comment} list={DialogChat} />
       <Resource name="chatbox" options={{ label: 'Nhắn tin' }} icon={Send} list={ChatBoxInternal} />
     </Admin>

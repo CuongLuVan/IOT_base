@@ -502,56 +502,55 @@ export default function DeviceStatusHistory() {
       .catch((loadError) => setError('Không tải được danh sách thiết bị: ' + errorText(loadError)));
   }, []);
 
+  // Id of the latest "Xem": replies of an older request (other device / period) are ignored.
+  const requestRef = React.useRef(0);
+
+  // Period sent to the API for the chosen option, or null after showing the range error.
+  const resolvePeriod = (options, value, range, label) => {
+    const option = options.find((item) => item.value === value) || options[0];
+    if (option.value !== 'custom') return option.period;
+    const rangeError = checkRange(range.from, range.to, range.groupBy);
+    if (rangeError) {
+      setError(label + ': ' + rangeError);
+      return null;
+    }
+    return rangePeriod(range);
+  };
+
   const load = () => {
     if (!deviceId) {
       setError('Chọn thiết bị.');
       return;
     }
-    const option = PERIOD_OPTIONS.find((item) => item.value === periodValue) || PERIOD_OPTIONS[0];
-    let statsPeriod = option.period;
-    if (option.value === 'custom') {
-      const rangeError = checkRange(statsRange.from, statsRange.to, statsRange.groupBy);
-      if (rangeError) {
-        setError('Thống kê bật/tắt: ' + rangeError);
-        return;
-      }
-      statsPeriod = rangePeriod(statsRange);
-    }
-    const sensorOption = SENSOR_PERIOD_OPTIONS.find((item) => item.value === sensorPeriodValue) || SENSOR_PERIOD_OPTIONS[0];
-    let sensorPeriod = sensorOption.period;
-    if (sensorOption.value === 'custom') {
-      const rangeError = checkRange(sensorRange.from, sensorRange.to, sensorRange.groupBy);
-      if (rangeError) {
-        setError('Biểu đồ cảm biến: ' + rangeError);
-        return;
-      }
-      sensorPeriod = rangePeriod(sensorRange);
-    }
+    const statsPeriod = resolvePeriod(PERIOD_OPTIONS, periodValue, statsRange, 'Thống kê bật/tắt');
+    if (!statsPeriod) return;
+    const sensorPeriod = resolvePeriod(SENSOR_PERIOD_OPTIONS, sensorPeriodValue, sensorRange, 'Biểu đồ cảm biến');
+    if (!sensorPeriod) return;
+
+    const requestId = ++requestRef.current;
+    const current = () => requestId === requestRef.current;
+    const addError = (text, loadError) => {
+      setError((previous) => (previous ? previous + ' · ' : '') + text + errorText(loadError));
+    };
+    const id = Number(deviceId);
     setError('');
-    getDeviceStatusHistory(Number(deviceId), limit)
-      .then((response) => setResult(response.data))
-      .catch((loadError) => {
-        setResult(null);
-        setError('Không tải được lịch sử: ' + errorText(loadError));
-      });
+    setResult(null);
     setSensorData(null);
-    getDeviceSensorData(Number(deviceId), sensorPeriod)
-      .then((response) => setSensorData(response.data))
-      .catch((loadError) => {
-        setError((previous) => (previous ? previous + ' · ' : '') + 'Không tải được dữ liệu cảm biến: ' + errorText(loadError));
-      });
     setStats(null);
-    getDeviceSwitchStats(Number(deviceId), statsPeriod)
-      .then((response) => setStats(response.data))
-      .catch((loadError) => {
-        setStats(null);
-        setError((previous) => (previous ? previous + ' · ' : '') + 'Không tải được thống kê bật/tắt: ' + errorText(loadError));
-      });
+    getDeviceStatusHistory(id, limit)
+      .then((response) => { if (current()) setResult(response.data); })
+      .catch((loadError) => { if (current()) addError('Không tải được lịch sử: ', loadError); });
+    getDeviceSensorData(id, sensorPeriod)
+      .then((response) => { if (current()) setSensorData(response.data); })
+      .catch((loadError) => { if (current()) addError('Không tải được dữ liệu cảm biến: ', loadError); });
+    getDeviceSwitchStats(id, statsPeriod)
+      .then((response) => { if (current()) setStats(response.data); })
+      .catch((loadError) => { if (current()) addError('Không tải được thống kê bật/tắt: ', loadError); });
   };
 
   const history = result ? result.history : [];
   // DeviceIOT drives 2 outputs, DeviceIOT8266 one (same rule as "va").
-  const channels = history.some((item) => toNumbers(item.payload.va).length >= 7) ? 2 : 1;
+  const channels = history.some((item) => toNumbers((item.payload || {}).va).length >= 7) ? 2 : 1;
 
   return (
     <Paper style={{ padding: 16, margin: 16 }}>
@@ -567,7 +566,7 @@ export default function DeviceStatusHistory() {
           >
             {devices.map((device) => (
               <MenuItem key={device.mqtt_microservice_id} value={String(device.mqtt_microservice_id)}>
-                {(device.content || device.mqtt_id) + ' · ' + device.mqtt_pub + ' · ' + device.mqtt_user}
+                {(device.content || ('#' + device.mqtt_microservice_id)) + ' · ' + device.mqtt_pub}
               </MenuItem>
             ))}
           </TextField>

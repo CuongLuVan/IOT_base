@@ -52,18 +52,15 @@ const LostProductTable =(props) =>{
         ManagerData.dataInput ={};
     }, []);
     const callBackEdit = (type) => {
-        console.log(".............changeState",type);
         setDialogueInfo(type);
     }
 
     const handleRowSelectBox = (e) => {
-        console.log("handleRowSelectBox",e);
         ManagerData.dialogueCustomizationSave.lstSelect = e;
         setDataItem(e);
     }
 
     const handleRowSelection = (e) => {
-        console.log("handleRowSelection",e);
         ManagerData.dataInput = e.row;
         setDataItem(e.row);
     }
@@ -80,7 +77,6 @@ const LostProductTable =(props) =>{
     const onChange = (value,type) => {
         var data = dataItem;
         data[type] = value;
-        console.log("onChange",value,type,dataItem);
         setDataItem((prev) => ({
             ...prev
           }));
@@ -115,7 +111,6 @@ const LostProductTable =(props) =>{
     }
     const onDeleteData=()=>{
         handleClose();
-        console.log("handleRowSelectBox ......................",dataItem);
         setTimeout(()=>{
             Swal.fire({
                 title: 'Bạn chắc chắn xóa chứ'

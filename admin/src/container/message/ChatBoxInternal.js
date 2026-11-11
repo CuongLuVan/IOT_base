@@ -96,12 +96,10 @@ const ChatBoxInternal=()=> {
       
 
        const conversationChanged = conversationId => {
-         console.log("................conversationId",conversationId);
 
         };
       
         const sendMessage = messange => {
-          console.log("................sendMessage",messange);
           var texx=  {
             text: messange,
             id: "5",

@@ -60,7 +60,6 @@ const SelectItem = ({ table, dataInput,handleClose }) => {
     };
     const onchangeValue=(value,type)=>{
         var stateValue = state.value;
-        console.log(type,value,stateValue);
         stateValue[type] = value.target.value;
         setState((prev) => ({
             ...prev,

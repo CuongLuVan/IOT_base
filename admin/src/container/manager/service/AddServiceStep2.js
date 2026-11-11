@@ -48,7 +48,6 @@ class AddServiceStep2 extends Component {
         }     
     }
     onChange(content){
-        console.log("Content: " + content);
         this.setState({ content_html:content});
     }
     saveContentPageToDataBase(){

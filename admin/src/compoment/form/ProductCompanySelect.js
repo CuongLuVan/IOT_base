@@ -83,7 +83,6 @@ const ProductCompanySelect = ({ image_id,onChange }) => {
                     label={"Công ty"}
                     value={companySelect}
                     onChange={(event) => {
-                        console.log("selectCompany ..................",event);
                         selectCompany(event.target.value);
                     }}
                     >

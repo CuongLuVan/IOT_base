@@ -58,17 +58,14 @@ const BuyProductTable =(props) =>{
         
     }, []);
     const callBackEdit = (type) => {
-        console.log(".............changeState",type);
         setDialogueInfo(type);
     }
 
     const handleRowSelectBox = (e) => {
-        console.log("handleRowSelectBox",e);
         ManagerData.dialogueCustomizationSave.lstSelect = e;
     }
 
     const handleRowSelection = (e) => {
-        console.log("handleRowSelection",e);
         ManagerData.dialogueCustomizationSave.dataInput = e.row;
         
     }

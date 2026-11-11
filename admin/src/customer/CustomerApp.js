@@ -24,8 +24,15 @@ import {
 } from './pages/CustomerRecordsPage';
 import CustomerServicesPage from './pages/CustomerServicesPage';
 
+// Defined once (not inside render) so react-admin does not remount the page on every render.
+const CustomerReturnsPage = () => <CustomerOrdersPage isReturn />;
+
 const CustomerApp = ({ onSwitchPortal }) => {
-  const LoginPage = (props) => <CustomerLoginPage {...props} onSwitchPortal={onSwitchPortal} />;
+  // Stable while onSwitchPortal does not change: typed login input is kept.
+  const LoginPage = React.useCallback(
+    (props) => <CustomerLoginPage {...props} onSwitchPortal={onSwitchPortal} />,
+    [onSwitchPortal]
+  );
 
   return (
     <Admin
@@ -40,7 +47,7 @@ const CustomerApp = ({ onSwitchPortal }) => {
       <Resource name="product_group" options={{ label: 'Danh mục sản phẩm' }} icon={CategoryIcon} list={CustomerProductGroupPage} />
       <Resource name="product" options={{ label: 'Sản phẩm' }} icon={ShoppingCartIcon} list={CustomerProductPage} />
       <Resource name="product_buy" options={{ label: 'Đơn hàng' }} icon={LocalShippingIcon} list={CustomerOrdersPage} />
-      <Resource name="product_back" options={{ label: 'Sản phẩm trả lại' }} icon={LocalShippingIcon} list={() => <CustomerOrdersPage isReturn />} />
+      <Resource name="product_back" options={{ label: 'Sản phẩm trả lại' }} icon={LocalShippingIcon} list={CustomerReturnsPage} />
       <Resource name="product_lost" options={{ label: 'Sản phẩm thất lạc' }} icon={ReportProblemIcon} list={CustomerLostProductPage} />
       <Resource name="service" options={{ label: 'Dịch vụ' }} icon={RoomServiceIcon} list={CustomerServicesPage} />
       <Resource name="documents" options={{ label: 'Giấy tờ' }} icon={DescriptionIcon} list={CustomerDocumentsPage} />

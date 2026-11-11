@@ -58,7 +58,9 @@ const Menu = (props) => {
     const translate = useTranslate();
     const open = useSelector((state) => state.admin.ui.sidebarOpen);
     const pathname = useSelector((state) => state.router.location.pathname);
-    const resources1 = resources || useSelector(getResources, shallowEqual);
+    // The hook is always called (hooks must not be conditional).
+    const storeResources = useSelector(getResources, shallowEqual);
+    const resources1 = resources || storeResources;
     const hasList = (resource) => (resource.hasList);
 
     const handleToggle = (parent) => {
@@ -200,7 +202,7 @@ const Menu = (props) => {
     resources1.forEach(resource => {
         if (isParent(resource)) {
             initialExpansionState[resource.name] = false;
-        } else if (pathname.startsWith(`/${resource.name}`) && resource.options.hasOwnProperty('menuParent')) {
+        } else if (pathname.startsWith(`/${resource.name}`) && resource.options && resource.options.hasOwnProperty('menuParent')) {
             parentActiveResName = resource.options.menuParent;
         }
     });

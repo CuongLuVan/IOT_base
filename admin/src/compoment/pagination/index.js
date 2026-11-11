@@ -3,8 +3,10 @@ import React, {useState,useEffect } from 'react';
 const Pagination = ({ totalPages,handerPages,inputPages }) => {
   const [currentPage, setCurrentPage] = useState(inputPages);
 
+    // Only follows the page chosen by the parent; loading is done by the parent
+    // (calling handerPages here loaded every page twice).
     useEffect(() => {
-        goToPage(inputPages)
+        setCurrentPage(inputPages);
     }, [inputPages]);
     const goToPage = (page) => {
         if (page >= 1 && page <= totalPages) {

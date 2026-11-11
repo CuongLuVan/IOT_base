@@ -50,14 +50,12 @@ class AdvertisementPage extends Component {
     componentDidMount(){
         ManagerData.getLstDataPromise('group_content_sub').then(()=>{
             this.setState({ refesh:false});
-            console.log("componentDidMount......................");
             setTimeout(()=>{
                 this.setState({ refesh:true});
             },200);
         });
         ManagerData.getLstDataPromise('group_content').then(()=>{
             this.setState({ refesh:false});
-            console.log("componentDidMount......................");
             setTimeout(()=>{
                 this.setState({ refesh:true});
             },200);
@@ -72,15 +70,12 @@ class AdvertisementPage extends Component {
     }
 
     onChange(content){
-        console.log("Content: " + content);
         this.setState({ content_html:content});
     }
 
     saveContentPageToDataBase(){
-        var formData={};
-        if(this.props.is_update){
-            formData=this.props.data;
-        }
+        // Copy: the selected row (this.props.data) is not changed before the save succeeds.
+        var formData = this.props.is_update ? Object.assign({}, this.props.data) : {};
         formData.group_content_sub_id= this.state.group_content_sub_id;
         formData.content_img= this.state.image_head;
         formData.group_file= "group_file";
@@ -89,7 +84,7 @@ class AdvertisementPage extends Component {
         formData.content= this.state.content;
         formData.content_html= this.state.content_html;
         formData.advertisement_id= this.state.advertisement_id;
-        data.is_postPages=true;
+        formData.is_postPages=true;
         if(this.props.is_update)
         {
             updatePageToAdvertisement(formData).then((response)=>{
@@ -111,21 +106,17 @@ class AdvertisementPage extends Component {
     }
 
     onChangTitle(content){
-        console.log("Content: " + content);
         this.setState({ title:content.target.value});
     }
 
     onChangeContent(content){
-        console.log("Content: " + content);
         this.setState({ content:content.target.value});
     }
 
     uploadImage(url){
-        console.log("Content: " + url);
         this.setState({ image_head:url});
     }
     choiceSubPages=(value)=>{
-        console.log("Content: " + value);
         this.setState({ is_main:value});
     }
 
@@ -197,18 +188,14 @@ class AdvertisementPage extends Component {
                             const toolbarContainer = document.querySelector("#toolbar-container");
                             toolbarContainer.appendChild(editor.ui.view.toolbar.element);
                             window.editor = editor;
-                            console.log("Editor is ready to use!", editor);
                             }}
                         onChange={ ( event, editor ) => {
                             const data = editor.getData();
                             this.onChange(data);
-                            console.log( { event, editor, data } );
                         } }
                         onBlur={ ( event, editor ) => {
-                            console.log( 'Blur.', editor );
                         } }
                         onFocus={ ( event, editor ) => {
-                            console.log( 'Focus.', editor );
                         } }
                     />
                  </div>
@@ -221,18 +208,14 @@ class AdvertisementPage extends Component {
                     onReady={ editor => {
                         // You can store the "editor" and use when it is needed. this.state.content_html
                         //editor.ui.view.editable.element.style.minHeight = '500px';
-                        console.log( 'Editor is ready to use!', editor );
                     } }
                     onChange={ ( event, editor ) => {
                         const data = editor.getData();
                         this.onChange(data);
-                        console.log( { event, editor, data } );
                     } }
                     onBlur={ ( event, editor ) => {
-                        console.log( 'Blur.', editor );
                     } }
                     onFocus={ ( event, editor ) => {
-                        console.log( 'Focus.', editor );
                     } }
                 /> */}
             </div>

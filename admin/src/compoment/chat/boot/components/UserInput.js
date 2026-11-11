@@ -71,8 +71,9 @@ class UserInput extends Component {
     }
   }
   
+  // The contentEditable input (this.userInput) is no longer rendered; the editor clears itself.
   clearTextData(){
-    this.userInput.innerHTML = '';
+    if (this.userInput) this.userInput.innerHTML = '';
   }
 
   _onFilesSelected(event) {

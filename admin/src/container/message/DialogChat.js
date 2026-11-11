@@ -35,7 +35,6 @@ export default function DialogChat() {
     }, [dispatch,persionalChat]);
 
     const _onMessageWasSent=(message)=> {
-      console.log("message .....",message);
       if (message.length > 0) {
         /*var data= {
           author: {users_id: 1000, username: 'sample xx', avatar: 'https://i.pinimg.com/originals/eb/b0/2a/ebb02aedec9bc74f65e38311c7e14d34.png'},
@@ -55,7 +54,6 @@ export default function DialogChat() {
       }
     }
     const replyMessage=(message)=> {
-      console.log("replyMessage .....",message);
     }
     return (<div  style={{position:"fixed", zIndex: 999}}>
                 <Launcher

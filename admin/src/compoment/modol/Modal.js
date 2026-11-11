@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import MuiModal from '@material-ui/core/Modal';
 import Backdrop from '@material-ui/core/Backdrop';
 import Fade from '@material-ui/core/Fade';

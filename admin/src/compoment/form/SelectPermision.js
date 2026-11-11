@@ -14,13 +14,11 @@ const SelectPermision = ({ typePermision,onChange }) => {
     var TypeSelection =[{id:1,name :"Quản trị cấp cao"},{id:2,name :"Quản trị trang"},
                         {id:3,name :"Trợ lý trang"},{id:4,name :"Kế toán"},
                         {id:10,name :"Cộng tác viên"},{id:11,name :"Ghi danh"}];
-    console.log("ManagerData.saveInfoUser.permission_id",ManagerData.saveInfoUser.permission_id);
     return (
         <Select
             labelId="role"
             id="role"
             className="enterprise-form1 permison-box"
-            label={"Cấp quyền"}
             value={typePermision}
             onChange={(event) => {
                 onChange(event);

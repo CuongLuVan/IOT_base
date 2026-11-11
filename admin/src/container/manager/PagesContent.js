@@ -30,19 +30,15 @@ class PagesContent extends Component {
       ManagerData.callBackFunc =  this.changeState;
   }
   changeState = (type) => {
-    console.log(".............changeState",type);
   }
   selectChangeValue = (value) => {
-    console.log("..selectChangeValue...........changeState",value);
     this.setState({ data:value});
   }
 
   selectEditPages = (enableDialogue) => {
-    console.log(".............changeState",enableDialogue);
     if(!!this.state.data){
       httpGetData(HOST_HTTP+this.state.data.filesave,{})
       .then((value)=>{
-        console.log(".............selectEditPages",value.data);
         this.setState({enableDialogue:enableDialogue,content:value.data});
       });
     }
@@ -52,7 +48,6 @@ class PagesContent extends Component {
 
   }
   selectPagesToTop = () => {
-    console.log(".............changeState");
     if(!!this.state.data){
       Swal.fire({
         title: 'Bạn muốn trang này lên đầu chứ?',

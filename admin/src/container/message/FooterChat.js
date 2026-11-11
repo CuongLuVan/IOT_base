@@ -28,7 +28,6 @@ export default function FooterChat(){
     client.on('message', function (topic, message) {
         var note = message.toString();
         // Updates React state with message 
-        console.log("topic",topic,note);
         dispatch(addMessageToConverSation(JSON.parse(note)));
 
     });
@@ -40,7 +39,6 @@ export default function FooterChat(){
         getListFindChat({}).then(result=>{ dispatch(initChat(result.data));   });
         getListUserChat().then(result=>{ dispatch(initUserList(result));  });
         getInfoClientMqtt().then(result=>{ 
-            console.log("Connect mqtt ManagerData.result:", result);
             ManagerData.mqtt.isloaded = true;
             ManagerData.mqtt.port = result.data.port;
             ManagerData.mqtt.password = result.data.password;
@@ -55,15 +53,11 @@ export default function FooterChat(){
                 useNewUrlParser: true,
                 password: ManagerData.mqtt.password
             };
-            console.log("Connect mqtt ManagerData.mqtt:", ManagerData.mqtt);
  
             client = mqtt.connect(ManagerData.mqtt.server, ManagerData.mqtt.config);
-            console.log("Connect mqtt ManagerData.config: to start");
             client.subscribe(ManagerData.mqtt.topic_sub);
 
             /*client.on('message', (topic, message, packet) => {
-                console.log("message from topic", topic.toString());
-                console.log(message.toString());
 
             });*/
 

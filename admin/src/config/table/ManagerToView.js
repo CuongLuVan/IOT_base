@@ -37,7 +37,7 @@ import SocialType from './SocialType.table';
 import GroupCompanyDetail from './GroupCompanyDetail.table';
 import GroupCompany from './GroupCompany.table';
 
-import {validateEmail,validatePhone,isNumeric,validateDate } from '../../utils/commonUtil';
+import {validateEmail,validatePhone,validateDate } from '../../utils/commonUtil';
 
 
 const classesFactory = {User_View ,Adress,DecentralizationAccess,GroupContent,
@@ -64,131 +64,84 @@ const classesFactorryMapping = {  users:"User_View", adress:"Adress" ,
                                 group_company:"GroupCompany"
                             };   
 
-export const exportColumeData = (table,callback=null) =>{
-    var nameConvert=classesFactorryMapping[table];
-    if(!!nameConvert){
-        var tableSelect=new classesFactory[nameConvert]();
-        if(!!tableSelect) return tableSelect.getColumeShow(callback);
-    }
-    return [];
+// Table view object of a table name, or null for an unknown table.
+const createView = (table) => {
+    const nameConvert = classesFactorryMapping[table];
+    return nameConvert ? new classesFactory[nameConvert]() : null;
 };
 
+export const exportColumeData = (table,callback=null) =>{
+    const tableSelect = createView(table);
+    return tableSelect ? tableSelect.getColumeShow(callback) : [];
+};
+
+// Searchable columns (in getJsonTofind), each with id = column position + 1.
 export const getLstInfoToSearch = (table) =>{
-    var nameConvert=classesFactorryMapping[table];
-    var fieldToShow = [];
-    if(!!nameConvert){
-        var tableSelect=new classesFactory[nameConvert]();
-        if(!!tableSelect) {
-            var name =tableSelect.getJsonTofind();
-            var info  =tableSelect.getColumeShow(null);
-            info.forEach((element,index) => {
-                if(!!element.field){
-                    if((element.field!='id')&&(element.field!='action'))
-                    {
-                        if(!!name.includes(element.field)){
-                            var infoData= JSON.parse(JSON.stringify(element));
-                            infoData.id=index+1;
-                            fieldToShow.push(infoData);
-                        }
-                    }
-                }
-            });
+    const tableSelect = createView(table);
+    if (!tableSelect) return [];
+    const name = tableSelect.getJsonTofind();
+    const fieldToShow = [];
+    tableSelect.getColumeShow(null).forEach((element,index) => {
+        if (element.field && element.field!='id' && element.field!='action' && name.includes(element.field)) {
+            fieldToShow.push(Object.assign({}, element, { id: index+1 }));
         }
-    }
+    });
     return fieldToShow;
 };
 
 export const exportColumeEdit = (table) =>{
-    var nameConvert=classesFactorryMapping[table];
-    if(!!nameConvert){
-        var tableSelect=new classesFactory[nameConvert]();
-        if(!!tableSelect) return tableSelect.getInfoToEdit();
-    }
-    return {};
+    const tableSelect = createView(table);
+    return tableSelect ? tableSelect.getInfoToEdit() : {};
 };
 
+// Parallel arrays describing the add / edit form fields of the table.
 export const exportColumeAdd = (table) =>{
-    var nameConvert=classesFactorryMapping[table];
-    if(!!nameConvert){
-        var tableSelect=new classesFactory[nameConvert]();
-        if(!!tableSelect)
-        {
-            var dataValue = {};
-            dataValue.view= tableSelect.getInfoToAdd();
-            dataValue.title= tableSelect.getTitleToAdd();
-            dataValue.html= tableSelect.getHtmlAdd();
-            dataValue.typeSelect= tableSelect.getTypeSelectToAdd();
-            dataValue.selectTabble= tableSelect.getTypeSelectTabbleToAdd();
-            dataValue.selectValidate= tableSelect.getColumeValidate();
-            return dataValue;
-        }  
-    }
-    return {};
+    const tableSelect = createView(table);
+    if (!tableSelect) return {};
+    return {
+        view: tableSelect.getInfoToAdd(),
+        title: tableSelect.getTitleToAdd(),
+        html: tableSelect.getHtmlAdd(),
+        typeSelect: tableSelect.getTypeSelectToAdd(),
+        selectTabble: tableSelect.getTypeSelectTabbleToAdd(),
+        selectValidate: tableSelect.getColumeValidate(),
+    };
 };
 
+const textLength = (value) => (value == null ? 0 : String(value).length);
 
+// selectValidate rule -> [check(value), message]. Dates come from the form as
+// "YYYY-MM-DDT..." strings, so they are parsed before validateDate.
+const VALIDATE_RULES = {
+    email: [(v) => validateEmail(v), "Xin vui lòng check email"],
+    phone: [(v) => validatePhone(v), "Xin vui lòng kiểm tra định dạng phone"],
+    password: [(v) => textLength(v) >= 6, "Độ dài mật khẩu <6"],
+    leng3: [(v) => textLength(v) >= 3, "Độ dài ký tự không hợp lệ , độ dài >3"],
+    leng6: [(v) => textLength(v) >= 6, "Độ dài ký tự không hợp lệ , độ dài >6"],
+    number: [(v) => !isNaN(v), "Định dạng phải là số"],
+    date: [(v) => validateDate(v instanceof Date ? v : new Date(v)), "Không đúng định dạng ngày tháng năm"],
+};
+
+// { validate, err }: err names the first invalid field and why.
 export const checkValidateValue = (infoTitle,value) =>{
     var validate = {validate:true ,err:" "};
-    for(var i=0;i<infoTitle.length;i++){
-        let detail=infoTitle[i].view;
-        let titleCheck = infoTitle[i].title;
-        let accessValue = value[detail];
-        let checkValidate =infoTitle[i].selectValidate;
-        validate.err =  titleCheck +"= " +accessValue +" ! ";
-        if(checkValidate=="email"){
-            if(!validateEmail(accessValue)){
-                validate.validate=false;
-                validate.err += "Xin vui lòng check email";
-                break; 
-            }
-        } else if(checkValidate=="phone"){
-            if(!validatePhone(accessValue)){
-                validate.validate=false;
-                validate.err += "Xin vui lòng kiểm tra định dạng phone";
-                break; 
-            }
-        } else if(checkValidate=="password"){
-            if(accessValue.length<6){
-                validate.validate=false;
-                validate.err += "Độ dài mật khẩu <6";
-                break; 
-            }
-        } else if(checkValidate=="leng3"){
-            if(accessValue.length<3){
-                validate.validate=false;
-                validate.err += "Độ dài ký tự không hợp lệ , độ dài >3";
-                break; 
-            }
-        } else if(checkValidate=="leng6"){
-            if(accessValue.length<6){
-                validate.validate=false;
-                validate.err += "Độ dài ký tự không hợp lệ , độ dài >6";
-                break; 
-            }
-        } else if(checkValidate=="number"){
-            if(isNaN(accessValue)){
-                validate.validate=false;
-                validate.err += "Định dạng phải là số";
-                break; 
-            }
-        } else if(checkValidate=="date"){
-            if(!validateDate(accessValue)){
-                validate.validate=false;
-                validate.err += "Không đúng định dạng ngày tháng năm";
-                break; 
-            }
-        }    
+    for (const field of infoTitle) {
+        const accessValue = value[field.view];
+        validate.err = field.title +"= " +accessValue +" ! ";
+        const rule = VALIDATE_RULES[field.selectValidate];
+        if (rule && !rule[0](accessValue)) {
+            validate.validate = false;
+            validate.err += rule[1];
+            break;
+        }
     }
     return validate;
 }
-
-
 
 export const getValueDetail = (infoTitle,value) =>{
     var validate = JSON.parse(JSON.stringify(value)); 
     for(var i=0;i<infoTitle.length;i++){
         let detail=infoTitle[i].view;
-        let titleCheck = infoTitle[i].title;
         let accessValue = validate[detail];
         let checkValidate =infoTitle[i].selectValidate;
         if(checkValidate=="date"){

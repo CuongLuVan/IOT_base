@@ -28,7 +28,7 @@ const AddServiceStep1 = ({sendTemplate}) => {
       addOneDataToTable("service_group",data).then((response) => {
             data["service_group_id"]=response.data.result.insertId;
             sendTemplate(data);
-      }).catch((error) => {reject(error);});  
+      }).catch(() => {}); // error already shown by httpBaseUtil  
     }
 
     return ( 

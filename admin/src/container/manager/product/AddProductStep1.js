@@ -35,7 +35,7 @@ const AddProductStep1 = ({sendTemplate}) => {
       addOneDataToTable("product",data).then((response) => {
             data["product_id"]=response.data.result.insertId;
             sendTemplate(data);
-      }).catch((error) => {reject(error);});  
+      }).catch(() => {}); // error already shown by httpBaseUtil  
     }
 
     return ( 

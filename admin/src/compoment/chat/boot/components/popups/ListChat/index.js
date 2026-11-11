@@ -1,5 +1,4 @@
 import React, {useState, useEffect} from 'react';
-import axios from 'axios';
 import './ListChat.css';
 import ListChatItem from '../ListChatItem';
 import LeftIcon from '../../../assets/left.png';
@@ -19,21 +18,19 @@ export default function ListChat () {
     const persionalChat = useSelector(state => state.chatBoxData.persional_chat);
   // setConversations(listData);
     useEffect(() => {
-      var userInfo = JSON.parse(JSON.stringify(listUser));
-      userInfo = userInfo.filter(o=>(o.users_id!=ManagerData.saveInfoUser.users_id));
+      const userInfo = (listUser || []).filter(o=>(o.users_id!=ManagerData.saveInfoUser.users_id));
       setConversations(userInfo);
+      setItemCount(0);
       setConversationsShow(userInfo.slice(0, 5));
-    },[dispatch,listUser])
+    },[listUser])
 
-    const beforeItem = () => {
-      if(itemCount>0)  setItemCount(itemCount-1);
-      setConversationsShow(conversations.slice(itemCount, itemCount+5));
+    // Shows 5 users from index start (the slice must use the new index, not the old one).
+    const showFrom = (start) => {
+      setItemCount(start);
+      setConversationsShow(conversations.slice(start, start+5));
     }
-    const afterItem = () => {
-      if(itemCount  < (conversations.length-5))
-      setItemCount(itemCount+1);
-      setConversationsShow(conversations.slice(itemCount, itemCount+5));
-    }
+    const beforeItem = () => showFrom(Math.max(0, itemCount-1));
+    const afterItem = () => showFrom(Math.min(Math.max(0, conversations.length-5), itemCount+1));
     const selectChat = (id) => {
 
             var infoData = persionalChat.filter(o=>((o.user_friend_id1==id)||(o.user_friend_id2==id)));
@@ -68,7 +65,7 @@ export default function ListChat () {
             {conversationsShow.map((category) => 
                                       <ListChatItem
                                             selectChat={(value)=>selectChat(value)}
-                                            key={category.username}
+                                            key={category.users_id}
                                             data={category} />
                                     )
             }
