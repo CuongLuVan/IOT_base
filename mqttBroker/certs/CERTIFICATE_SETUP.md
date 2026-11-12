@@ -177,6 +177,69 @@ Mỗi file được ghi dưới dạng chuỗi PEM và kết thúc bằng một 
 
 Với DeviceIOT (ESP32), có thể nạp qua `POST /setup` của host-post. Gửi một JSON chứa cấu hình MQTT cùng ba trường `mqtt_ca_cert`, `mqtt_client_cert` và `mqtt_private_key` (nội dung PEM, xuống dòng viết là `\n`). Firmware kiểm tra marker PEM và kích thước, ghi cả ba vùng trong một lần commit, rồi chỉ lưu các trường MQTT cần thiết vào `WIFI_SETUP_JSON`. Xem `DeviceIOT/docs/Security.md`.
 
+## Quản lý vòng đời thiết bị và thông tin xác thực
+
+Mỗi thiết bị hoặc dịch vụ MQTT phải có một `clientId` riêng, một chủ sở hữu
+được ghi nhận và một cặp khóa riêng. Không dùng chung private key, certificate,
+message-auth key hoặc tài khoản giữa các client. Quy trình quản trị cần theo
+các trạng thái **được cấp → đang hoạt động → thu hồi**; chỉ thiết bị đang hoạt
+động mới được provision và có fingerprint/ACL hiệu lực.
+
+### Cấp thiết bị và gán chủ sở hữu
+
+1. Tạo hồ sơ thiết bị trong hệ thống quản lý, ghi `clientId` duy nhất, chủ sở
+   hữu chịu trách nhiệm, mục đích, trạng thái, ngày cấp và các topic được phép.
+   `clientId` phải khớp tên certificate/CN, `mqtt_device_certs.json` và ACL.
+2. Cấp riêng certificate/key và message-auth key cho client. Ưu tiên sinh
+   private key tại thiết bị hoặc dây chuyền tin cậy; nếu backend sinh key như
+   `saveCertificateMqtt`, chuyển key tới đúng thiết bị qua kênh provisioning
+   đã xác thực, không gửi qua MQTT, log, email hay kho mã nguồn.
+3. Nạp CA, client certificate và private key vào thiết bị; chỉ lưu fingerprint
+   SHA-256 (không phải private key) trong danh sách xác thực broker. Áp dụng
+   ACL tối thiểu theo đúng publish/subscribe cần thiết.
+4. Xác minh TLS/mTLS, fingerprint, topic và quyền publish/subscribe trước khi
+   chuyển hồ sơ sang đang hoạt động. Ghi lại người cấp, thời điểm, serial,
+   fingerprint, thời hạn và chủ sở hữu để truy vết.
+
+### Đổi certificate hoặc khóa
+
+1. Cấp cặp khóa mới và certificate mới cho cùng `clientId`; giữ credential cũ
+   hoạt động trong khoảng chuyển đổi có kiểm soát. Không ghi đè private key cũ.
+2. Cập nhật fingerprint mới trong `mqtt_device_certs.json`, provision certificate
+   và private key mới lên thiết bị qua kênh tin cậy, rồi xác minh client kết nối
+   và ACL hoạt động với credential mới.
+3. Sau khi xác minh, xóa quyền fingerprint cũ khỏi mapping broker, vô hiệu hóa
+   message-auth key cũ, thay key trong `mqtt_message_auth.json` và phân phối key
+   mới qua kênh tin cậy nếu tính năng đó đang dùng. Chấm dứt phiên/kết nối cũ
+   nếu broker đang giữ session; ghi nhận thời điểm hoàn tất và người thực hiện.
+4. Nếu nghi lộ khóa, bỏ qua giai đoạn chồng lấn: thu hồi ngay credential cũ,
+   chặn kết nối, sau đó cấp credential mới và điều tra phạm vi ảnh hưởng.
+
+### Thu hồi hoặc chuyển chủ sở hữu
+
+Khi thiết bị mất, hỏng, ngừng sử dụng hoặc đổi chủ, đánh dấu hồ sơ bị thu hồi/
+chuyển giao trước khi tái sử dụng. Xóa client khỏi `mqtt_device_certs.json`,
+`mqtt_acl.json`, `mqtt_message_auth.json`, `mqtt_client_ids.json` và
+`mqtt_users.json` nếu có entry tương ứng; vô hiệu hóa tài khoản/API liên quan,
+ngắt kết nối phiên đang tồn tại và thu hồi certificate theo CRL/OCSP nếu CA và
+broker đã được cấu hình để thực thi cơ chế đó. Xóa key khỏi thiết bị khi còn có
+thể truy cập; khi chuyển chủ sở hữu, provision credential mới và không chuyển
+private key cũ. Giữ nhật ký thu hồi gồm lý do, thời điểm, người thao tác,
+fingerprint/serial đã vô hiệu hóa. Không tái cấp cùng danh tính cho thiết bị
+khác khi chưa dọn sạch toàn bộ mapping và phiên cũ.
+
+### Phạm vi hỗ trợ hiện tại
+
+`saveCertificateMqtt` hiện tạo certificate/key mới, ghi fingerprint và các
+entry ACL/auth/client vào JSON, đồng thời từ chối cấp lại khi file certificate
+hoặc hồ sơ đang hoạt động đã tồn tại. Đây là thao tác **cấp mới**, không phải
+quy trình đổi chủ, xoay khóa hay thu hồi. Chưa có thao tác thu hồi đồng bộ
+certificate/ACL/auth/session, cũng chưa có CRL/OCSP enforcement. Vì vậy các bước
+đổi và thu hồi ở trên hiện là quy trình vận hành thủ công; cần hoàn tất cập nhật
+tất cả mapping liên quan và kiểm tra broker trước khi xem credential đã bị
+vô hiệu hóa. Xóa file `.crt`/`.key` đơn thuần không làm fingerprint đã được
+broker tin cậy mất hiệu lực.
+
 ## Lưu certificate từ trang quản lý
 
 Khi tạo client bằng `saveCertificateMqtt` (`web_manager/server/controllers/document.controller.js`), hệ thống tự tạo `<clientId>.key` (ECDSA P-256, PKCS#8), `<clientId>.csr`, `<clientId>.crt` và `<clientId>.cnf` trong thư mục `MQTT_CERTS` (thư mục `certs`), ký bằng `ca.key` hiện có. Certificate có thời hạn 3650 ngày; fingerprint SHA-256 được tính từ certificate vừa tạo.
