@@ -40,9 +40,8 @@ inline int64_t epochOrZero()
 namespace device_clock {
 
 // Starts SNTP once; the SNTP client keeps polling on its own afterwards. Call
-// only after the station has an IP address, and only from the network task:
-// the esp8266RTOS configTime() calls the lwIP SNTP API without the core lock,
-// and the started flag is not shared between tasks. Every module that needs
+// only after the station has an IP address, and only from the network task.
+// The started flag is not shared between tasks. Every module that needs
 // the time calls this instead of configTime(), so the timezone is set in one
 // place.
 inline void startSync()

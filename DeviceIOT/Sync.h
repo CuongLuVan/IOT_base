@@ -1,11 +1,7 @@
 #pragma once
 
-// Platform layer for state shared between tasks. One implementation for both
-// firmwares, selected by SUPPORT_RTOS:
-//   SUPPORT_RTOS 1 (ESP32, ESP8266 RTOS core): FreeRTOS mutex / queue and a
-//                  critical section for the small atomic types.
-//   SUPPORT_RTOS 0 (ESP8266 NON-OS core): every module runs from loop(), so
-//                  locks are no-ops and the queue is a ring buffer.
+// Platform layer for state shared between ESP32 tasks: FreeRTOS mutex / queue
+// and a critical section for the small atomic types.
 // The small atomic types use a critical section rather than std::atomic: the
 // lx106 has no atomic instructions and its core lacks __atomic_* helpers.
 //
@@ -27,8 +23,7 @@
 namespace platform_sync {
 
 #if SUPPORT_RTOS
-// Milliseconds to ticks, rounded up: a non-zero timeout never becomes 0 ticks
-// (the ESP8266 RTOS core runs at 100 Hz, so pdMS_TO_TICKS(5) would be 0).
+// Milliseconds to ticks, rounded up so a non-zero timeout never becomes 0.
 inline TickType_t timeoutTicks(uint32_t timeoutMs)
 {
     if (timeoutMs == 0) return 0;

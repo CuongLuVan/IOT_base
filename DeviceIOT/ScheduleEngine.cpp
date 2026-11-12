@@ -60,9 +60,6 @@ uint32_t persistedCheck(const PersistedMinute& value)
 
 #if defined(ESP32)
 RTC_NOINIT_ATTR PersistedMinute rtcMinute;
-#elif defined(ESP8266) && ESP8266_NONOS_CORE
-// RTC user memory block (4 bytes each); blocks 0..31 hold the OTA (eboot) command.
-constexpr uint32_t kRtcMinuteBlock = 96;
 #endif
 
 void savePersistedMinute(int64_t minute)
@@ -72,10 +69,6 @@ void savePersistedMinute(int64_t minute)
     value.check = persistedCheck(value);
 #if defined(ESP32)
     rtcMinute = value;
-#elif defined(ESP8266) && ESP8266_NONOS_CORE
-    (void)ESP.rtcUserMemoryWrite(kRtcMinuteBlock, reinterpret_cast<uint32_t*>(&value), sizeof(value));
-#else
-    (void)value;
 #endif
 }
 
@@ -85,8 +78,6 @@ int64_t loadPersistedMinute()
     PersistedMinute value = {};
 #if defined(ESP32)
     value = rtcMinute;
-#elif defined(ESP8266) && ESP8266_NONOS_CORE
-    if (!ESP.rtcUserMemoryRead(kRtcMinuteBlock, reinterpret_cast<uint32_t*>(&value), sizeof(value))) return -1;
 #endif
     if (value.magic != kPersistedMagic || value.check != persistedCheck(value)) return -1;
     const int64_t minute = static_cast<int64_t>((static_cast<uint64_t>(value.high) << 32) | value.low);

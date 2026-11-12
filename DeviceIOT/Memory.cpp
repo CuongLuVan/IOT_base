@@ -5,19 +5,12 @@
 #include "DebugInfo.h"
 #include "Sync.h"
 
-#if defined(ESP8266) && SUPPORT_RTOS
-#include "EepromNvs.h"
-#else
 #include <EEPROM.h>
-#endif
 
 // This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
 
 namespace {
 platform_sync::Mutex eepromMutex;
-#if defined(ESP8266) && SUPPORT_RTOS
-EepromNvs EEPROM;
-#endif
 }  // namespace
 
 Memory* Memory::GetInstance()
@@ -38,14 +31,7 @@ bool Memory::begin(size_t size)
     }
     {
         platform_sync::ScopedLock lock(eepromMutex);
-#if defined(ESP8266) && ESP8266_NONOS_CORE
-        // The ESP8266 EEPROM.begin() returns void and clamps the size to one
-        // flash sector, so read back what was granted.
-        EEPROM.begin(size);
-        size_ = static_cast<size_t>(EEPROM.length());
-#else
         size_ = EEPROM.begin(size) ? size : 0;
-#endif
     }
     if (size_ == 0) {
         DEVICE_LOG_ERROR("[Memory] EEPROM initialization failed");

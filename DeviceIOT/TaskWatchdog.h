@@ -20,11 +20,6 @@
 //
 // ESP32: the task watchdog panics (and restarts) a subscribed task that stops
 // calling reset(); the heartbeat is a second, logged check.
-// ESP8266 RTOS core: there is no per-task watchdog API, so the heartbeat is
-// the only hang detection.
-// ESP8266 NON-OS core: every module runs from loop(); the hardware and soft
-// watchdogs are fed by yield()/delay(), so all calls are no-ops.
-//
 // DeviceIOT also subscribes each task to the ESP32 task watchdog.
 
 #include <Arduino.h>

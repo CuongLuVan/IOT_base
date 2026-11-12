@@ -14,11 +14,7 @@ namespace setup_portal {
 
 namespace {
 
-#if defined(ESP32)
 constexpr const char* kDeviceName = "DeviceIOT";
-#else
-constexpr const char* kDeviceName = "DeviceIOT8266";
-#endif
 
 // Only the fields NetworkMqtt reads, so the stored JSON fits
 // MQTT_SETTINGS_MAX_LENGTH (config.html also sends unused fields).

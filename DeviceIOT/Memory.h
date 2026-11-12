@@ -9,9 +9,7 @@
 // and write (network setup pages, MQTT, SystemTask flushes); nothing is logged
 // while it is held. EEPROM.write() marks the RAM copy dirty only for changed
 // bytes and commit() skips a clean copy, so rewriting unchanged data does not
-// wear the flash. Backends: the EEPROM library (ESP32: NVS blob, ESP8266
-// NON-OS: one flash sector); esp8266RTOS has none, so EepromNvs.h provides the
-// same API on NVS.
+// wear the flash. The ESP32 EEPROM library stores the data as an NVS blob.
 //
 // DeviceIOT uses the ESP32 EEPROM library backed by NVS.
 

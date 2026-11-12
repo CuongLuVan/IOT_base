@@ -3,7 +3,7 @@
 // DeviceIOT (ESP32) feature switches. Every flag is 0 or 1.
 
 #ifndef ESP32
-#error "DeviceIOT requires an ESP32 target; build DeviceIOT8266 for ESP8266."
+#error "DeviceIOT requires an ESP32 target."
 #endif
 
 // The ESP32 core always runs FreeRTOS.

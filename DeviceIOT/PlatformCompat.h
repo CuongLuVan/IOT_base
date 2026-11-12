@@ -1,34 +1,15 @@
 #pragma once
 
-// The few APIs that differ between the supported cores:
-//   ESP32:                          Arduino-ESP32 (always FreeRTOS)
-//   ESP8266, SUPPORT_RTOS == 0:     official esp8266/Arduino (NON-OS SDK)
-//   ESP8266, SUPPORT_RTOS == 1:     alexCajas/esp8266RTOSArduCore (FreeRTOS)
-//
 // DeviceIOT uses the Arduino-ESP32 web, Wi-Fi and random APIs.
 
 #include <Arduino.h>
 
 #include "define_All.h"
 
-#if defined(ESP32)
 #include <WebServer.h>
 #include <WiFi.h>
 #include <esp_system.h>
 using DeviceWebServerBase = WebServer;
-#elif ESP8266_NONOS_CORE
-#include <ESP8266WebServer.h>
-#include <ESP8266WiFi.h>
-extern "C" {
-#include <user_interface.h>
-}
-using DeviceWebServerBase = ESP8266WebServer;
-#else
-#include <WebServer.h>
-#include <WiFi.h>
-#include <esp_system.h>
-using DeviceWebServerBase = WebServer;
-#endif
 
 #include <WiFiClient.h>
 #include <WiFiUdp.h>
@@ -75,9 +56,5 @@ inline TickType_t delayTicks(uint32_t milliseconds)
 // Arduino's predictable random().
 inline uint32_t deviceSecureRandom32()
 {
-#if defined(ESP8266) && ESP8266_NONOS_CORE
-    return os_random();
-#else
     return esp_random();
-#endif
 }

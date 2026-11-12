@@ -29,11 +29,17 @@ CLIENT_CERT = os.environ.get("MQTT_CLIENT_CERT") or os.path.join(CERT_DIR, f"{CL
 CLIENT_KEY = os.environ.get("MQTT_CLIENT_KEY") or os.path.join(CERT_DIR, f"{CLIENT_ID}.key")
 TOPIC = os.environ.get("MQTT_SUBSCRIBE_TOPIC", "iot/power/machine1")
 ALERT_TOPIC = os.environ.get("MQTT_ALERT_TOPIC", "iot/alert/machine1")
+SOURCE_DEVICE = os.environ.get("MQTT_SOURCE_DEVICE", TOPIC.rstrip("/").split("/")[-1])
+SENSOR_KEY = os.environ.get("MQTT_POWER_SENSOR_KEY", "power")
+TRAINING_SAMPLES = max(20, int(os.environ.get("ANOMALY_TRAINING_SAMPLES", "200")))
+CONTAMINATION = float(os.environ.get("ANOMALY_CONTAMINATION", "0.02"))
+if not 0 < CONTAMINATION <= 0.5:
+    raise ValueError("ANOMALY_CONTAMINATION must be > 0 and <= 0.5")
 
 history=[]
 
 model=IsolationForest(
-    contamination=0.02,
+    contamination=CONTAMINATION,
     random_state=42
 )
 
@@ -42,7 +48,7 @@ trained=False
 def train():
     global trained
 
-    if len(history)<200:
+    if len(history)<TRAINING_SAMPLES:
         return
 
     df=pd.DataFrame(history)
@@ -93,8 +99,13 @@ def on_message(client,userdata,msg):
             ALERT_TOPIC,
             protect_payload({
                 "status":"abnormal",
+                "source_device":SOURCE_DEVICE,
+                "sensor_key":SENSOR_KEY,
+                "model":"IsolationForest",
+                "severity":"WARNING",
                 "power":sample["power"],
-                "current":sample["current"]
+                "current":sample["current"],
+                "voltage":sample["voltage"]
             }, CLIENT_ID),
             qos=1
         )

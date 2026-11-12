@@ -7,25 +7,13 @@
 #include "Sync.h"
 #include "define_All.h"
 
-#if defined(ESP32) || (defined(ESP8266) && ESP8266_NONOS_CORE)
-#define LINK_PROBE_LWIP 1
-#else
-#define LINK_PROBE_LWIP 0
-#endif
-
-#if LINK_PROBE_LWIP
 #include <lwip/dns.h>
 #include <lwip/etharp.h>
 #include <lwip/ip_addr.h>
 #include <lwip/netif.h>
-#if defined(ESP32)
 #include <esp_netif.h>
-#endif
-#endif
 
 namespace link_probe {
-
-#if LINK_PROBE_LWIP
 
 namespace {
 
@@ -36,7 +24,7 @@ struct ArpJob {
     ArpReport report;
 };
 
-// Runs in the lwIP context: the tcpip thread on ESP32, loop() on the NON-OS core.
+// Runs in the ESP32 lwIP TCP/IP thread.
 struct netif* findStationNetif(uint32_t address)
 {
     struct netif* candidate = nullptr;
@@ -84,7 +72,6 @@ void runArpJob(ArpJob& job)
     }
 }
 
-#if defined(ESP32)
 esp_err_t runArpJobInTcpip(void* context)
 {
     runArpJob(*static_cast<ArpJob*>(context));
@@ -95,12 +82,6 @@ void execute(ArpJob& job)
 {
     esp_netif_tcpip_exec(runArpJobInTcpip, &job);
 }
-#else
-void execute(ArpJob& job)
-{
-    runArpJob(job);
-}
-#endif
 
 platform_sync::AtomicU32 dnsStateValue(static_cast<uint32_t>(DnsState::Idle));
 platform_sync::AtomicU32 dnsGeneration;
@@ -128,7 +109,6 @@ void runDnsJob(DnsJob& job)
                                    reinterpret_cast<void*>(static_cast<uintptr_t>(job.generation)));
 }
 
-#if defined(ESP32)
 esp_err_t runDnsJobInTcpip(void* context)
 {
     runDnsJob(*static_cast<DnsJob*>(context));
@@ -139,12 +119,6 @@ void execute(DnsJob& job)
 {
     esp_netif_tcpip_exec(runDnsJobInTcpip, &job);
 }
-#else
-void execute(DnsJob& job)
-{
-    runDnsJob(job);
-}
-#endif
 
 }  // namespace
 
@@ -198,46 +172,6 @@ DnsState dnsState(uint32_t nowMs)
     }
     return state;
 }
-
-#else
-
-bool arpSupported()
-{
-    return false;
-}
-
-bool startArp(const IPAddress& self, const IPAddress& gateway)
-{
-    (void)self;
-    (void)gateway;
-    return false;
-}
-
-ArpReport finishArp(const IPAddress& self, const IPAddress& gateway)
-{
-    (void)self;
-    (void)gateway;
-    return ArpReport();
-}
-
-bool dnsSupported()
-{
-    return false;
-}
-
-void startDns(const char* host, uint32_t nowMs)
-{
-    (void)host;
-    (void)nowMs;
-}
-
-DnsState dnsState(uint32_t nowMs)
-{
-    (void)nowMs;
-    return DnsState::Idle;
-}
-
-#endif  // LINK_PROBE_LWIP
 
 const char* dnsStateName(DnsState state)
 {

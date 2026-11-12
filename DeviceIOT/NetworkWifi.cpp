@@ -57,32 +57,6 @@ void registerEventHandlers()
     WiFi.onEvent(onWifiEvent);
     registered = true;
 }
-#elif ESP8266_NONOS_CORE
-WiFiEventHandler connectedHandler;
-WiFiEventHandler disconnectedHandler;
-WiFiEventHandler gotIpHandler;
-WiFiEventHandler dhcpTimeoutHandler;
-
-void registerEventHandlers()
-{
-    if (connectedHandler) return;
-    connectedHandler = WiFi.onStationModeConnected([](const WiFiEventStationModeConnected&) {
-        connectedEvents.fetchAdd(1);
-    });
-    disconnectedHandler = WiFi.onStationModeDisconnected([](const WiFiEventStationModeDisconnected& event) {
-        disconnectReason.store(static_cast<uint32_t>(event.reason));
-        disconnectedEvents.fetchAdd(1);
-    });
-    gotIpHandler = WiFi.onStationModeGotIP([](const WiFiEventStationModeGotIP&) {
-        gotIpEvents.fetchAdd(1);
-    });
-    dhcpTimeoutHandler = WiFi.onStationModeDHCPTimeout([]() {
-        lostIpEvents.fetchAdd(1);
-    });
-}
-#else
-// ESP8266 RTOS core: no event handlers; the state machine polls WiFi.status().
-void registerEventHandlers() {}
 #endif
 
 bool stationHasLease()
@@ -107,8 +81,6 @@ void formatHostname(char* out, size_t size)
     uint8_t mac[6] = {};
 #if defined(ESP32)
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
-#else
-    WiFi.macAddress(mac);
 #endif
     snprintf(out, size, "%s%02x%02x%02x", DEVICE_HOSTNAME_PREFIX, mac[3], mac[4], mac[5]);
 }
@@ -149,14 +121,6 @@ void NetworkWifi::applyRadioMode()
 {
     WiFi.persistent(false);
 #if defined(ESP32)
-    WiFi.setHostname(hostname_);
-    WiFi.mode(portalActive_ ? WIFI_AP_STA : WIFI_STA);
-    WiFi.setSleep(false);
-#elif ESP8266_NONOS_CORE
-    WiFi.mode(portalActive_ ? WIFI_AP_STA : WIFI_STA);
-    WiFi.hostname(hostname_);
-    WiFi.setSleepMode(WIFI_NONE_SLEEP);
-#else
     WiFi.setHostname(hostname_);
     WiFi.mode(portalActive_ ? WIFI_AP_STA : WIFI_STA);
     WiFi.setSleep(false);

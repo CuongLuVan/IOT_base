@@ -13,9 +13,7 @@
 #include "SetupPortal.h"
 #include "define_All.h"
 
-#if !(defined(ESP8266) && ESP8266_NONOS_CORE)
 #include <lwip/sockets.h>
-#endif
 
 namespace {
 
@@ -26,14 +24,9 @@ char requestHead[HTTP_HEADER_MAX_LENGTH + 1];
 template <typename Client>
 size_t peekRequest(Client& client, char* buffer, size_t length)
 {
-#if defined(ESP8266) && ESP8266_NONOS_CORE
-    // length <= available(), so peekBytes() does not wait.
-    return client.peekBytes(reinterpret_cast<uint8_t*>(buffer), length);
-#else
     // Nothing was read from this client yet, so every byte is still in the socket.
     const int count = recv(client.fd(), buffer, length, MSG_PEEK | MSG_DONTWAIT);
     return count > 0 ? static_cast<size_t>(count) : 0;
-#endif
 }
 
 // Content-Length of a complete header block; 0 when absent, -1 when invalid.

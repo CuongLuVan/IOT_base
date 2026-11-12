@@ -6,8 +6,7 @@
 //          cache and sends the requests; finishArp() reads the answers
 //          WIFI_ARP_REPLY_WAIT_MS later.
 //   DNS  - does the broker host name resolve? Asynchronous lwIP lookup.
-// Supported on ESP32 (inside the tcpip thread) and on the ESP8266 NON-OS
-// core; on the ESP8266 RTOS core every probe reports "not supported".
+// Runs inside the ESP32 TCP/IP thread.
 //
 // DeviceIOT runs the probes inside the TCP/IP thread.
 
