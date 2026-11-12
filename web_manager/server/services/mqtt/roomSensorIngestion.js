@@ -1,5 +1,14 @@
 const knex = require('../../config/knex.js');
 const mqttService = require('./mqttService.js');
+const notificationService = require('./notificationService.js');
+const ANOMALY_MIN_SAMPLES = Math.min(20, Math.max(3, parseInt(process.env.SENSOR_ANOMALY_MIN_SAMPLES, 10) || 8));
+const anomalySigma = Number.parseFloat(process.env.SENSOR_ANOMALY_SIGMA || '3');
+const ANOMALY_SIGMA = Number.isFinite(anomalySigma) && anomalySigma > 0 ? anomalySigma : 3;
+
+async function insertAlert(alert) {
+  await knex('alerts').insert(alert);
+  notificationService.sendAlert(alert);
+}
 const recentPackets = new Map();
 
 function measuredDate(message, fallback) {
@@ -66,19 +75,19 @@ async function ingest(item) {
       await knex('sensor_readings').insert(reading);
       if (quality === 'BAD_FORMAT') {
         const openError = await knex('alerts').where({ sensor_id: sensor.sensor_id, alert_type: 'SENSOR_ERROR', status: 'OPEN', deleteflag: 0 }).first('alert_id');
-        if (!openError) await knex('alerts').insert({ room_id: device.room_id, device_id: device.device_id, sensor_id: sensor.sensor_id,
+        if (!openError) await insertAlert({ room_id: device.room_id, device_id: device.device_id, sensor_id: sensor.sensor_id,
           alert_type: 'SENSOR_ERROR', severity: 'WARNING', status: 'OPEN', message: `${sensor.name} sent invalid sensor data.`, details: JSON.stringify({ raw: String(raw).slice(0, 200), measured_at: measuredAt }), triggered_at: receivedAt,
           created_at: receivedAt, id_created: who, created_by: who, created_by_type: 'system', deleteflag: 0, oldid: null });
       } else if (quality === 'GOOD' && value != null) {
         await knex('alerts').where({ sensor_id: sensor.sensor_id, alert_type: 'SENSOR_ERROR', status: 'OPEN', deleteflag: 0 }).update({ status: 'RESOLVED', resolution: 'Sensor sent a valid reading.', acknowledged_at: receivedAt, updated_at: receivedAt });
         const history = await knex('sensor_readings').where({ sensor_id: sensor.sensor_id, deleteflag: 0 }).whereNotNull('value_number').where('measured_at', '<', measuredAt).orderBy('measured_at', 'desc').limit(20).select('value_number');
-        if (history.length >= 8) {
+        if (history.length >= ANOMALY_MIN_SAMPLES) {
           const values = history.map((row) => Number(row.value_number));
           const mean = values.reduce((sum, number) => sum + number, 0) / values.length;
           const deviation = Math.sqrt(values.reduce((sum, number) => sum + (number - mean) ** 2, 0) / values.length);
-          if (deviation > 0 && Math.abs(value - mean) > deviation * 3) {
+          if (deviation > 0 && Math.abs(value - mean) > deviation * ANOMALY_SIGMA) {
             const openAnomaly = await knex('alerts').where({ sensor_id: sensor.sensor_id, alert_type: 'DATA_ANOMALY', status: 'OPEN', deleteflag: 0 }).first('alert_id');
-            if (!openAnomaly) await knex('alerts').insert({ room_id: device.room_id, device_id: device.device_id, sensor_id: sensor.sensor_id,
+            if (!openAnomaly) await insertAlert({ room_id: device.room_id, device_id: device.device_id, sensor_id: sensor.sensor_id,
               alert_type: 'DATA_ANOMALY', severity: 'WARNING', status: 'OPEN', message: `${sensor.name} produced an unusual value (${value}${sensor.unit || ''}).`, details: JSON.stringify({ value, mean, standard_deviation: deviation, sample_count: values.length }), triggered_at: measuredAt,
               created_at: receivedAt, id_created: who, created_by: who, created_by_type: 'system', deleteflag: 0, oldid: null });
           }
@@ -87,7 +96,7 @@ async function ingest(item) {
       if (quality === 'GOOD' && value != null && ((sensor.warning_low != null && value < Number(sensor.warning_low)) || (sensor.warning_high != null && value > Number(sensor.warning_high)))) {
         const severity = ((sensor.min_value != null && value < Number(sensor.min_value)) || (sensor.max_value != null && value > Number(sensor.max_value))) ? 'CRITICAL' : 'WARNING';
         const alreadyOpen = await knex('alerts').where({ sensor_id: sensor.sensor_id, alert_type: 'SENSOR_THRESHOLD', status: 'OPEN', deleteflag: 0 }).first('alert_id');
-        if (!alreadyOpen) await knex('alerts').insert({ room_id: device.room_id, device_id: device.device_id, sensor_id: sensor.sensor_id,
+        if (!alreadyOpen) await insertAlert({ room_id: device.room_id, device_id: device.device_id, sensor_id: sensor.sensor_id,
           alert_type: 'SENSOR_THRESHOLD', severity, status: 'OPEN', message: `${sensor.name} reading ${value}${sensor.unit || ''} crossed its configured threshold.`,
           details: JSON.stringify({ value, warning_low: sensor.warning_low, warning_high: sensor.warning_high }), triggered_at: measuredAt,
           created_at: receivedAt, id_created: who, created_by: who, created_by_type: 'system', deleteflag: 0, oldid: null });

@@ -211,7 +211,11 @@ mqttDeviceCtrl.deviceStatus = async function(req, res) {
                 error = await deviceStatus.watch(device.mqtt_pub) || deviceStatus.getPasswordError(device.mqtt_pub);
                 deviceStatus.requestStatus(device, false);
             }
-            return Object.assign({}, device, {status: deviceStatus.getStatus(device.mqtt_pub), error});
+            const linked = await knex('devices').where({mqtt_microservice_id: device.mqtt_microservice_id, status: 'ACTIVE', deleteflag: 0}).first('device_id');
+            const alerts = linked ? await knex('alerts').where({device_id: linked.device_id, deleteflag: 0})
+                .whereIn('status', ['OPEN', 'ACKNOWLEDGED']).orderBy('triggered_at', 'desc')
+                .limit(5).select('alert_id', 'alert_type', 'severity', 'status', 'message', 'triggered_at') : [];
+            return Object.assign({}, device, {status: deviceStatus.getStatus(device.mqtt_pub), error, alerts});
         }));
         returnOKCustom(res, {devices: result, mqttConnected: !mqttError, mqttError});
     } catch (error) {

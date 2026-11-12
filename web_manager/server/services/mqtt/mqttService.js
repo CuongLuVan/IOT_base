@@ -82,7 +82,7 @@ class MqttService extends EventEmitter {
         const clientId = params.clientId || process.env.MQTT_CLIENT_ID || 'web_manager';
         const keepalive = parseInt(params.keepalive || process.env.MQTT_KEEPALIVE || 60, 10) || 60;
         const clean = params.clean !== undefined ? !!params.clean : true;
-        const autoSub = String(params.topics || '').split(',').map((s) => s.trim()).filter(Boolean);
+        const autoSub = [...new Set(String(params.topics || '').split(',').map((s) => s.trim()).filter(Boolean).concat(['iot/alert/#']))];
         const url = String(host).includes('://') ? host : `${protocol}://${host}:${port}`;
         const urlProtocol = url.split('://')[0];
 

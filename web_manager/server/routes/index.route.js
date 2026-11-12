@@ -14,6 +14,7 @@ const roomRoutes = require('./room.route.js');
 const locationRoutes = require('./location.route.js');
 const roomIotDataRoutes = require('./roomIotData.route.js');
 require('../services/mqtt/roomSensorIngestion.js');
+require('../services/mqtt/mqttAlertIngestion.js');
 
 const router = express.Router();
 

@@ -3,6 +3,7 @@
 const { writeAudit } = require('../services/roomIotAudit.js');
 const rooms = {};
 const deviceStatus = require('../services/mqtt/deviceStatusService.js');
+const notificationService = require('../services/mqtt/notificationService.js');
 
 function actor(req) {
   return { id: Number(req.currentUser.users_id), type: req.auth.type };
@@ -96,7 +97,9 @@ rooms.overview = async (req, res) => {
     for (const device of selectedDevices) {
       const openOffline = await knex('alerts').where({ room_id: device.room_id, device_id: device.device_id, alert_type: 'DEVICE_OFFLINE', status: 'OPEN', deleteflag: 0 }).first('alert_id');
       if (device.connection_status === 'OFFLINE' && !openOffline) {
-        await knex('alerts').insert({ room_id: device.room_id, device_id: device.device_id, alert_type: 'DEVICE_OFFLINE', severity: 'WARNING', status: 'OPEN', message: `${device.content || 'Device ' + device.mqtt_microservice_id} is offline.`, details: JSON.stringify({ last_online: device.last_online }), triggered_at: knex.fn.now(), created_at: knex.fn.now(), id_created: actor(req).id, created_by: actor(req).id, created_by_type: actor(req).type, deleteflag: 0, oldid: null });
+        const alert = { room_id: device.room_id, device_id: device.device_id, alert_type: 'DEVICE_OFFLINE', severity: 'WARNING', status: 'OPEN', message: `${device.content || 'Device ' + device.mqtt_microservice_id} is offline.`, details: JSON.stringify({ last_online: device.last_online }), triggered_at: knex.fn.now(), created_at: knex.fn.now(), id_created: actor(req).id, created_by: actor(req).id, created_by_type: actor(req).type, deleteflag: 0, oldid: null };
+        await knex('alerts').insert(alert);
+        notificationService.sendAlert(alert);
       } else if (device.connection_status === 'ONLINE' && openOffline) {
         await knex('alerts').where({ alert_id: openOffline.alert_id }).update({ status: 'RESOLVED', resolution: 'Device reported online.', acknowledged_at: knex.fn.now(), updated_at: knex.fn.now(), id_updated: actor(req).id });
       }
@@ -201,7 +204,9 @@ async function roomDetails(req, room) {
   for (const device of live.devices) {
     const open = await knex('alerts').where({ room_id: room.room_id, device_id: device.device_id, alert_type: 'DEVICE_OFFLINE', status: 'OPEN', deleteflag: 0 }).first('alert_id');
     if (device.connection_status === 'OFFLINE' && !open) {
-      await knex('alerts').insert({ room_id: room.room_id, device_id: device.device_id, alert_type: 'DEVICE_OFFLINE', severity: 'WARNING', status: 'OPEN', message: `${device.content || 'Device ' + device.device_id} is offline.`, details: JSON.stringify({ last_online: device.last_online }), triggered_at: knex.fn.now(), created_at: knex.fn.now(), id_created: 0, created_by: 0, created_by_type: 'system', deleteflag: 0, oldid: null });
+      const alert = { room_id: room.room_id, device_id: device.device_id, alert_type: 'DEVICE_OFFLINE', severity: 'WARNING', status: 'OPEN', message: `${device.content || 'Device ' + device.device_id} is offline.`, details: JSON.stringify({ last_online: device.last_online }), triggered_at: knex.fn.now(), created_at: knex.fn.now(), id_created: 0, created_by: 0, created_by_type: 'system', deleteflag: 0, oldid: null };
+      await knex('alerts').insert(alert);
+      notificationService.sendAlert(alert);
     } else if (device.connection_status === 'ONLINE' && open) {
       await knex('alerts').where({ alert_id: open.alert_id }).update({ status: 'RESOLVED', resolution: 'Device reported online.', acknowledged_at: knex.fn.now(), updated_at: knex.fn.now() });
     }

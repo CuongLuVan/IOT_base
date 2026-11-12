@@ -27,6 +27,8 @@ const COMMAND_CONTROL = 1;
 const COMMAND_STATUS = 2;
 const STATUS_REQUEST = { com: COMMAND_STATUS };
 const STATUS_REQUEST_INTERVAL_MS = 15000;
+// Dashboard health policy: status older than two minutes is considered silent.
+const DEVICE_OFFLINE_AFTER_MS = 120000;
 // The firmware replies to a command before its device task applies it.
 const STATUS_AFTER_CONTROL_MS = 1500;
 const SUBSCRIBE_RETRY_MS = 60000;
@@ -72,7 +74,10 @@ mqttService.on('message', (item) => {
   }
   const ip = isLanIp(data.ip) ? data.ip : previous ? previous.ip : null;
   const thresholds = isThresholdList(data.th) ? data.th : previous ? previous.thresholds : null;
-  statuses.set(item.topic, { data: Object.assign({}, previous && previous.data, data), settings, onTimer, countdown, ip, thresholds, receivedAt: item.time });
+  // mqttService stamps item.time when the broker message reaches this server;
+  // use that server-side time as last-seen, never a device clock in the payload.
+  const receivedAt = Number.isFinite(Date.parse(item.time)) ? new Date(item.time).toISOString() : new Date().toISOString();
+  statuses.set(item.topic, { data: Object.assign({}, previous && previous.data, data), settings, onTimer, countdown, ip, thresholds, receivedAt });
 });
 
 // "th": the device's two threshold rules, each a 4-byte value (0 = empty).
@@ -214,6 +219,10 @@ function parseSettings(settings) {
 // 3 and drives 1 output. Both send humidity/temperature in hundredths.
 function describeStatus(entry) {
   if (!entry) return null;
+  const lastSeenMs = Date.parse(entry.receivedAt);
+  const ageMs = Number.isFinite(lastSeenMs) ? Math.max(0, Date.now() - lastSeenMs) : null;
+  const rs = Number.isInteger(entry.data.rs) ? entry.data.rs : null;
+  const healthReason = rs != null && rs !== 0 ? 'DEVICE_RESULT_' + rs : null;
   const va = toNumbers(entry.data.va);
   const co = toNumbers(entry.data.co);
   const esp32 = va.length >= 7;
@@ -232,7 +241,12 @@ function describeStatus(entry) {
   const port = Number.isInteger(co[0]) ? co[0] : null;
   return {
     rc: Number.isInteger(entry.data.rc) ? entry.data.rc : null,
-    rs: Number.isInteger(entry.data.rs) ? entry.data.rs : null,
+    rs,
+    connectionStatus: ageMs == null ? 'UNKNOWN' : ageMs <= DEVICE_OFFLINE_AFTER_MS ? 'ONLINE' : 'OFFLINE',
+    lastSeenAt: entry.receivedAt,
+    lastSeenAgeMs: ageMs,
+    healthStatus: ageMs == null ? 'UNKNOWN' : ageMs > DEVICE_OFFLINE_AFTER_MS ? 'STALE' : healthReason ? 'ERROR' : 'HEALTHY',
+    healthReason,
     model: esp32 ? 'DeviceIOT' : 'DeviceIOT8266',
     channels: esp32 ? 2 : 1,
     port,
@@ -268,5 +282,5 @@ function getStatus(topic) {
 
 module.exports = {
   ensureConnected, watch, publishCommand, requestStatus, control, getStatus, getPasswordError,
-  isPasswordRejection, PASSWORD_ERROR,
+  isPasswordRejection, PASSWORD_ERROR, DEVICE_OFFLINE_AFTER_MS,
 };

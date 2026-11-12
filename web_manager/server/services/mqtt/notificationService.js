@@ -88,10 +88,10 @@ async function sendToClient(info, message) {
   try {
     if (!info || !info.subscription || !info.subscription.endpoint) return;
     const payload = JSON.stringify({
-      title: 'MQTT Message',
-      body: '[' + message.topic + '] ' + String(message.payload || '').slice(0, 500),
+      title: message.title || 'MQTT Message',
+      body: message.body || ('[' + message.topic + '] ' + String(message.payload || '').slice(0, 500)),
       topic: message.topic,
-      url: '/mqtt',
+      url: message.url || '/mqtt',
     });
     const response = await webpush.sendNotification(info.subscription, payload, { TTL: 60 });
     if (response && (response.statusCode === 404 || response.statusCode === 410)) {
@@ -118,8 +118,23 @@ function sendAll(message) {
 
 // Mỗi khi có bản tin MQTT -> đẩy thông báo tới tất cả trình duyệt đang lắng nghe nền
 mqttService.on('message', (message) => {
+  // Structured alerts are pushed after they are persisted and correlated to a room.
+  if (message.topic && message.topic.startsWith('iot/alert/')) return;
   sendAll(message);
 });
+
+function sendAlert(alert) {
+  if (!alert || !alert.room_id) return;
+  const topic = 'iot/alert/rooms/' + alert.room_id;
+  const severity = String(alert.severity || 'WARNING').toUpperCase();
+  sendAll({
+    topic,
+    payload: alert.message,
+    title: severity + ' | ' + String(alert.alert_type || 'DEVICE_ALERT'),
+    body: String(alert.message || 'Device alert').slice(0, 500),
+    url: '/mqtt',
+  });
+}
 
 function addSubscription(subscription, filter) {
   if (!subscription || !subscription.endpoint) throw new Error('Subscription không hợp lệ');
@@ -151,6 +166,7 @@ function getPublicKey() {
 module.exports = {
   addSubscription,
   removeSubscription,
+  sendAlert,
   getCount,
   getPublicKey,
   topicMatches,

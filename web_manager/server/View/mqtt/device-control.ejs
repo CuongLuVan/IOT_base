@@ -377,20 +377,36 @@
     }
 
     function isOnline(device) {
-      return !!(device.status && Date.now() - new Date(device.status.receivedAt).getTime() < ONLINE_WINDOW_MS);
+      if (!device.status) return false;
+      if (device.status.connectionStatus) return device.status.connectionStatus === 'ONLINE';
+      const seen = Date.parse(device.status.lastSeenAt || device.status.receivedAt);
+      return Number.isFinite(seen) && Date.now() - seen <= ONLINE_WINDOW_MS;
     }
 
     function stateBadge(device) {
       const on = device.status ? device.status.on : null;
       const badge = el('span', 'badge ' + (on == null ? 'unknown' : on ? 'on' : 'off'),
-        on == null ? 'Chưa rõ' : on ? 'Đang bật' : 'Đang tắt');
+        on == null ? 'Ch\u01b0a r\u00f5' : on ? '\u0110ang b\u1eadt' : '\u0110ang t\u1eaft');
       return badge;
     }
 
     function lastSeenText(device) {
-      if (!device.status) return device.error ? 'Lỗi: ' + device.error : 'Chưa nhận được trạng thái';
-      const time = new Date(device.status.receivedAt);
-      return (isOnline(device) ? 'Trực tuyến' : 'Mất kết nối') + ' · cập nhật ' + time.toLocaleTimeString('vi-VN');
+      if (!device.status) return device.error ? 'L\u1ed7i: ' + device.error : 'Ch\u01b0a nh\u1eadn \u0111\u01b0\u1ee3c tr\u1ea1ng th\u00e1i';
+      const time = new Date(device.status.lastSeenAt || device.status.receivedAt);
+      return (isOnline(device) ? 'Tr\u1ef1c tuy\u1ebfn' : 'Ngo\u1ea1i tuy\u1ebfn') + ' \u00b7 Last seen ' + time.toLocaleString('vi-VN');
+    }
+
+    function healthText(device) {
+      if (!device.status) return device.error ? 'L\u1ed7i k\u1ebft n\u1ed1i: ' + device.error : 'Ch\u01b0a c\u00f3 heartbeat';
+      if (device.status.healthStatus === 'STALE' || !isOnline(device)) return 'Im l\u1eb7ng qu\u00e1 120 gi\u00e2y';
+      if (device.status.healthReason) return 'Thi\u1ebft b\u1ecb b\u00e1o l\u1ed7i (rs=' + device.status.rs + ')';
+      if (device.status.healthStatus === 'HEALTHY') return 'B\u00ecnh th\u01b0\u1eddng';
+      return 'Ch\u01b0a x\u00e1c \u0111\u1ecbnh';
+    }
+
+    function alertText(device) {
+      const alert = Array.isArray(device.alerts) && device.alerts[0];
+      return alert ? alert.severity + ' | ' + alert.message : 'Kh\u00f4ng c\u00f3 c\u1ea3nh b\u00e1o \u0111ang m\u1edf';
     }
 
     // Times of the active schedules from the device's "set" status field,
@@ -427,6 +443,8 @@
         card.appendChild(el('div', 'meta', 'ID: ' + device.mqtt_id));
         const seen = el('div', 'meta ' + (isOnline(device) ? 'online' : 'offline'), lastSeenText(device));
         card.appendChild(seen);
+        card.appendChild(el('div', 'meta ' + (device.status && device.status.healthStatus === 'ERROR' ? 'offline' : ''), 'Sức khỏe: ' + healthText(device)));
+        if (device.alerts && device.alerts.length) card.appendChild(el('div', 'meta offline', 'C\u1ea3nh b\u00e1o: ' + alertText(device)));
         if (deviceRoute(device) === 'lan') card.appendChild(el('div', 'meta', '🔌 Qua ' + routeText(device)));
         if (device.status && device.status.sensors.length) {
           card.appendChild(el('div', 'meta', device.status.sensors.slice(0, 2).map(function(sensor) {
@@ -503,6 +521,8 @@
         ['Loại', status ? status.model : 'Chưa rõ'],
         ['MQTT publish', device.mqtt_pub],
         ['MQTT subscribe', device.mqtt_sub],
+        ['S\u1ee9c kh\u1ecfe', healthText(device)],
+        ['C\u1ea3nh b\u00e1o \u0111ang m\u1edf', alertText(device)],
         ['Kết nối', lastSeenText(device)],
         ['Đường gửi lệnh', (routeText(device) || '—') + ' (' + TRANSPORT_LABELS[currentTransport(device.mqtt_microservice_id)] + ')'],
         ['IP trong mạng LAN', lanInfo(device).ip || (device.status && device.status.ip) || '—'],

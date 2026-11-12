@@ -2,6 +2,7 @@ const knex = require('../config/knex.js');
 const roomController = require('./room.controller.js');
 const { writeAudit } = require('../services/roomIotAudit.js');
 const deviceStatus = require('../services/mqtt/deviceStatusService.js');
+const notificationService = require('../services/mqtt/notificationService.js');
 
 const api = {};
 const actor = roomController.actor;
@@ -395,6 +396,7 @@ api.createReading = async (req, res) => {
       const [alertId] = await knex('alerts').insert({ room_id: context.room.room_id, device_id: context.device.device_id, sensor_id: sensor.sensor_id,
         alert_type: 'SENSOR_THRESHOLD', severity, status: 'OPEN', message, details, triggered_at: measuredAt,
         created_at: knex.fn.now(), id_created: who.id, created_by: who.id, created_by_type: who.type, deleteflag: 0, oldid: null });
+      notificationService.sendAlert({ room_id: context.room.room_id, alert_type: 'SENSOR_THRESHOLD', severity, message });
       await writeAudit(req, 'CREATE', 'alert', alertId, null, { alert_type: 'SENSOR_THRESHOLD', severity, message });
     }
     await writeAudit(req, 'CREATE', 'sensor_reading', readingId, null, { sensor_id: sensor.sensor_id, measured_at: measuredAt, value: body.value == null ? body.value_json : body.value });

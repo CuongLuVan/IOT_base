@@ -3,7 +3,7 @@ function addAuditColumns(table, knex) {
   table.timestamp('updated_at').nullable();
   table.integer('id_created').unsigned().nullable().index();
   table.integer('id_updated').unsigned().nullable();
-  table.integer('deleteflag').notNullable().defaultTo(0).index();
+  table.integer('deleteflag').notNullable().defaultTo(0);
   table.integer('oldid').unsigned().nullable();
 }
 
