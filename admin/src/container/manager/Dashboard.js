@@ -5,8 +5,10 @@ import CardHeader from '@material-ui/core/CardHeader';
 import React, {useState, useEffect } from 'react';
 import { getCurUser } from '../../api/httpBaseUtil';
 import ManagerData from '../../actions/ManagerData.js';
+import { useTranslate } from 'react-admin';
 
 const Dashboard =() =>{
+    const translate = useTranslate();
     useEffect(() => {
         getCurUser().then((infoUser)=>{
             for(var k in infoUser.data.user) {
@@ -17,8 +19,8 @@ const Dashboard =() =>{
     }, []);
     return (
         <Card>
-            <CardHeader title="Xin chào" />
-            <CardContent> Hãy làm việc vui vẻ </CardContent>
+            <CardHeader title={translate('app.greeting')} />
+            <CardContent>{translate('app.dashboardWelcome')}</CardContent>
         </Card>
     )
 };

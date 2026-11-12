@@ -1,0 +1,42 @@
+# DeviceIOT8266_V1 defaults (ESP8266_RTOS_SDK v3.4). Applied when sdkconfig
+# does not exist yet; delete sdkconfig to apply them again.
+
+# Board: 4 MB flash (NodeMCU / ESP-12E), 160 MHz for the TLS handshake.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESP8266_DEFAULT_CPU_FREQ_160=y
+CONFIG_ESP8266_DEFAULT_CPU_FREQ_MHZ=160
+
+# Console at the same speed as the Arduino firmware.
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
+CONFIG_ESPTOOLPY_MONITOR_BAUD_115200B=y
+CONFIG_ESPTOOLPY_MONITOR_BAUD=115200
+
+# app_main() parses the TLS certificates (mbedTLS) before the tasks start.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# FreeRTOS tick 100 Hz (timing.h rounds every delay up to whole ticks).
+CONFIG_FREERTOS_HZ=100
+
+# newlib-nano printf (SDK default): no %lld and no floats. The firmware never
+# uses them (JsonUtil.cpp formats numbers itself).
+CONFIG_NEWLIB_NANO_FORMAT=y
+
+# mbedTLS: ECDSA P-256 client certificate (mTLS) against the Node.js broker.
+# The broker does not negotiate max_fragment_length, so the input buffer must
+# hold one whole TLS record (ECDSA handshake flight ~1 KB, MQTT packets up to
+# MQTT_PACKET_SIZE); the output buffer only needs the largest MQTT packet.
+CONFIG_MBEDTLS_ASYMMETRIC_CONTENT_LEN=y
+CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN=4096
+CONFIG_MBEDTLS_SSL_OUT_CONTENT_LEN=2048
+CONFIG_MBEDTLS_ECDSA_C=y
+CONFIG_MBEDTLS_ECDH_C=y
+CONFIG_MBEDTLS_ECP_C=y
+CONFIG_MBEDTLS_ECP_DP_SECP256R1_ENABLED=y
+CONFIG_MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA=y
+CONFIG_MBEDTLS_PEM_PARSE_C=y
+CONFIG_MBEDTLS_X509_CRT_PARSE_C=y
+CONFIG_MBEDTLS_HAVE_TIME=y
+CONFIG_MBEDTLS_HAVE_TIME_DATE=y
+
+# lwIP: SNTP, DNS, SO_REUSEADDR for the web server socket.
+CONFIG_LWIP_SO_REUSE=y

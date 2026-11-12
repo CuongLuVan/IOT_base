@@ -24,6 +24,7 @@ import TreeMenu from './compoment/ra-treemenu';
 import MenuHeader from './container/head/menuHeader';
 import LoginPage from './container/authen/LoginPage';
 import chatBoxData from './reducers/chat-box-acess';
+import i18nProvider from './i18n';
 
 const ResourceLoading = () => <div style={{ padding: 24 }}>Đang tải màn hình…</div>;
 const lazyResource = (loader) => {
@@ -80,6 +81,7 @@ const AdminPortal = ({ onSwitchPortal }) => {
       dashboard={Dashboard}
       customReducers={adminReducers}
       layout={AdminLayout}
+      i18nProvider={i18nProvider}
     >
       <Resource name="users" options={{ label: 'Tài khoản' }} icon={UserIcon} list={UserList} />
       <Resource name="room_management" options={{ label: 'Quản lý phòng' }} icon={RoomServiceIcon} list={RoomManagement} />

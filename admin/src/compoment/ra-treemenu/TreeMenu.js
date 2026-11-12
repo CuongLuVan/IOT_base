@@ -129,12 +129,13 @@ const Menu = (props) => {
 
     const getPrimaryTextForResource = (resource) => {
         let resourcename = '';
-        if (resource.options && resource.options.label)
-            resourcename = resource.options.label;
-        else if (resource.name) {
+        if (resource.name) {
             resourcename = translate(`resources.${resource.name}.name`);
-            if (resourcename.startsWith('resources.'))
-                resourcename = geResourceName(resource.name);
+            if (resourcename.startsWith('resources.')) {
+                resourcename = resource.options && resource.options.label
+                    ? resource.options.label
+                    : geResourceName(resource.name);
+            }
         }
         return resourcename;
     }

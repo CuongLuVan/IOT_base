@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { useLogin } from 'react-admin';
 import { MuiThemeProvider } from '@material-ui/core/styles';
+import LanguageSelector from '../head/LanguageSelector';
 import './authen.css';
 const LoginPage = ({ onSwitchPortal }) => {
     const [userName, setUserName] = useState('');
@@ -34,6 +35,9 @@ const LoginPage = ({ onSwitchPortal }) => {
         return (
             <MuiThemeProvider>
                 <div className="auth-container">
+                  <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 1 }}>
+                    <LanguageSelector />
+                  </div>
                   <div className="auth-deco">
                   {/* Decoration */}
                     <img src="../../../public/image/leaf.svg" alt className="leaf pos-abs" />
