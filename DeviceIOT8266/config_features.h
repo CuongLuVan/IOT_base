@@ -8,9 +8,9 @@
 
 // Use the official ESP8266 Arduino core with a cooperative, RTOS-like task
 // scheduler. This keeps the task structure without depending on FreeRTOS.
-#ifndef SUPPORT_RTOS
-#define SUPPORT_RTOS 0
-#endif
+
+#define SUPPORT_RTOS 1
+
 #if SUPPORT_RTOS
 #error "Use SUPPORT_RTOS=0: DeviceIOT8266 provides cooperative tasks on the official ESP8266 Arduino core, not FreeRTOS."
 #endif

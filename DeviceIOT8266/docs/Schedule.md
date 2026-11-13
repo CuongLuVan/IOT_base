@@ -1,210 +1,222 @@
-# Lịch cục bộ (ScheduleEngine)
+# Local schedules (ScheduleEngine)
 
-Triển khai `DeviceIOT/spec_v1.txt`, cùng giao thức, layout EEPROM và logic
-với DeviceIOT (ESP32): tối đa **20 lịch**, lưu EEPROM, chạy không cần Internet
-sau khi đồng hồ đã hợp lệ, MQTT điều khiển trực tiếp luôn ưu tiên.
+Implements `DeviceIOT/spec_v1.txt`, with the same protocol, EEPROM layout and
+logic as DeviceIOT (ESP32): up to **20 schedules**, stored in EEPROM, running
+without Internet once the clock is valid; direct MQTT control always takes
+priority.
 
-Khác biệt trên ESP8266:
+Differences on ESP8266:
 
-- Chỉ có một ngõ ra (bơm, GPIO4/D2): `SCHEDULE_ALLOWED_PORT_MASK` =
-  `DEVICE_OUTPUT_MASK` = `0x01`. `port_mask` có bit khác → `INVALID`.
-- `SUPPORT_RTOS 0` (mặc định): mọi thứ chạy trong `loop()` nên không cần
-  mutex; hàng đợi lệnh lịch là ring buffer 10 phần tử. `SUPPORT_RTOS 1`: dùng
-  mutex và queue FreeRTOS như DeviceIOT.
-- `ScheduleCore.h`, `ScheduleEngine.h` và `tests/` giống hệt DeviceIOT; chỉ
-  phần nền tảng (khóa/hàng đợi) trong `ScheduleEngine.cpp` khác.
+- There is only one output (pump, GPIO4/D2): `SCHEDULE_ALLOWED_PORT_MASK` =
+  `DEVICE_OUTPUT_MASK` = `0x01`. A `port_mask` with any other bit → `INVALID`.
+- `SUPPORT_RTOS 0` (default): everything runs in `loop()`, so no mutex is
+  needed; the schedule command queue is a 10-entry ring buffer.
+  `SUPPORT_RTOS 1`: uses a FreeRTOS mutex and queue like DeviceIOT.
+- `ScheduleCore.h`, `ScheduleEngine.h` and `tests/` are identical to DeviceIOT;
+  only the platform part (locking/queue) in `ScheduleEngine.cpp` differs.
 
-## Thành phần
+## Components
 
-| File | Vai trò |
+| File | Role |
 |---|---|
-| `ScheduleCore.h` | Logic thuần (không phụ thuộc Arduino): mã hóa 6 byte + metadata, CRC8, ngày/thứ, xung đột, gộp lịch, `PortController` (ưu tiên trực tiếp + Auto OFF). Test trên máy tính: `tests/schedule_core_test.cpp`. |
-| `ScheduleEngine.h/.cpp` | Bảng lịch trong RAM, đọc/ghi EEPROM, đánh giá lịch đến hạn, hàng đợi lệnh cho `TaskDevice`. |
-| `SystemTask.cpp` | Mỗi chu kỳ 5 s gọi `ScheduleEngine::process()` rồi `flush()` (không tạo task mới; NON-OS: gọi từ `loop()` trong `DeviceIOT8266.ino`). |
-| `TaskDevice.cpp` | Áp lệnh lên `device_port`, quản lý quyền điều khiển từng cổng, Auto OFF. |
-| `NetworkMqtt.cpp` | Lệnh lịch `com` 8..13, trả bản tin trạng thái rút gọn (`rc`/`rs`). |
+| `ScheduleCore.h` | Pure logic (no Arduino dependency): 6-byte encoding + metadata, CRC8, dates/weekdays, conflicts, schedule merging, `PortController` (direct-control priority + Auto OFF). Host test: `tests/schedule_core_test.cpp`. |
+| `ScheduleEngine.h/.cpp` | Schedule table in RAM, EEPROM read/write, evaluation of due schedules, command queue for `TaskDevice`. |
+| `SystemTask.cpp` | Every 5 s cycle calls `ScheduleEngine::process()` then `flush()` (no new task is created; NON-OS: called from `loop()` in `DeviceIOT8266.ino`). |
+| `TaskDevice.cpp` | Applies commands to `device_port`, manages per-port control ownership, Auto OFF. |
+| `NetworkMqtt.cpp` | Schedule commands `com` 8..13, returns the compact status message (`rc`/`rs`). |
 
 ```
 MQTT com 8..12 ──> ScheduleEngine (RAM, dirty) ──flush (SystemTask)──> EEPROM
-SystemTask 5 s ──> process(time) ──> hàng đợi lệnh lịch ──> TaskDevice ──> GPIO
-MQTT/HTTP com:1, nút nhấn ─────────────────────────────────> TaskDevice (ưu tiên)
+SystemTask 5 s ──> process(time) ──> schedule command queue ──> TaskDevice ──> GPIO
+MQTT/HTTP com:1, button ───────────────────────────────────> TaskDevice (priority)
 ```
 
-## Vùng EEPROM (2831..3054, 224 byte)
+## EEPROM region (2831..3054, 224 bytes)
 
-Đặt **sau** vùng cuối cùng của layout cũ (khóa Ascon kết thúc ở 2830), nên
-không địa chỉ nào cũ bị dịch. `EEPROM_SIZE` = 3063 (gồm 4 byte hẹn giờ tự tắt và 4 byte đếm ngược phía sau) (< 3 KB, trong sector 4 KB).
-`EEPROM.begin()` với kích thước lớn hơn giữ nguyên dữ liệu cũ; vùng lịch được
-định dạng ở lần khởi động đầu. Vùng 115..226 (lịch bơm cũ) giữ chỗ, không còn
-đọc; lịch cũ không được chuyển sang.
+Placed **after** the last region of the old layout (the Ascon keys end at 2830),
+so no existing address is shifted. `EEPROM_SIZE` = 3063 (including the 4-byte
+auto-off timer and the 4-byte countdown after it) (< 3 KB, within a 4 KB
+sector). `EEPROM.begin()` with a larger size keeps old data intact; the schedule
+region is formatted on first boot. Region 115..226 (old pump schedules) is
+reserved and no longer read; old schedules are not migrated.
 
-| Địa chỉ | Kích thước | Nội dung |
+| Address | Size | Content |
 |---|---|---|
-| 2831 | 4 | Header: `'S' 'C'`, version `1`, số slot `20` |
-| 2835 | 20 × 6 | Bản ghi lịch id 1..20 (định dạng spec §2, không đổi) |
+| 2831 | 4 | Header: `'S' 'C'`, version `1`, slot count `20` |
+| 2835 | 20 × 6 | Schedule records id 1..20 (spec §2 format, unchanged) |
 | 2955 | 20 × 5 | Metadata id 1..20 |
 
-Bản ghi 6 byte: `hour, minute, weekday, port_state, auto_off_lo, auto_off_hi`.
-`weekday` bit0 = Thứ 2 … bit6 = Chủ nhật; `0x00` = lịch một lần (ONCE).
+6-byte record: `hour, minute, weekday, port_state, auto_off_lo, auto_off_hi`.
+`weekday` bit0 = Monday … bit6 = Sunday; `0x00` = one-time schedule (ONCE).
 
-Metadata 5 byte: `flags, port_mask, day_lo, day_hi, crc8`.
+5-byte metadata: `flags, port_mask, day_lo, day_hi, crc8`.
 
-- `flags`: bit0 đang dùng, bit1 bật. (bit2 "đã xong" chỉ có trong RAM.)
-- `day` (số ngày kể từ 1970-01-01, theo giờ địa phương): với ONCE là ngày chạy;
-  với WEEKLY luôn lưu 0.
-- `crc8` phủ 6 byte bản ghi + 4 byte metadata đầu. Slot hỏng CRC hoặc dữ liệu
-  sai bị bỏ riêng slot đó; header sai thì định dạng lại cả vùng.
+- `flags`: bit0 in use, bit1 enabled. (bit2 "done" exists only in RAM.)
+- `day` (days since 1970-01-01, local time): for ONCE it is the run date; for
+  WEEKLY it is always stored as 0.
+- `crc8` covers the 6 record bytes + the first 4 metadata bytes. A slot with a
+  bad CRC or invalid data is dropped individually; a bad header reformats the
+  whole region.
 
-**EEPROM chỉ được ghi khi cấu hình thay đổi** (thêm/sửa/xóa/bật/tắt/xóa
-hết lịch, `com` 8..12), không bao giờ ghi khi lịch chạy. Lịch sử hoạt động
-(ngày WEEKLY chạy gần nhất, ONCE đã xong) chỉ nằm trong RAM. Việc ghi diễn ra
-trong `SystemTask`, không trong MQTT callback. `EEPROM.write()` chỉ đánh dấu
-byte thay đổi và `commit()` bỏ qua khi không có gì đổi.
+**EEPROM is only written when the configuration changes** (add/update/delete/
+enable/disable/clear all schedules, `com` 8..12), never when a schedule runs.
+Run history (last WEEKLY run date, ONCE done) lives only in RAM. Writing happens
+in `SystemTask`, not in the MQTT callback. `EEPROM.write()` only marks changed
+bytes, and `commit()` is skipped when nothing changed.
 
-**Lưu ý ESP8266:** `EEPROM.commit()` xóa rồi ghi lại cả sector flash, không
-phải giao dịch nguyên tử như NVS của ESP32. Mất điện đúng lúc commit có thể
-làm hỏng cả sector (kể cả cấu hình WiFi/MQTT) — rủi ro này đã có với mọi lần
-lưu cấu hình. Vì lịch chạy không ghi flash, số lần ghi chỉ bằng số lần cấu
-hình lịch.
+**ESP8266 note:** `EEPROM.commit()` erases and rewrites the whole flash sector;
+it is not an atomic transaction like ESP32 NVS. A power loss exactly during a
+commit can corrupt the whole sector (including WiFi/MQTT configuration) — this
+risk already exists for every configuration save. Since running schedules never
+writes flash, the number of writes equals only the number of schedule
+configuration changes.
 
-## Lệnh MQTT (và LAN)
+## MQTT (and LAN) commands
 
-Gửi vào topic subscribe như các lệnh hiện có, hoặc qua LAN
-(`docs/LanControl.md`). Nếu bật Ascon thì bọc `{"com":1,"value":...}` như mọi
-lệnh khác. Trên ESP8266 chỉ có `po` = 1.
+Send to the subscribe topic like the existing commands, or over LAN
+(`docs/LanControl.md`). If Ascon is enabled, wrap `{"com":1,"value":...}` like
+any other command. On ESP8266 only `po` = 1 exists.
 
-| `com` | Lệnh | Ví dụ |
+| `com` | Command | Example |
 |---|---|---|
-| 5 | Hẹn giờ tự tắt (xem mục dưới) | `{"com":5,"value":1800}` |
-| 8 | Thêm lịch | `{"com":8,"id":1,"ho":7,"mi":30,"we":31,"po":1,"pos":1,"au":600}` |
-| 9 | Sửa lịch (cùng trường như thêm) | `{"com":9,"id":1,"ho":7,"mi":45,"we":31,"po":1,"pos":1,"au":900}` |
-| 10 | Xóa lịch | `{"com":10,"id":1}` |
-| 11 | Bật / tắt lịch | `{"com":11,"id":1,"value":1}` (`0` = tắt) |
-| 12 | Xóa tất cả lịch | `{"com":12}` |
-| 13 | Đọc danh sách lịch | `{"com":13,"fr":1}` |
-| 14 | Điều khiển theo ngưỡng sensor (xem mục dưới) | `{"com":14,"id":1,"value":34671544}` |
+| 5 | Auto-off timer (see section below) | `{"com":5,"value":1800}` |
+| 8 | Add schedule | `{"com":8,"id":1,"ho":7,"mi":30,"we":31,"po":1,"pos":1,"au":600}` |
+| 9 | Update schedule (same fields as add) | `{"com":9,"id":1,"ho":7,"mi":45,"we":31,"po":1,"pos":1,"au":900}` |
+| 10 | Delete schedule | `{"com":10,"id":1}` |
+| 11 | Enable / disable schedule | `{"com":11,"id":1,"value":1}` (`0` = disable) |
+| 12 | Delete all schedules | `{"com":12}` |
+| 13 | Read schedule list | `{"com":13,"fr":1}` |
+| 14 | Sensor threshold control (see section below) | `{"com":14,"id":1,"value":34671544}` |
 
-Các số khác đã dùng: 1 điều khiển, 2 trạng thái, 3 (nội bộ), 4 đếm ngược,
-7 Ascon, 15 thu mẫu tốc độ cao (chỉ DeviceIOT). 6 không dùng.
+Other numbers in use: 1 control, 2 status, 3 (internal), 4 countdown,
+7 Ascon, 15 high-speed acquisition (DeviceIOT only). 6 is unused.
 
-Trường của lịch (com 8, 9):
+Schedule fields (com 8, 9):
 
-| Trường | Ý nghĩa | |
+| Field | Meaning | |
 |---|---|---|
-| `id` | số lịch 1..20 | bắt buộc (trừ 12, 13) |
-| `ho`, `mi` | giờ 0..23, phút 0..59 | bắt buộc |
-| `we` | weekday bitmask: T2=1, T3=2, T4=4, T5=8, T6=16, T7=32, CN=64; `0` = một lần | bắt buộc |
-| `po` | port_mask: cổng lịch điều khiển (bit0 = cổng 1 …) | mặc định `0x01` (bơm); bit ngoài vùng này → bị từ chối |
-| `pos` | port_state: bit = 1 bật, 0 tắt (chỉ trong `po`) | bắt buộc |
-| `au` | auto_off 0..65535 giây, `0` = không tự tắt | mặc định 0 |
-| `en` | `0` = lưu ở trạng thái tắt | mặc định 1 |
-| `ye`, `mo`, `da` | ngày chạy của lịch một lần (`we` 0); thời điểm đã qua → bị từ chối | khi `we` = 0 |
+| `id` | schedule number 1..20 | required (except 12, 13) |
+| `ho`, `mi` | hour 0..23, minute 0..59 | required |
+| `we` | weekday bitmask: Mon=1, Tue=2, Wed=4, Thu=8, Fri=16, Sat=32, Sun=64; `0` = one-time | required |
+| `po` | port_mask: ports controlled by the schedule (bit0 = port 1 …) | default `0x01` (pump); bits outside this range → rejected |
+| `pos` | port_state: bit = 1 on, 0 off (only within `po`) | required |
+| `au` | auto_off 0..65535 seconds, `0` = no auto-off | default 0 |
+| `en` | `0` = save in disabled state | default 1 |
+| `ye`, `mo`, `da` | run date of a one-time schedule (`we` 0); a time already in the past → rejected | when `we` = 0 |
 
-### Mật khẩu lệnh (`ENABLE_COMMAND_PASSWORD`)
+### Command password (`ENABLE_COMMAND_PASSWORD`)
 
-Mọi lệnh (MQTT, LAN `/lan`, HTTP `/control`) phải có `"pa"` = mật khẩu thiết
-bị, tức `mqtt_pwd` đã lưu khi cài đặt (web_manager lưu thành `mqtt_pass` khi
-đăng ký thiết bị):
+Every command (MQTT, LAN `/lan`, HTTP `/control`) must include `"pa"` = the
+device password, i.e. the `mqtt_pwd` saved during setup (web_manager stores it
+as `mqtt_pass` when registering the device):
 
 ```json
-{"com":5,"value":1800,"pa":"matkhau"}
-{"com":8,"id":1,"ho":7,"mi":30,"we":31,"po":1,"pos":1,"au":600,"pa":"matkhau"}
-{"com":2,"pa":"matkhau"}
+{"com":5,"value":1800,"pa":"mypassword"}
+{"com":8,"id":1,"ho":7,"mi":30,"we":31,"po":1,"pos":1,"au":600,"pa":"mypassword"}
+{"com":2,"pa":"mypassword"}
 ```
 
-- Sai hoặc thiếu `pa` → lệnh không chạy, thiết bị trả `{"rc":<com>,"rs":6}`;
-  `/control` trả HTTP 403. Mọi lệnh đều có dạng `{"com":<số>,...}`, không còn
-  lệnh / trả lời dạng `"cmd"`.
-- Thiết bị chưa cài mật khẩu (`mqtt_pwd` rỗng) nhận lệnh không có `pa`.
-- Kiểm tra sau khi giải mã Ascon, nên `pa` nằm trong lệnh đã mã hóa.
-- `pa` đi dạng chữ rõ: qua MQTT được TLS bảo vệ tới broker (broker vẫn đọc
-  được); qua LAN là HTTP thường, máy khác trong LAN có thể nghe được.
+- Wrong or missing `pa` → the command does not run and the device returns
+  `{"rc":<com>,"rs":6}`; `/control` returns HTTP 403. Every command has the form
+  `{"com":<number>,...}`; there are no more `"cmd"`-style commands / replies.
+- A device with no password set (empty `mqtt_pwd`) accepts commands without `pa`.
+- The check happens after Ascon decryption, so `pa` is inside the encrypted
+  command.
+- `pa` travels in plain text: over MQTT it is protected by TLS up to the broker
+  (the broker can still read it); over LAN it is plain HTTP, and other machines
+  on the LAN can sniff it.
 
-### Trả lời
+### Replies
 
-Mọi lệnh (trừ 1, 7, 13, 15) trả về **bản tin trạng thái rút gọn** (như `{"com":2}`)
-cộng thêm kết quả:
+Every command (except 1, 7, 13, 15) returns the **compact status message**
+(like `{"com":2}`) plus the result:
 
 ```json
 {"se":2,"va":"...","co":"1,0,0,12","set":["7,30,31,1,600"],"tim":1800,"cd":0,"cm":0,"cs":600,"ip":"192.168.1.20","rc":8,"rs":0,"id":1}
 {"se":2,"va":"...","co":"1,0,0,12","set":["7,30,31,1,600"],"tim":1800,"cd":0,"cm":0,"cs":600,"ip":"192.168.1.20","rc":8,"rs":1,"id":3,"ci":1,"cp":1}
 ```
 
-| Trường | Ý nghĩa |
+| Field | Meaning |
 |---|---|
-| `rc` | `com` của lệnh được trả lời |
-| `rs` | kết quả: 0 thành công, 1 trùng lịch, 2 không hợp lệ, 3 không có lịch, 4 id đã dùng, 5 chưa sẵn sàng, 6 sai mật khẩu, 7 đang bận |
-| `id` | id lịch của lệnh (không có với 5, 12) |
-| `ci`, `cp` | khi `rs` = 1: id lịch bị trùng và các cổng trùng |
+| `rc` | `com` of the command being answered |
+| `rs` | result: 0 success, 1 schedule conflict, 2 invalid, 3 no such schedule, 4 id already in use, 5 not ready, 6 wrong password, 7 busy |
+| `id` | schedule id of the command (absent for 5, 12) |
+| `ci`, `cp` | when `rs` = 1: id of the conflicting schedule and the conflicting ports |
 
-Lý do chi tiết khi bị từ chối chỉ ghi ra log Serial, không gửi đi.
+Detailed rejection reasons are only written to the Serial log, not sent.
 
-Idempotent (QoS 1 gửi lại): thêm lịch y hệt lịch đã có → `rs` 0; thêm vào id
-đã dùng với nội dung khác → `rs` 4 (dùng com 9); xóa lại → `rs` 0; bật/tắt lặp
-→ `rs` 0.
+Idempotent (QoS 1 redelivery): adding a schedule identical to an existing one →
+`rs` 0; adding to an id already in use with different content → `rs` 4 (use
+com 9); deleting again → `rs` 0; repeated enable/disable → `rs` 0.
 
-`{"com":13,"fr":1}` trả tối đa 10 lịch/lần (giữ dưới 1024 byte):
+`{"com":13,"fr":1}` returns at most 10 schedules per call (to stay under 1024
+bytes):
 
 ```json
 {"rc":13,"rs":0,"mx":20,"cv":1,"nx":0,"it":[[1,7,30,31,1,1,600,1,0,""],[2,18,0,0,1,1,0,1,0,"2026-12-24"]]}
 ```
 
-Mỗi dòng `it`: `id,ho,mi,we,po,pos,au,en,dn,date` (`dn` = lịch một lần đã
-chạy; `date` = ngày chạy của lịch một lần, hoặc ngày chạy gần nhất kể từ lần
-khởi động của lịch tuần). `mx` = số lịch tối đa, `cv` = 1 khi đồng hồ hợp lệ,
-`nx` ≠ 0 → gửi lại với `"fr":nx`.
+Each `it` row: `id,ho,mi,we,po,pos,au,en,dn,date` (`dn` = one-time schedule has
+run; `date` = run date of a one-time schedule, or the most recent run date since
+boot for a weekly schedule). `mx` = maximum number of schedules, `cv` = 1 when
+the clock is valid, `nx` ≠ 0 → send again with `"fr":nx`.
 
-Lệnh trực tiếp hiện có không đổi: `{"com":1,"value":X}` (X = 0..1) vẫn đặt
-toàn bộ ngõ ra. Thêm tùy chọn `"mask"`: `{"com":1,"value":1,"mask":1}`.
-Trả lời: bản tin trạng thái ngắn (`se`, `va`, `co`) + `"rc":1,"rs":0`; bản tin gửi
-trước khi thiết bị áp lệnh nên `co` có thể còn trạng thái cũ. `value` / `mask` sai
-→ `{"rc":1,"rs":2}`; hàng đợi lệnh đầy → `{"rc":1,"rs":5}`.
+The existing direct command is unchanged: `{"com":1,"value":X}` (X = 0..1) still
+sets all outputs. New optional `"mask"`: `{"com":1,"value":1,"mask":1}`.
+Reply: short status message (`se`, `va`, `co`) + `"rc":1,"rs":0`; the message is
+sent before the device applies the command, so `co` may still show the old
+state. Invalid `value` / `mask` → `{"rc":1,"rs":2}`; command queue full →
+`{"rc":1,"rs":5}`.
 
-## Đọc trạng thái và lịch hiện tại: `com:2`
+## Reading status and current schedules: `com:2`
 
 ```json
 {"com":2}
 ```
 
-Thay cho lệnh cũ `{"cmd":"STATUS_GET"}`. Thiết bị trả lời bản tin trạng thái
-rút gọn ở trên với `"rc":2,"rs":0`: `se`, `va`, `co` như bản tin định kỳ, cộng
-thêm `set` (các lịch đang hoạt động), `tim` (hẹn giờ tự tắt, giây; `0` = không
-dùng), `cd` (đếm ngược tự bật, số giây còn lại; `0` = không đếm), `cm` (cổng
-đếm ngược sẽ bật), `cs` (số giây của lần đếm ngược gần nhất), `ip` (địa chỉ LAN)
-và `th` (cài đặt ngưỡng).
+Replaces the old `{"cmd":"STATUS_GET"}` command. The device replies with the
+compact status message above with `"rc":2,"rs":0`: `se`, `va`, `co` as in the
+periodic message, plus `set` (active schedules), `tim` (auto-off timer, seconds;
+`0` = unused), `cd` (auto-on countdown, seconds remaining; `0` = not counting),
+`cm` (ports the countdown will turn on), `cs` (seconds of the most recent
+countdown), `ip` (LAN address) and `th` (threshold settings).
 
-Mỗi phần tử `set` là đúng bản ghi 6 byte trong EEPROM, dạng chữ
-`"giờ,phút,weekday,port_state,auto_off"`:
+Each `set` element is exactly the 6-byte EEPROM record, as text
+`"hour,minute,weekday,port_state,auto_off"`:
 
-| Ví dụ `"8,20,1,4,5"` | Ý nghĩa |
+| Example `"8,20,1,4,5"` | Meaning |
 |---|---|
 | `8,20` | 08:20 |
-| `1` | weekday bitmask: bit0 = Thứ 2 → thứ 2 hằng tuần (`0` = lịch một lần) |
-| `4` | port_state `0x04`: cổng 3 bật |
-| `5` | auto_off: tự tắt sau 5 giây (byte 4 + byte 5 × 256; `0` = không tự tắt) |
+| `1` | weekday bitmask: bit0 = Monday → every Monday (`0` = one-time schedule) |
+| `4` | port_state `0x04`: port 3 on |
+| `5` | auto_off: turn off after 5 seconds (byte 4 + byte 5 × 256; `0` = no auto-off) |
 
-- Chỉ gồm các lịch **đang hoạt động** (đã bật, lịch một lần chưa chạy), sắp
-  theo giờ cài đặt (cùng giờ thì theo id).
-- Giống bản ghi 6 byte, `set` không có `port_mask`, id hay ngày của lịch một
-  lần; một lịch chỉ tắt cổng hiện `port_state` = 0. Cần các thông tin đó (để
-  sửa/xóa lịch) thì dùng `{"com":13}`.
-- Đọc từ RAM, không ghi EEPROM. Với 20 lịch bản tin dài khoảng 600 byte.
+- Contains only **active** schedules (enabled, one-time schedules not yet run),
+  sorted by scheduled time (same time → by id).
+- Like the 6-byte record, `set` has no `port_mask`, id or one-time date; a
+  schedule that only turns a port off shows `port_state` = 0. If you need that
+  information (to update/delete schedules), use `{"com":13}`.
+- Read from RAM, no EEPROM write. With 20 schedules the message is about 600
+  bytes.
 
-## Hẹn giờ tự tắt (OnTimer, độc lập với lịch)
+## Auto-off timer (OnTimer, independent of schedules)
 
-Cổng nào **bật liên tục đủ N giây thì tự tắt**, dù được bật bằng MQTT
-(`com:1`), giữ nút 3 s hay lịch. N là một giá trị chung cho mọi cổng.
+Any port that has been **on continuously for N seconds is turned off
+automatically**, whether it was turned on by MQTT (`com:1`), a 3 s button hold
+or a schedule. N is a single value shared by all ports.
 
-- Lưu **4 byte** tại 3055..3058 (`ON_TIMER_EEPROM_ADDRESS`, ngay sau vùng
-  lịch): uint32 little-endian, đơn vị giây, **1..86400 (24 h)**; `0` = không
-  dùng. Byte trống/hỏng (vd. `FF FF FF FF`) được coi là `0`.
-- EEPROM chỉ được ghi khi giá trị **thay đổi**, trong
-  `SystemTask` (`OnTimer::flush()`), không trong MQTT callback.
-- Đếm bằng `millis()` (không cần NTP). Cổng tắt rồi bật lại thì đếm lại từ
-  đầu. Đổi N có hiệu lực ngay với cổng đang bật (vd. đặt 60 s cho cổng đã bật
-  10 phút → tắt ở chu kỳ `TaskDevice` kế tiếp).
-- Không thay đổi lịch hay `PortController`: nếu lịch có `auto_off` ngắn hơn
-  thì `auto_off` tắt trước; mốc nào đến trước thì tắt trước.
+- Stored as **4 bytes** at 3055..3058 (`ON_TIMER_EEPROM_ADDRESS`, right after
+  the schedule region): uint32 little-endian, in seconds, **1..86400 (24 h)**;
+  `0` = unused. Blank/corrupt bytes (e.g. `FF FF FF FF`) are treated as `0`.
+- EEPROM is only written when the value **changes**, in `SystemTask`
+  (`OnTimer::flush()`), not in the MQTT callback.
+- Counted with `millis()` (no NTP needed). If a port is turned off and on again
+  the count restarts. Changing N takes effect immediately for ports that are
+  already on (e.g. setting 60 s for a port that has been on for 10 minutes →
+  it turns off on the next `TaskDevice` cycle).
+- Does not change schedules or `PortController`: if a schedule has a shorter
+  `auto_off`, `auto_off` turns the port off first; whichever deadline comes
+  first wins.
 
 ```json
 {"com":5,"value":1800}
@@ -212,14 +224,14 @@ Cổng nào **bật liên tục đủ N giây thì tự tắt**, dù được b�
 {"com":5}
 ```
 
-`value` = số giây (1..86400), `0` = tắt hẹn giờ, không có `value` = chỉ đọc.
-Trả lời là bản tin trạng thái rút gọn với `"rc":5`, `rs` 0 (hoặc 2 khi
-`value` sai) và `tim` = giá trị đang dùng.
+`value` = seconds (1..86400), `0` = disable the timer, no `value` = read only.
+The reply is the compact status message with `"rc":5`, `rs` 0 (or 2 when
+`value` is invalid) and `tim` = the value in use.
 
-## Đếm ngược tự bật (Countdown, độc lập với lịch)
+## Auto-on countdown (Countdown, independent of schedules)
 
-Đếm ngược **một lần**: sau N giây thiết bị bật các cổng, rồi dừng. N từ
-**1 giây đến 86400 (24 h)**.
+A **one-shot** countdown: after N seconds the device turns the ports on, then
+stops. N ranges from **1 second to 86400 (24 h)**.
 
 ```json
 {"com":4,"value":600}
@@ -228,43 +240,47 @@ Trả lời là bản tin trạng thái rút gọn với `"rc":5`, `rs` 0 (hoặ
 {"com":4}
 ```
 
-- `com` = 4 (`COMMAND_TYPE_COUNTDOWN`), `value` = số giây. Gửi lệnh mới khi
-  đang đếm thì đếm lại từ đầu với giá trị mới.
-- `mask` (không bắt buộc): cổng sẽ bật, bit0 = cổng 1, bit1 = cổng 2; mặc
-  định mọi cổng ra (`SCHEDULE_ALLOWED_PORT_MASK`).
-- `value` = 0: hủy đếm ngược. Không có `value`: chỉ đọc trạng thái.
-- Khi hết giờ, cổng được bật như một lệnh trực tiếp (`com:1`): hủy Auto OFF
-  của lịch trên cổng đó; hẹn giờ tự tắt (nếu bật) bắt đầu đếm từ lúc này.
-- Bộ đếm chỉ nằm trong RAM, đếm bằng `millis()` (không cần NTP): **mất điện
-  hoặc khởi động lại thì đếm ngược bị hủy**.
-- **4 byte** tại 3059..3062 (`COUNTDOWN_EEPROM_ADDRESS`): uint32
-  little-endian, chỉ lưu N của lần đếm gần nhất để web hiện lại. Chỉ ghi khi N
-  khác lần trước, trong `SystemTask` (`Countdown::flush()`).
+- `com` = 4 (`COMMAND_TYPE_COUNTDOWN`), `value` = seconds. Sending a new command
+  while counting restarts the count with the new value.
+- `mask` (optional): ports to turn on, bit0 = port 1, bit1 = port 2; defaults to
+  all output ports (`SCHEDULE_ALLOWED_PORT_MASK`).
+- `value` = 0: cancel the countdown. No `value`: read status only.
+- When time is up, the ports are turned on like a direct command (`com:1`): the
+  schedule's Auto OFF on that port is cancelled; the auto-off timer (if enabled)
+  starts counting from that moment.
+- The counter lives only in RAM and is counted with `millis()` (no NTP needed):
+  **a power loss or reboot cancels the countdown**.
+- **4 bytes** at 3059..3062 (`COUNTDOWN_EEPROM_ADDRESS`): uint32
+  little-endian, only stores the N of the most recent countdown so the web can
+  display it again. Written only when N differs from the previous one, in
+  `SystemTask` (`Countdown::flush()`).
 
-Trả lời: bản tin trạng thái rút gọn + `"rc":4,"rs"` (thay `COUNTDOWN_ACK` cũ):
+Reply: compact status message + `"rc":4,"rs"` (replaces the old
+`COUNTDOWN_ACK`):
 
 ```json
 {"se":2,"va":"...","co":"0,0,0,12","set":[],"tim":0,"cd":600,"cm":3,"cs":600,"ip":"192.168.1.20","th":[0,0],"rc":4,"rs":0}
 {"se":2,"va":"...","co":"0,0,0,12","set":[],"tim":0,"cd":0,"cm":0,"cs":600,"ip":"192.168.1.20","th":[0,0],"rc":4,"rs":0}
 ```
 
-`cd` = số giây còn lại (0 = không đếm), `cm` = cổng sẽ bật, `cs` = N
-gần nhất. `rs`: 0 thành công, 2 `value` / `mask` không hợp lệ, 5 chưa sẵn sàng.
-`{"com":2}` cũng trả `cd`, `cm`, `cs`.
+`cd` = seconds remaining (0 = not counting), `cm` = ports that will turn on,
+`cs` = most recent N. `rs`: 0 success, 2 invalid `value` / `mask`, 5 not ready.
+`{"com":2}` also returns `cd`, `cm`, `cs`.
 
-## Điều khiển theo ngưỡng sensor (ThresholdControl, độc lập với lịch)
+## Sensor threshold control (ThresholdControl, independent of schedules)
 
-Tối đa **2 cài đặt**, mỗi cài đặt **4 byte** gộp thành một số `value`:
+Up to **2 settings**, each setting is **4 bytes** packed into one `value`
+number:
 
-| Byte | Bit | Ý nghĩa |
+| Byte | Bit | Meaning |
 |---|---|---|
-| 1 | 31..24 | Thứ tự sensor trong chuỗi `va`, từ 1; `0` = trống |
-| 2 | 19..16 (bit0-3) | Cổng tác động (bit0 = cổng 1 …) |
-| 2 | 20 (bit4) | `1` = bật, `0` = tắt |
-| 2 | 21 (bit5) | `0` = khi sensor **≥** ngưỡng, `1` = khi sensor **≤** ngưỡng |
-| 3-4 | 15..0 | Ngưỡng `int16`, cùng đơn vị với `va` |
+| 1 | 31..24 | Sensor index in the `va` string, starting at 1; `0` = empty |
+| 2 | 19..16 (bit0-3) | Target ports (bit0 = port 1 …) |
+| 2 | 20 (bit4) | `1` = turn on, `0` = turn off |
+| 2 | 21 (bit5) | `0` = when sensor **≥** threshold, `1` = when sensor **≤** threshold |
+| 3-4 | 15..0 | Threshold `int16`, same unit as `va` |
 
-Sensor: 1 độ ẩm ×100, 2 nhiệt độ ×100, 3 ADC (cổng: chỉ bit0).
+Sensors: 1 humidity ×100, 2 temperature ×100, 3 ADC (ports: bit0 only).
 
 ```json
 {"com":14,"id":1,"value":34671544,"pa":"..."}
@@ -273,69 +289,80 @@ Sensor: 1 độ ẩm ×100, 2 nhiệt độ ×100, 3 ADC (cổng: chỉ bit0).
 {"com":14,"pa":"..."}
 ```
 
-- Ví dụ 1: `34671544` = `0x02110BB8` → sensor 2 (nhiệt độ), `0x11` = cổng 1 + bật, ≥ `3000` (30,00 °C).
-- Ví dụ 2: `35719920` = `0x02210AF0` → nhiệt độ ≤ `2800` (28,00 °C) thì tắt cổng 1: cặp này tạo ngưỡng trễ.
-- `value` 0 = xóa cài đặt; không có `id`/`value` = chỉ đọc.
-- Hành động chạy **một lần mỗi khi điều kiện chuyển từ sai sang đúng** (không lặp mỗi lần đọc
-  sensor), áp như lệnh trực tiếp `com:1`. Cài đặt mới lưu: điều kiện đang đúng thì chạy ở lần đọc sensor kế tiếp.
-- Hai cài đặt cùng đúng một lúc trên cùng cổng nhưng ngược nhau → cổng giữ nguyên.
-- Độ ẩm / nhiệt độ: bỏ qua khi DHT đọc lỗi (`dhtValid` = false).
-- Lưu 8 byte tại 3063..3070 (`THRESHOLD_EEPROM_ADDRESS`), chỉ ghi khi đổi, trong `SystemTask`.
-  `EEPROM_SIZE` = 3071 (giới hạn 3072).
+- Example 1: `34671544` = `0x02110BB8` → sensor 2 (temperature), `0x11` = port 1 + on, ≥ `3000` (30.00 °C).
+- Example 2: `35719920` = `0x02210AF0` → temperature ≤ `2800` (28.00 °C) turns port 1 off: this pair creates a hysteresis band.
+- `value` 0 = delete the setting; no `id`/`value` = read only.
+- The action runs **once each time the condition changes from false to true**
+  (not repeated on every sensor read), applied like a direct `com:1` command. A
+  newly saved setting whose condition is already true runs on the next sensor
+  read.
+- If two settings are true at the same time on the same port but opposite → the
+  port stays unchanged.
+- Humidity / temperature: skipped when the DHT read fails (`dhtValid` = false).
+- Stored as 8 bytes at 3063..3070 (`THRESHOLD_EEPROM_ADDRESS`), written only on
+  change, in `SystemTask`. `EEPROM_SIZE` = 3071 (limit 3072).
 
-Trả lời: bản tin trạng thái rút gọn + `"rc":14,"rs":0|2[,"id":n]`, có `"th":[v1,v2]` (cả 2 cài đặt).
-`{"com":2}` cũng trả `th`.
+Reply: compact status message + `"rc":14,"rs":0|2[,"id":n]`, with
+`"th":[v1,v2]` (both settings). `{"com":2}` also returns `th`.
 
-## Xung đột
+## Conflicts
 
-Hai lịch xung đột khi cùng giờ:phút, có ngày trùng (WEEKLY∩WEEKLY theo bit,
-ONCE theo thứ của ngày đó), cùng quản lý một cổng và yêu cầu khác nhau: khác
-ON/OFF, hoặc cùng ON nhưng khác `auto_off`.
+Two schedules conflict when they have the same hour:minute, overlapping days
+(WEEKLY∩WEEKLY by bit, ONCE by the weekday of that date), control the same port
+and request different things: different ON/OFF, or both ON but with a different
+`auto_off`.
 
-- Khi ADD/UPDATE/ENABLE: từ chối lịch mới (`CONFLICT`), giữ lịch cũ.
-- Khi chạy (phòng trường hợp còn sót): cổng xung đột bị bỏ qua ở mọi lịch
-  trong phút đó; cổng khác vẫn chạy; lịch cùng trạng thái được gộp.
+- On ADD/UPDATE/ENABLE: the new schedule is rejected (`CONFLICT`), the old one
+  is kept.
+- At run time (in case any slipped through): the conflicting port is skipped
+  for all schedules in that minute; other ports still run; schedules with the
+  same state are merged.
 
-## Ưu tiên điều khiển trực tiếp
+## Direct control priority
 
-`TaskDevice` giữ `PortController` cho 8 cổng (`manualOverride`,
+`TaskDevice` keeps a `PortController` for 8 ports (`manualOverride`,
 `scheduleGeneration`, `autoOffDeadline`):
 
-- Lệnh trực tiếp (MQTT/HTTP `com:1`, giữ nút 3 s): đổi ngay cổng trong mask,
-  đặt override, tăng generation → Auto OFF cũ của cổng đó vô hiệu.
-- Sự kiện lịch kế tiếp trên cổng đó: xóa override, áp trạng thái, đặt Auto OFF
-  mới nếu bật và `auto_off > 0`.
-- Auto OFF chỉ tắt khi generation còn khớp và không override, nên lịch cũ
-  không thể tắt cổng vừa được bật lại bởi lệnh trực tiếp hoặc lịch khác.
-- Lệnh lịch và lệnh trực tiếp đến cùng chu kỳ `TaskDevice`: lịch áp trước,
-  lệnh trực tiếp áp sau (thắng).
+- Direct command (MQTT/HTTP `com:1`, 3 s button hold): immediately changes the
+  ports in the mask, sets override, increments generation → the old Auto OFF on
+  that port is invalidated.
+- The next schedule event on that port: clears override, applies the state,
+  sets a new Auto OFF if turning on and `auto_off > 0`.
+- Auto OFF only turns off when the generation still matches and there is no
+  override, so an old schedule cannot turn off a port that was just turned on
+  again by a direct command or another schedule.
+- A schedule command and a direct command arriving in the same `TaskDevice`
+  cycle: the schedule is applied first, the direct command afterwards (wins).
 
-## Thời gian và khôi phục sau reboot
+## Time and recovery after reboot
 
-- Chỉ chạy khi `time()` hợp lệ (NTP; ≥ 2024-01-01). Không dùng `millis()`.
-  Sau khi đã đồng bộ, đồng hồ ESP8266 tiếp tục chạy khi mất Internet.
-- Giờ địa phương = UTC + `SYSTEM_TASK_TIMEZONE_OFFSET_SECONDS`
-  (mặc định 0; **Việt Nam đặt `7 * 3600`**).
-- Lần đầu có giờ hợp lệ sau khởi động: chỉ xét phút hiện tại. Lịch có giờ
-  trước đó không chạy lại; ONCE đã qua giờ được đánh dấu xong (trong RAM),
-  không chạy muộn. Không cần lịch sử trong EEPROM để biết điều này.
-- Ngoại lệ duy nhất: thiết bị khởi động lại **ngay trong phút** một lịch vừa
-  chạy thì lịch đó chạy thêm một lần. Lệnh ON/OFF lặp lại cho cùng trạng thái;
-  Auto OFF được tính lại từ lần chạy sau.
-- Task bị trễ: bù tối đa `SCHEDULE_CATCHUP_MINUTES` (5) phút.
-- Hàng đợi lệnh đầy: không đánh dấu đã chạy, thử lại chu kỳ sau.
+- Runs only when `time()` is valid (NTP; ≥ 2024-01-01). `millis()` is not used.
+  Once synchronized, the ESP8266 clock keeps running when the Internet is lost.
+- Local time = UTC + `SYSTEM_TASK_TIMEZONE_OFFSET_SECONDS`
+  (default 0; **for Vietnam set `7 * 3600`**).
+- The first time a valid clock is available after boot: only the current minute
+  is considered. Schedules with an earlier time do not run again; ONCE schedules
+  whose time has passed are marked done (in RAM) and do not run late. No
+  history in EEPROM is needed for this.
+- The only exception: if the device reboots **within the same minute** in which
+  a schedule just ran, that schedule runs one more time. The ON/OFF command is
+  repeated for the same state; Auto OFF is recalculated from the later run.
+- Task delayed: catches up at most `SCHEDULE_CATCHUP_MINUTES` (5) minutes.
+- Command queue full: not marked as run, retried on the next cycle.
 
-## Kiểm thử
+## Testing
 
-`tests/schedule_core_test.cpp` (chạy trên máy tính) phủ test case 1–10, 15
-của spec ở mức logic: đúng ngày, cô lập cổng, Auto OFF 600/0, xung đột, Direct
-OFF/ON, Auto OFF cũ bị bỏ qua, khôi phục quyền lịch, ADD trùng, mã hóa/CRC.
+`tests/schedule_core_test.cpp` (runs on a host PC) covers spec test cases 1–10
+and 15 at the logic level: correct day, port isolation, Auto OFF 600/0,
+conflicts, Direct OFF/ON, stale Auto OFF ignored, schedule ownership restored,
+duplicate ADD, encoding/CRC.
 
 ```
 g++ -std=c++17 -Wall -Wextra tests/schedule_core_test.cpp -o schedule_core_test && ./schedule_core_test
 ```
 
-Test cho `port_mask` 3 (Port 2) trong file kiểm tra logic chung, không phụ
-thuộc số ngõ ra của board.
+The test for `port_mask` 3 (Port 2) lives in the shared logic test file and does
+not depend on the board's number of outputs.
 
-Test 11–14 (reboot, mất Internet, mất điện, xóa lịch) cần chạy trên thiết bị.
+Tests 11–14 (reboot, Internet loss, power loss, schedule deletion) must be run
+on the device.

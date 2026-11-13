@@ -1,20 +1,20 @@
-# Điều khiển qua LAN
+# LAN control
 
-Dùng khi broker MQTT hoặc Internet lỗi nhưng mạng LAN vẫn chạy: gửi **đúng
-câu lệnh MQTT** tới thiết bị bằng HTTP trong mạng nội bộ.
+Use this when the MQTT broker or the Internet is down but the LAN still works:
+send **the exact MQTT command** to the device over HTTP on the local network.
 
-Bật/tắt bằng `ENABLE_LAN_CONTROL` trong `define_All.h` (mặc định bật).
+Enable/disable with `ENABLE_LAN_CONTROL` in `define_All.h` (enabled by default).
 
-## Yêu cầu
+## Request
 
 ```
-POST http://<ip thiết bị>/lan
+POST http://<device ip>/lan
 Content-Type: application/json
 
-{"data": <lệnh MQTT>}
+{"data": <MQTT command>}
 ```
 
-`data` là nguyên câu lệnh MQTT: một object JSON, hoặc chuỗi chứa JSON đó.
+`data` is the full MQTT command: a JSON object, or a string containing that JSON.
 
 ```json
 {"data":{"com":1,"value":1}}
@@ -24,85 +24,96 @@ Content-Type: application/json
 {"data":{"com":8,"id":1,"ho":7,"mi":30,"we":31,"po":1,"pos":1,"au":600}}
 ```
 
-## Trả lời
+## Response
 
 ```json
 {"ip":"192.168.1.20","data":[{"se":2,"va":"...","co":"1,0,0,12","set":[],"tim":1800,"cd":0,"ip":"192.168.1.20","rc":5,"rs":0}]}
 ```
 
-- `data` là các bản tin thiết bị lẽ ra publish lên MQTT cho lệnh đó, cùng
-  định dạng. Qua LAN chúng **không** được publish lên MQTT.
-- `ip` là địa chỉ LAN hiện tại của thiết bị.
+- `data` holds the messages the device would otherwise have published to MQTT
+  for that command, in the same format. Over LAN they are **not** published to
+  MQTT.
+- `ip` is the device's current LAN address.
 
-| HTTP | Khi nào |
+| HTTP | When |
 |---|---|
-| 200 | Lệnh đã chạy, `data` có ít nhất một bản tin |
-| 400 | Body không phải `{"data":<lệnh>}` hoặc quá `LAN_REQUEST_MAX_LENGTH` |
-| 408 | Header (và body tới `HTTP_PREBUFFER_MAX_LENGTH` byte) không đến đủ trong `HTTP_REQUEST_TIMEOUT_MS` (3 s); kết nối bị đóng |
-| 413 | `Content-Length` lớn hơn `LAN_REQUEST_MAX_LENGTH`: từ chối trước khi đọc body |
-| 431 | Header dài hơn `HTTP_HEADER_MAX_LENGTH` (1024 byte) |
-| 422 | Không có bản tin trả lời: JSON sai, sai chữ ký / Ascon, hoặc `{"com":7}` khi bật Ascon (bắt tay luôn trả lời qua MQTT; tắt Ascon thì com 7 trả `rs` 2). Lệnh không tồn tại hoặc bị từ chối (sai trường, sai mật khẩu, lịch xung đột...) vẫn trả 200 với `rs` ≠ 0, ví dụ `[{"rc":99,"rs":2}]` |
+| 200 | The command ran and `data` contains at least one message |
+| 400 | The body is not `{"data":<command>}` or exceeds `LAN_REQUEST_MAX_LENGTH` |
+| 408 | The headers (and body up to `HTTP_PREBUFFER_MAX_LENGTH` bytes) did not arrive within `HTTP_REQUEST_TIMEOUT_MS` (3 s); the connection is closed |
+| 413 | `Content-Length` is larger than `LAN_REQUEST_MAX_LENGTH`: rejected before reading the body |
+| 431 | Headers longer than `HTTP_HEADER_MAX_LENGTH` (1024 bytes) |
+| 422 | No reply message: invalid JSON, bad signature / Ascon, or `{"com":7}` while Ascon is enabled (the handshake always replies over MQTT; with Ascon disabled, com 7 returns `rs` 2). An unknown or rejected command (bad field, wrong password, schedule conflict...) still returns 200 with `rs` ≠ 0, e.g. `[{"rc":99,"rs":2}]` |
 
-## Cách hoạt động
+## How it works
 
-- Lệnh đi vào **đúng hàm xử lý tin nhắn MQTT** (`mqtt::dispatch` trong
-  `CommandDispatcher.cpp`): cùng giới hạn kích thước, cùng kiểm tra chữ ký
-  (`ENABLE_MESSAGE_AUTHENTICATION`) và Ascon (`ENABLE_ASCON_AEAD128`), cùng các
-  lệnh `com` (1, 2, 4, 5, 8..14; 15 chỉ DeviceIOT) — mọi lệnh đều là `{"com":<số>}`, không còn `"cmd"`
-- Bản tin trả lời được gom vào phản hồi HTTP thay vì publish. Không thêm trường
-  replay/chữ ký của broker; nếu bật Ascon thì vẫn được mã hóa như qua MQTT.
-- Bản tin bắt tay Ascon (`{"rc":7,...}`, khi trả lời `{"com":7}` hoặc khi khóa
-  đến hạn xoay trong lúc chạy lệnh LAN) luôn được publish lên broker, không
-  nằm trong phản hồi LAN. Nếu broker không kết nối thì khóa mới không được
-  công bố và trả lời LAN cần mã hóa bị bỏ (422).
-- Vì vậy khi bật Ascon, LAN **không phải đường dự phòng** khi mất broker: khóa
-  phiên chỉ có sau khi bản tin bắt tay được publish qua MQTT, nên nếu broker
-  chưa từng kết nối từ lúc khởi động (hoặc khóa đến hạn xoay khi broker mất)
-  thì `/update`, `/control`, `/lan` đều trả lỗi (fail-closed). Cần LAN dự
-  phòng thì tắt `ENABLE_ASCON_AEAD128` và dùng mật khẩu lệnh.
-- Chạy trong TaskNetwork, cùng luồng với MQTT callback, nên không cần khóa
-  thêm.
-- `{"com":2}` (cả qua MQTT) trả thêm `"ip"` để web_manager biết địa chỉ LAN
-  khi còn kết nối MQTT.
-- DeviceIOT (ESP32): khi chỉ broker / Internet lỗi mà WiFi vẫn kết nối, thiết bị
-  **không ngắt WiFi** nữa (trước đây ngắt và kết nối lại mỗi ~20 s), server
-  HTTP được phục vụ cả khi MQTT mất, và các lần thử kết nối MQTT cách nhau
-  `MQTT_RETRY_INTERVAL_MS` (5 s) để server LAN vẫn trả lời kịp.
-- DeviceIOT8266: server HTTP vốn đã chạy khi WiFi kết nối, kể cả khi MQTT mất,
-  và kết nối lại MQTT đã được giãn bằng `MQTT_RECONNECT_DELAY_MS`.
+- The command goes into **the same MQTT message handler** (`mqtt::dispatch` in
+  `CommandDispatcher.cpp`): same size limits, same signature
+  (`ENABLE_MESSAGE_AUTHENTICATION`) and Ascon (`ENABLE_ASCON_AEAD128`) checks,
+  same `com` commands (1, 2, 4, 5, 8..14; 15 is DeviceIOT only) — every command
+  is `{"com":<number>}`, there is no `"cmd"` anymore.
+- Reply messages are collected into the HTTP response instead of being
+  published. No broker replay/signature fields are added; if Ascon is enabled
+  they are still encrypted as over MQTT.
+- The Ascon handshake message (`{"rc":7,...}`, when replying to `{"com":7}` or
+  when the key is due for rotation while a LAN command runs) is always published
+  to the broker and is not part of the LAN response. If the broker is not
+  connected, the new key is not announced and a LAN reply that needs encryption
+  is dropped (422).
+- So with Ascon enabled, LAN is **not a fallback path** when the broker is
+  lost: the session key only exists after the handshake message has been
+  published over MQTT, so if the broker has never connected since boot (or the
+  key is due for rotation while the broker is down), `/update`, `/control` and
+  `/lan` all return errors (fail-closed). If you need LAN as a fallback, disable
+  `ENABLE_ASCON_AEAD128` and use the command password.
+- Runs in TaskNetwork, on the same thread as the MQTT callback, so no extra
+  locking is needed.
+- `{"com":2}` (also over MQTT) additionally returns `"ip"` so web_manager knows
+  the LAN address while MQTT is still connected.
+- DeviceIOT (ESP32): when only the broker / Internet fails but WiFi is still
+  connected, the device **no longer drops WiFi** (previously it disconnected and
+  reconnected every ~20 s), the HTTP server is served even when MQTT is down,
+  and MQTT connection attempts are spaced `MQTT_RETRY_INTERVAL_MS` (5 s) apart
+  so the LAN server can still reply in time.
+- DeviceIOT8266: the HTTP server already runs whenever WiFi is connected, even
+  when MQTT is down, and MQTT reconnects are already spaced out by
+  `MQTT_RECONNECT_DELAY_MS`.
 
-## Bảo mật
+## Security
 
-Lệnh LAN cũng phải có `"pa"` = mật khẩu thiết bị (xem `Schedule.md`, mục Mật
-khẩu lệnh); sai → `{"rc":<com>,"rs":6}`. web_manager gắn `pa` từ `mqtt_pass`.
-Mật khẩu đi dạng chữ rõ trong HTTP trên LAN.
+LAN commands must also include `"pa"` = the device password (see `Schedule.md`,
+section "Command password"); wrong → `{"rc":<com>,"rs":6}`. web_manager attaches
+`pa` from `mqtt_pass`. The password travels in plain text over HTTP on the LAN.
 
-Ngoài mật khẩu lệnh (`pa`, gửi dạng chữ rõ) không có xác thực riêng cho LAN.
-Trên mạng LAN không tin cậy:
+Apart from the command password (`pa`, sent in plain text) there is no separate
+authentication for LAN. On an untrusted LAN:
 
-- bật `ENABLE_MESSAGE_AUTHENTICATION`: lệnh LAN phải có chữ ký HMAC như lệnh
-  MQTT. Thiết bị không kiểm tra
-  replay, nên một lệnh đã ký bị bắt được trên LAN có thể bị gửi lại;
-- hoặc tắt `ENABLE_LAN_CONTROL`.
+- enable `ENABLE_MESSAGE_AUTHENTICATION`: LAN commands must then carry an HMAC
+  signature like MQTT commands. The device does not check for replay, so a
+  signed command captured on the LAN can be resent;
+- or disable `ENABLE_LAN_CONTROL`.
 
 ## web_manager
 
-Điều khiển LAN **không đi qua máy chủ web_manager**: trình duyệt trên máy
-người dùng (cùng mạng LAN với thiết bị) gửi thẳng `POST http://<ip>/lan`, tự
-dựng lệnh `{"com":...}` và tự tách bản tin trả lời (trạng thái, `set`, `tim`,
-`cd`, danh sách lịch, mã `rs`). Máy chủ chỉ dùng cho MQTT.
+LAN control **does not go through the web_manager server**: the browser on the
+user's machine (on the same LAN as the device) sends `POST http://<ip>/lan`
+directly, builds the `{"com":...}` command itself and parses the reply messages
+itself (status, `set`, `tim`, `cd`, schedule list, `rs` code). The server is
+only used for MQTT.
 
-- Mục **Kết nối** trên trang thiết bị: Tự động / MQTT / LAN, IP thiết bị báo
-  và ô nhập IP thủ công (lưu trong trình duyệt). "Tự động" dùng MQTT khi máy
-  chủ, broker và thiết bị đang trả lời qua MQTT (trong 60 s), ngược lại LAN.
-- IP lấy từ trường `"ip"` thiết bị gửi qua MQTT (trả lời `{"com":2}`) hoặc trong trả
-  lời LAN, lưu trong trình duyệt; danh sách thiết bị cũng được lưu để vẫn
-  điều khiển được qua LAN khi không gọi được máy chủ.
-- Thiết bị trả lời CORS (`Access-Control-Allow-Origin: *`) và preflight
-  `OPTIONS /lan` (có `Access-Control-Allow-Private-Network: true` cho Chrome).
-  Trang gửi `Content-Type: text/plain` để tránh preflight khi có thể.
-- Nếu trang web_manager mở bằng **HTTPS**, trình duyệt có thể chặn gọi
-  `http://` tới thiết bị (mixed content / truy cập mạng cục bộ): cần cho phép
-  truy cập mạng cục bộ trong trình duyệt hoặc mở trang bằng HTTP trong LAN.
-- Trình duyệt không có khóa HMAC: khi bật `ENABLE_MESSAGE_AUTHENTICATION`,
-  lệnh LAN từ trang sẽ bị từ chối (422).
+- The **Connection** section on the device page: Auto / MQTT / LAN, the IP
+  reported by the device, and a manual IP field (stored in the browser). "Auto"
+  uses MQTT when the server, broker and device are answering over MQTT (within
+  60 s), otherwise LAN.
+- The IP comes from the `"ip"` field the device sends over MQTT (reply to
+  `{"com":2}`) or in a LAN reply, and is stored in the browser; the device list
+  is also stored so devices can still be controlled over LAN when the server is
+  unreachable.
+- The device answers CORS (`Access-Control-Allow-Origin: *`) and the
+  `OPTIONS /lan` preflight (with `Access-Control-Allow-Private-Network: true` for
+  Chrome). The page sends `Content-Type: text/plain` to avoid a preflight when
+  possible.
+- If the web_manager page is opened over **HTTPS**, the browser may block
+  `http://` calls to the device (mixed content / local network access): allow
+  local network access in the browser, or open the page over HTTP on the LAN.
+- The browser has no HMAC key: when `ENABLE_MESSAGE_AUTHENTICATION` is enabled,
+  LAN commands from the page will be rejected (422).
