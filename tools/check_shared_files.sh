@@ -12,7 +12,11 @@ for file in $(grep -l "identical in DeviceIOT and DeviceIOT8266" DeviceIOT/*.h D
         status=1
     fi
 done
-if ! cmp -s DeviceIOT/DeviceIOT.ino DeviceIOT8266/DeviceIOT8266.ino; then
+# The sketches diverged (DeviceIOT is ESP32-only since "remove ESP8266"):
+# compare them only while both still carry the marker.
+if grep -q "identical in DeviceIOT and DeviceIOT8266" DeviceIOT/DeviceIOT.ino &&
+    grep -q "identical in DeviceIOT and DeviceIOT8266" DeviceIOT8266/DeviceIOT8266.ino &&
+    ! cmp -s DeviceIOT/DeviceIOT.ino DeviceIOT8266/DeviceIOT8266.ino; then
     echo "DIFFERENT: DeviceIOT/DeviceIOT.ino <-> DeviceIOT8266/DeviceIOT8266.ino"
     status=1
 fi

@@ -171,7 +171,11 @@ bool open(JsonDocument& command)
     if (!com.is<long>()) {
         return false;
     }
-    if (com.as<long>() == COMMAND_TYPE_ASCON_HANDSHAKE) {
+    // The handshake, and certificate renewals (com 16 / 17): web_manager has no
+    // Ascon session key, and these carry public data the device checks itself
+    // (key match / same CA key, then a test connect). "pa" is still required.
+    if (com.as<long>() == COMMAND_TYPE_ASCON_HANDSHAKE || com.as<long>() == COMMAND_TYPE_CERTIFICATE_RENEW ||
+        com.as<long>() == COMMAND_TYPE_CA_RENEW) {
         return true;
     }
     const char* hex = command["value"].as<const char*>();

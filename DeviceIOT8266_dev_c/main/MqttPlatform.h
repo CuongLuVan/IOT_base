@@ -28,4 +28,11 @@ bool stationConnected();
 // The station address as text ("0.0.0.0" without a lease).
 std::string localIp();
 
+// Certificate renewal (com 16): true when certificatePem holds the public key
+// of keyPem, so the renewed certificate works with the key stored in EEPROM.
+bool certificateMatchesKey(const std::string& certificatePem, const std::string& keyPem);
+// CA renewal (com 17): true when both PEM certificates carry the same public
+// key (SubjectPublicKeyInfo), i.e. the CA was re-issued with the same key.
+bool samePublicKey(const std::string& firstPem, const std::string& secondPem);
+
 }  // namespace mqtt_platform

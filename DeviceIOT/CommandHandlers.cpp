@@ -8,8 +8,11 @@
 
 #include "Countdown.h"
 #include "DebugInfo.h"
+#include "Memory.h"
 #include "MqttInternal.h"
+#include "MqttPlatform.h"
 #include "OnTimer.h"
+#include "PemCheck.h"
 #include "ScheduleCore.h"
 #include "ScheduleEngine.h"
 #include "TaskDevice.h"
@@ -243,6 +246,64 @@ void handleThresholdCommand(const CommandContext& context)
         DEVICE_LOGF_WARNING("[Threshold] %s\n", result.message);
     }
     status::sendReport(context.reply, COMMAND_TYPE_THRESHOLD, result, id);
+}
+
+// Replies of com 16 / 17 go to the broker unencrypted even with Ascon:
+// web_manager reads them without the session key, and they hold no secret.
+void sendRenewalReply(const CommandContext& context, JsonDocument& reply)
+{
+    if (&context.reply == &brokerSink()) {
+        (void)publishPlain(reply);
+    } else {
+        (void)context.reply.send(reply);
+    }
+}
+
+// {"com":16,"crt":"<PEM>"}: renewed client certificate for the private key in
+// EEPROM. {"com":17,"ca":"<PEM>"}: renewed CA certificate with the same CA
+// public key as the stored one (a CA with another key needs /setup). The
+// transport tests the PEM with a reconnect and stores it only when the
+// connection works. Replies {"rc":16|17,"rs":n,"st":s}, see protocol_commands.h.
+void handleCertificateCommand(const CommandContext& context)
+{
+    const bool ca = context.com == COMMAND_TYPE_CA_RENEW;
+    const int address = ca ? MTLS_CA_CERT_ADDRESS : MTLS_CLIENT_CERT_ADDRESS;
+    const size_t maxLength = ca ? MTLS_CA_CERT_MAX_LENGTH : MTLS_CLIENT_CERT_MAX_LENGTH;
+    JsonDocument reply;
+    reply["rc"] = static_cast<int>(context.com);
+    CommandStatus status = CommandStatus::Ok;
+    int stage = 1;
+    const String pemText = context.fields[ca ? "ca" : "crt"] | "";
+    Memory* memory = Memory::GetInstance();
+    String stored;
+    String reference;
+    if (!ca && !ENABLE_MTLS) {
+        status = CommandStatus::NotReady;
+        stage = 0;
+    } else if (!pem::isCertificate(pemText) || pemText.length() > maxLength) {
+        DEVICE_LOG_WARNING("[MQTT] Renewal rejected: not a PEM certificate or too large");
+        status = CommandStatus::Invalid;
+        stage = 0;
+    } else if (memory->readString(address, maxLength, stored) && stored == pemText) {
+        // QoS 1 redelivery or a repeated request: already stored, nothing to write.
+        stage = 2;
+    } else if (transport::credentialStaged()) {
+        status = CommandStatus::Busy;
+        stage = 0;
+    } else if (ca ? !mqtt_platform::samePublicKey(pemText, stored)
+                  : (!memory->readString(MTLS_PRIVATE_KEY_ADDRESS, MTLS_PRIVATE_KEY_MAX_LENGTH, reference) ||
+                     !mqtt_platform::certificateMatchesKey(pemText, reference))) {
+        DEVICE_LOG_WARNING(ca ? "[MQTT] Renewal rejected: the CA key differs from the stored CA"
+                              : "[MQTT] Renewal rejected: certificate does not match the stored private key");
+        status = CommandStatus::Invalid;
+        stage = 0;
+    } else if (!transport::stageCredential(static_cast<uint8_t>(context.com), pemText)) {
+        status = CommandStatus::Busy;
+        stage = 0;
+    }
+    reply["rs"] = static_cast<int>(status);
+    reply["st"] = stage;
+    sendRenewalReply(context, reply);
 }
 
 }  // namespace mqtt

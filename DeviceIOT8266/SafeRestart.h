@@ -6,7 +6,8 @@
 // restarts while it holds the EEPROM lock, so no task is between the erase
 // and the write of an ESP8266 flash commit.
 //
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
+// DeviceIOT8266 keeps the ESP8266 branches of this file; DeviceIOT has an
+// ESP32-only copy. Not checked by tools/check_shared_files.sh.
 
 #include <Arduino.h>
 

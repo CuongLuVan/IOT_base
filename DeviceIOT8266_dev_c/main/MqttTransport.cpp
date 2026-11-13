@@ -109,6 +109,18 @@ struct TransportState {
     MqttClient client;
     ConnectRateLimiter rateLimiter;
     ReconnectBackoff backoff;
+    // Certificate renewal (com 16 client certificate, com 17 CA): the PEM
+    // being tested, kept in RAM until a connect with it succeeds; the EEPROM
+    // still holds the old one.
+    std::string stagedPem;
+    uint8_t stagedCommand = 0;  // COMMAND_TYPE_CERTIFICATE_RENEW / _CA_RENEW; 0 = none.
+    uint8_t stagedFailures = 0;
+    // MqttClient::loadCredentials() closes the socket, so credentials change
+    // only between sessions: these flags are handled in service() / connect().
+    bool reconnectForCertificate = false;  // Close the session, then load the staged certificate.
+    bool reloadStoredCredentials = false;  // Load the EEPROM credentials before the next connect.
+    uint8_t certificateReport = 0;         // "st" to publish after the next connect (0 = none).
+    uint8_t reportCommand = 0;             // "rc" of that report.
     bool sessionUp = false;  // A connect + subscribe succeeded and no drop was seen since.
     bool ready = false;      // Settings and every credential loaded.
 };
@@ -174,18 +186,28 @@ bool parseSettings(const std::string& text, MqttSettings& settings)
 }
 
 // The CA (always) and, with ENABLE_MTLS, the client certificate and key.
-bool loadTlsCredentials()
+// certificateOverride / caOverride: a renewed certificate / CA under test
+// instead of the stored one.
+bool loadTlsCredentials(const std::string* certificateOverride = nullptr, const std::string* caOverride = nullptr)
 {
     Memory* memory = Memory::GetInstance();
     std::string ca;
-    if (!memory->readString(MTLS_CA_CERT_ADDRESS, MTLS_CA_CERT_MAX_LENGTH, ca) || !pem::isCertificate(ca)) {
+    if (caOverride != nullptr) {
+        ca = *caOverride;
+    }
+    if ((caOverride == nullptr && !memory->readString(MTLS_CA_CERT_ADDRESS, MTLS_CA_CERT_MAX_LENGTH, ca)) ||
+        !pem::isCertificate(ca)) {
         DEVICE_LOG_ERROR("[MQTT] CA certificate is missing or invalid; MQTT is disabled");
         return false;
     }
     std::string certificate;
     std::string privateKey;
+    if (ENABLE_MTLS && certificateOverride != nullptr) {
+        certificate = *certificateOverride;
+    }
     if (ENABLE_MTLS &&
-        (!memory->readString(MTLS_CLIENT_CERT_ADDRESS, MTLS_CLIENT_CERT_MAX_LENGTH, certificate) ||
+        ((certificateOverride == nullptr &&
+          !memory->readString(MTLS_CLIENT_CERT_ADDRESS, MTLS_CLIENT_CERT_MAX_LENGTH, certificate)) ||
          !pem::isCertificate(certificate) ||
          !memory->readString(MTLS_PRIVATE_KEY_ADDRESS, MTLS_PRIVATE_KEY_MAX_LENGTH, privateKey) ||
          !pem::isPrivateKey(privateKey))) {
@@ -225,9 +247,112 @@ void dropSession(uint32_t nowMs)
     state.backoff.restart(nowMs);
 }
 
+bool stagingCa()
+{
+    return state.stagedCommand == COMMAND_TYPE_CA_RENEW;
+}
+
+bool loadStagedCredentials()
+{
+    return stagingCa() ? loadTlsCredentials(nullptr, &state.stagedPem) : loadTlsCredentials(&state.stagedPem);
+}
+
+// Ends a renewal: "st" (2 stored / 3 rolled back) is reported after the next connect.
+void endStaging(uint8_t report)
+{
+    state.reportCommand = state.stagedCommand;
+    state.certificateReport = report;
+    state.stagedPem.clear();
+    state.stagedCommand = 0;
+    state.stagedFailures = 0;
+}
+
+// Back to the credentials stored in EEPROM (renewal failed or was refused).
+// Only while no session is up: loading credentials closes the socket.
+void rollbackStaged()
+{
+    if (state.stagedCommand != 0) {
+        endStaging(3);
+    }
+    state.reloadStoredCredentials = false;
+    if (!loadTlsCredentials()) {
+        DEVICE_LOG_ERROR("[MQTT] Stored credentials cannot be reloaded");
+    }
+}
+
+// Called after a connect + subscribe with the staged PEM: the broker accepted
+// the certificate (com 16) / the CA verified the broker (com 17), so it
+// replaces the stored one.
+void commitStaged()
+{
+    if (state.stagedCommand == 0) {
+        return;
+    }
+    const bool ca = stagingCa();
+    if (Memory::GetInstance()->writeString(ca ? MTLS_CA_CERT_ADDRESS : MTLS_CLIENT_CERT_ADDRESS, state.stagedPem,
+                                           ca ? MTLS_CA_CERT_MAX_LENGTH : MTLS_CLIENT_CERT_MAX_LENGTH)) {
+        DEVICE_LOGF_INFO("[MQTT] Renewed %s stored\n", ca ? "CA certificate" : "client certificate");
+        endStaging(2);
+        return;
+    }
+    // This session keeps working; the stored credentials are loaded before the
+    // next connect (the stored PEM stays valid until web_manager finishes).
+    DEVICE_LOG_ERROR("[MQTT] Cannot store the renewed certificate; keeping the old one");
+    endStaging(3);
+    state.reloadStoredCredentials = true;
+}
+
+// A connect with the staged PEM failed (broker refused it, or the network
+// was down): retry a few times, then go back to the stored one.
+void stagedConnectFailed()
+{
+    if (state.stagedCommand == 0) {
+        return;
+    }
+    if (++state.stagedFailures < MQTT_CERT_RENEW_MAX_FAILURES) {
+        return;
+    }
+    DEVICE_LOG_WARNING("[MQTT] Renewed certificate rejected; back to the stored one");
+    rollbackStaged();
+}
+
+// After the session was closed for a renewal: load the staged PEM for the
+// next connect (no-op when no switch is pending).
+void switchToStaged()
+{
+    if (!state.reconnectForCertificate) {
+        return;
+    }
+    state.reconnectForCertificate = false;
+    if (state.stagedCommand != 0 && !loadStagedCredentials()) {
+        DEVICE_LOG_WARNING("[MQTT] Renewed certificate cannot be loaded; back to the stored one");
+        rollbackStaged();
+    }
+}
+
+// {"rc":16|17,"rs":0,"st":2} stored / {"rc":16|17,"rs":5,"st":3} rolled back.
+// Never Ascon-encrypted: web_manager reads it without the session key and it
+// holds no secret.
+void sendCertificateReport()
+{
+    if (state.certificateReport == 0) {
+        return;
+    }
+    json::Ptr reply = json::newObject();
+    if (!reply) return;
+    json::setNumber(reply.get(), "rc", state.reportCommand);
+    json::setNumber(reply.get(), "rs",
+                    static_cast<int>(state.certificateReport == 2 ? CommandStatus::Ok : CommandStatus::NotReady));
+    json::setNumber(reply.get(), "st", state.certificateReport);
+    if (publishPlain(reply.get())) {
+        state.certificateReport = 0;
+    }
+}
+
 // A session that just came up: replies the server may have missed.
 void announceSession()
 {
+    sendCertificateReport();
     if (ascon::kEnabled && !ascon::announceKey()) {
         DEVICE_LOG_WARNING("[ASCON] Handshake publish failed");
     }
@@ -242,6 +367,12 @@ bool begin()
 {
     state.ready = false;
     closeConnection();
+    // New settings: a renewal under test no longer applies.
+    state.stagedPem.clear();
+    state.stagedCommand = 0;
+    state.stagedFailures = 0;
+    state.reconnectForCertificate = false;
+    state.reloadStoredCredentials = false;
 
     MqttSettings settings = {};
     if (!parseSettings(Memory::GetInstance()->readString(EEPROM_ADDR_MQTT_SETTINGS, MQTT_SETTINGS_MAX_LENGTH),
@@ -287,6 +418,11 @@ bool connect()
         return false;
     }
 
+    if (state.reloadStoredCredentials) {
+        rollbackStaged();
+    }
+    // Staged while no session was up (e.g. com 16 / 17 over LAN): load it now.
+    switchToStaged();
     state.backoff.schedule(now);
     DEVICE_LOG_DEBUG("[MQTT] Connecting");
     // With mTLS the broker identifies the device by client id + certificate.
@@ -300,6 +436,7 @@ bool connect()
     if (!connected) {
         DEVICE_LOGF_WARNING("[MQTT] Connect failed, state=%d\n", state.client.state());
         state.client.stopTransport();
+        stagedConnectFailed();
         return false;
     }
     if (!state.client.subscribeTopic(state.settings.subscribeTopic, MQTT_SUBSCRIBE_QOS)) {
@@ -307,11 +444,34 @@ bool connect()
         closeConnection();
         return false;
     }
+    // The staged certificate / CA worked: store it.
+    commitStaged();
     state.backoff.reset();
     state.sessionUp = true;
     DEVICE_LOG_INFO("[MQTT] Connected");
     announceSession();
     return state.client.isConnected();
+}
+
+bool stageCredential(uint8_t command, const std::string& pem)
+{
+    if (state.stagedCommand != 0 || state.reconnectForCertificate ||
+        (command == COMMAND_TYPE_CERTIFICATE_RENEW && !ENABLE_MTLS)) {
+        return false;
+    }
+    state.stagedPem = pem;
+    state.stagedCommand = command;
+    state.stagedFailures = 0;
+    // Not from inside the MqttClient callback: service() closes the session
+    // after poll() returns, loads the staged PEM, then connect() uses it.
+    state.reconnectForCertificate = true;
+    DEVICE_LOG_INFO("[MQTT] Renewed certificate staged; reconnecting to test it");
+    return true;
+}
+
+bool credentialStaged()
+{
+    return state.stagedCommand != 0;
 }
 
 void disconnect()
@@ -335,10 +495,17 @@ void service()
         return;
     }
     if (state.client.poll() && state.client.state() == MqttClient::kConnected) {
+        if (state.reconnectForCertificate) {
+            DEVICE_LOG_INFO("[MQTT] Reconnecting with the renewed certificate");
+            dropSession(millis());
+            switchToStaged();
+        }
         return;
     }
     DEVICE_LOGF_WARNING("[MQTT] Connection lost, state=%d\n", state.client.state());
     dropSession(millis());
+    // Lost before the switch: load the staged certificate now.
+    switchToStaged();
 }
 
 bool send(const std::string& payload)

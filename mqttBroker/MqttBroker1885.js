@@ -350,6 +350,57 @@ function topicMatches(pattern, topic) {
 var server = new mosca.Server(settings);
 server.on('ready', setup);
 
+// Renewed server.crt / server.key / ca.crt (web_manager through
+// BrokerAdminApi.js) are applied to the running TLS servers without a
+// restart when Node supports it (tls.Server.setSecureContext).
+var tlsReloadTimer = null;
+function reloadTlsCredentials() {
+  if (!settings.credentials) return;
+  try {
+    var key = fs.readFileSync(tlsOptions.keyPath);
+    var cert = fs.readFileSync(tlsOptions.certPath);
+    var certificate = new crypto.X509Certificate(cert);
+    if (!certificate.checkPrivateKey(crypto.createPrivateKey(key))) {
+      console.error('TLS reload skipped: server.crt does not match server.key');
+      return;
+    }
+    var context = { key: key, cert: cert };
+    if (settings.credentials.caPaths) {
+      context.ca = settings.credentials.caPaths.map(function(caPath) { return fs.readFileSync(caPath); });
+    }
+    if (enableECDSA) {
+      Object.keys(ecdsaTlsOptions).forEach(function(option) { context[option] = ecdsaTlsOptions[option]; });
+    }
+    var reloaded = 0;
+    (server.servers || []).forEach(function(listener) {
+      if (listener && typeof listener.setSecureContext === 'function') {
+        listener.setSecureContext(context);
+        reloaded++;
+      }
+    });
+    if (reloaded) {
+      console.log('TLS credentials reloaded; server certificate valid until', certificate.validTo);
+    } else {
+      console.warn('TLS credentials changed but cannot be reloaded live: restart the broker');
+    }
+  } catch (err) {
+    console.error('TLS reload failed (the running credentials stay in use):', err.message);
+  }
+}
+
+if (settings.credentials) {
+  try {
+    fs.watch(nodePath.dirname(tlsOptions.certPath), function(eventType, fileName) {
+      var name = String(fileName || '');
+      if (name && ['server.crt', 'server.key', 'ca.crt'].indexOf(name) === -1) return;
+      clearTimeout(tlsReloadTimer);
+      tlsReloadTimer = setTimeout(reloadTlsCredentials, 1000);
+    });
+  } catch (err) {
+    console.warn('Certificate folder watch unavailable:', err.message);
+  }
+}
+
 // Device clone detection (antiClone.js, mqtt_anticlone.json). Needs mTLS:
 // the rolling ticket is tied to the client certificate fingerprint.
 var enableAntiClone = true;
@@ -381,9 +432,13 @@ function checkAntiClone(client, password) {
   var stream = client.connection && client.connection.stream;
   var peer = stream && typeof stream.getPeerCertificate === 'function' ? stream.getPeerCertificate() : null;
   var existing = server.clients && server.clients[client.id];
+  // Keyed by the public key, not the certificate: a renewed certificate for
+  // the same key (com 16) keeps the device's tickets; a new key starts over.
+  var identityKey = peer && peer.pubkey ? 'pk:' + crypto.createHash('sha256').update(peer.pubkey).digest('hex') :
+    peer && peer.fingerprint256 ? String(peer.fingerprint256).toLowerCase() : '';
   var result = antiClone.checkConnect({
     clientId: client.id,
-    fingerprint: peer && peer.fingerprint256 ? String(peer.fingerprint256).toLowerCase() : '',
+    fingerprint: identityKey,
     password: password,
     ip: remoteAddress(client),
     sessionAlive: Boolean(existing && existing !== client),
@@ -468,6 +523,30 @@ function loadBruteForceConfig(callback) {
   });
 }
 
+// Reject expired / not yet valid client certificates. web_manager renews
+// them MQTT_CERT_RENEW_BEFORE_DAYS before they expire (com 16).
+var enableCertExpiryCheck = true;
+var CERT_CLOCK_SKEW_MS = 5 * 60 * 1000;
+// A device that was offline while its certificate expired may still connect
+// with the old certificate for this long, but only while web_manager is
+// renewing it (nextFingerprint256 set), so it can receive com 16.
+var CERT_EXPIRY_GRACE_MS = 30 * 24 * 3600 * 1000;
+
+function certificateInGrace(peer, device, peerFp) {
+  var to = Date.parse(peer && peer.valid_to);
+  return Boolean(device && typeof device.nextFingerprint256 === 'string' && peerFp &&
+    typeof device.fingerprint256 === 'string' && peerFp === device.fingerprint256.toLowerCase() &&
+    Number.isFinite(to) && Date.now() - to <= CERT_EXPIRY_GRACE_MS);
+}
+
+function certificateInValidity(peer) {
+  var from = Date.parse(peer && peer.valid_from);
+  var to = Date.parse(peer && peer.valid_to);
+  var now = Date.now();
+  return Number.isFinite(from) && Number.isFinite(to) &&
+    now + CERT_CLOCK_SKEW_MS >= from && now - CERT_CLOCK_SKEW_MS <= to;
+}
+
 function verifyDeviceCertificate(client, identity, callback) {
   if (!identity) {
     callback(false);
@@ -493,13 +572,27 @@ function verifyDeviceCertificate(client, identity, callback) {
       callback(false);
       return;
     }
+    // During a certificate renewal (web_manager certRenewal.js) the renewed
+    // certificate is accepted next to the current one.
+    var next = device && typeof device.nextFingerprint256 === 'string' ? device.nextFingerprint256 : null;
+    var peerFp = typeof peerFingerprint === 'string' ? peerFingerprint.toLowerCase() : null;
     var authorized = Boolean(peer && typeof expected === 'string' && (
-      (typeof peerFingerprint === 'string' && peerFingerprint.toLowerCase() === expected.toLowerCase()) ||
+      (peerFp && peerFp === expected.toLowerCase()) ||
+      (peerFp && next && peerFp === next.toLowerCase()) ||
       (peer.subject && peer.subject.CN && expected === peer.subject.CN)
     ));
 
     if (!authorized) {
       console.warn('mTLS authentication failed for', identity, 'peer fingerprint:', peer && peer.fingerprint256);
+    } else if (enableCertExpiryCheck && !certificateInValidity(peer) && certificateInGrace(peer, device, peerFp)) {
+      console.warn('mTLS: expired certificate of', identity, 'accepted during its renewal grace period (valid to',
+        peer.valid_to, ')');
+    } else if (enableCertExpiryCheck && !certificateInValidity(peer)) {
+      // rejectUnauthorized is off (fingerprint pinning), so the TLS layer
+      // does not check the dates: an expired certificate must be renewed.
+      console.warn('mTLS authentication failed for', identity, '- client certificate expired or not yet valid (',
+        peer.valid_from, '-', peer.valid_to, ')');
+      authorized = false;
     }
     callback(authorized);
   });

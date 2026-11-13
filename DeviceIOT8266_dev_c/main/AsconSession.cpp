@@ -169,7 +169,10 @@ bool open(json::Ptr& command)
     if (!json::isInteger(json::get(command.get(), "com"), com)) {
         return false;
     }
-    if (com == COMMAND_TYPE_ASCON_HANDSHAKE) {
+    // The handshake, and certificate renewals (com 16 / 17): web_manager has no
+    // Ascon session key, and these carry public data the device checks itself
+    // (key match / same CA key, then a test connect). "pa" is still required.
+    if (com == COMMAND_TYPE_ASCON_HANDSHAKE || com == COMMAND_TYPE_CERTIFICATE_RENEW || com == COMMAND_TYPE_CA_RENEW) {
         return true;
     }
     const cJSON* value = json::get(command.get(), "value");

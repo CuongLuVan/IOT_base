@@ -39,6 +39,12 @@ app.use('/change-lang/:lang', (req, res) => {
 
 app.listen(app.get('port'), app.get('host'), () => {
   console.log('Server is running at http://' + app.get('host') + ':' + app.get('port'));
-  // Retries MQTT device configurations the broker has not received yet.
-  require('./services/mqtt/brokerProvisioning.js').startSyncWorker();
+  // MQTT provisioning workers, once the migrations have been run:
+  // broker outbox, device certificate renewal (com 16), CA / broker /
+  // web_manager certificate renewal (com 17).
+  require('./services/mqtt/schemaCheck.js').whenSchemaReady('mqtt-provisioning', () => {
+    require('./services/mqtt/brokerProvisioning.js').startSyncWorker();
+    require('./services/mqtt/certRenewal.js').startRenewalWorker();
+    require('./services/mqtt/pkiRenewal.js').startPkiWorker();
+  });
 });

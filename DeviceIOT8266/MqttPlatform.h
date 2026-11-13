@@ -22,6 +22,9 @@
 #include <bearssl/bearssl.h>
 #else
 #include <mbedtls/md.h>
+#include <mbedtls/pk.h>
+#include <mbedtls/version.h>
+#include <mbedtls/x509_crt.h>
 #endif
 
 namespace mqtt_platform {
@@ -111,6 +114,110 @@ inline bool saveCloneTicket(const char*)
 {
     return false;
 }
+
+// Certificate renewal (com 16): true when certificatePem holds the public key
+// of keyPem, so the renewed certificate works with the key stored in EEPROM.
+#if ESP8266_NONOS_CORE
+inline bool certificateMatchesKey(const String& certificatePem, const String& keyPem)
+{
+    BearSSL::X509List chain;
+    BearSSL::PrivateKey key;
+    if (!chain.append(certificatePem.c_str()) || chain.getCount() != 1 || !key.parse(keyPem.c_str()) ||
+        !key.isEC()) {
+        return false;
+    }
+    const br_x509_certificate* der = chain.getX509Certs();
+    br_x509_decoder_context decoder;
+    br_x509_decoder_init(&decoder, nullptr, nullptr);
+    br_x509_decoder_push(&decoder, der->data, der->data_len);
+    const br_x509_pkey* certificateKey = br_x509_decoder_get_pkey(&decoder);
+    if (br_x509_decoder_last_error(&decoder) != 0 || certificateKey == nullptr ||
+        certificateKey->key_type != BR_KEYTYPE_EC) {
+        return false;
+    }
+    uint8_t buffer[BR_EC_KBUF_PUB_MAX_SIZE];
+    br_ec_public_key derived;
+    const size_t length = br_ec_compute_pub(br_ec_get_default(), &derived, buffer, key.getEC());
+    return length != 0 && derived.curve == certificateKey->key.ec.curve && length == certificateKey->key.ec.qlen &&
+           memcmp(buffer, certificateKey->key.ec.q, length) == 0;
+}
+
+// CA renewal (com 17): true when both PEM certificates carry the same EC
+// public key, i.e. the CA was re-issued with the same key.
+inline bool samePublicKey(const String& firstPem, const String& secondPem)
+{
+    BearSSL::X509List first;
+    BearSSL::X509List second;
+    if (!first.append(firstPem.c_str()) || first.getCount() != 1 || !second.append(secondPem.c_str()) ||
+        second.getCount() != 1) {
+        return false;
+    }
+    br_x509_decoder_context firstDecoder;
+    br_x509_decoder_context secondDecoder;
+    br_x509_decoder_init(&firstDecoder, nullptr, nullptr);
+    br_x509_decoder_init(&secondDecoder, nullptr, nullptr);
+    br_x509_decoder_push(&firstDecoder, first.getX509Certs()->data, first.getX509Certs()->data_len);
+    br_x509_decoder_push(&secondDecoder, second.getX509Certs()->data, second.getX509Certs()->data_len);
+    const br_x509_pkey* firstKey = br_x509_decoder_get_pkey(&firstDecoder);
+    const br_x509_pkey* secondKey = br_x509_decoder_get_pkey(&secondDecoder);
+    return br_x509_decoder_last_error(&firstDecoder) == 0 && br_x509_decoder_last_error(&secondDecoder) == 0 &&
+           firstKey != nullptr && secondKey != nullptr && firstKey->key_type == BR_KEYTYPE_EC &&
+           secondKey->key_type == BR_KEYTYPE_EC && firstKey->key.ec.curve == secondKey->key.ec.curve &&
+           firstKey->key.ec.qlen == secondKey->key.ec.qlen &&
+           memcmp(firstKey->key.ec.q, secondKey->key.ec.q, firstKey->key.ec.qlen) == 0;
+}
+#else
+inline int mbedtlsRandom(void*, unsigned char* out, size_t length)
+{
+    fillSecureRandom(out, length);
+    return 0;
+}
+
+inline bool certificateMatchesKey(const String& certificatePem, const String& keyPem)
+{
+    mbedtls_x509_crt certificate;
+    mbedtls_pk_context key;
+    mbedtls_x509_crt_init(&certificate);
+    mbedtls_pk_init(&key);
+    // PEM parsing needs the length including the terminating '\0'.
+    bool matches = mbedtls_x509_crt_parse(&certificate, reinterpret_cast<const unsigned char*>(certificatePem.c_str()),
+                                          certificatePem.length() + 1) == 0;
+#if MBEDTLS_VERSION_NUMBER >= 0x03000000
+    matches = matches &&
+              mbedtls_pk_parse_key(&key, reinterpret_cast<const unsigned char*>(keyPem.c_str()), keyPem.length() + 1,
+                                   nullptr, 0, mbedtlsRandom, nullptr) == 0 &&
+              mbedtls_pk_check_pair(&certificate.pk, &key, mbedtlsRandom, nullptr) == 0;
+#else
+    matches = matches &&
+              mbedtls_pk_parse_key(&key, reinterpret_cast<const unsigned char*>(keyPem.c_str()), keyPem.length() + 1,
+                                   nullptr, 0) == 0 &&
+              mbedtls_pk_check_pair(&certificate.pk, &key) == 0;
+#endif
+    mbedtls_pk_free(&key);
+    mbedtls_x509_crt_free(&certificate);
+    return matches;
+}
+
+// CA renewal (com 17): true when both PEM certificates carry the same public
+// key (SubjectPublicKeyInfo), i.e. the CA was re-issued with the same key.
+inline bool samePublicKey(const String& firstPem, const String& secondPem)
+{
+    mbedtls_x509_crt first;
+    mbedtls_x509_crt second;
+    mbedtls_x509_crt_init(&first);
+    mbedtls_x509_crt_init(&second);
+    const bool same =
+        mbedtls_x509_crt_parse(&first, reinterpret_cast<const unsigned char*>(firstPem.c_str()),
+                               firstPem.length() + 1) == 0 &&
+        mbedtls_x509_crt_parse(&second, reinterpret_cast<const unsigned char*>(secondPem.c_str()),
+                               secondPem.length() + 1) == 0 &&
+        first.pk_raw.len == second.pk_raw.len && first.pk_raw.len > 0 &&
+        memcmp(first.pk_raw.p, second.pk_raw.p, first.pk_raw.len) == 0;
+    mbedtls_x509_crt_free(&second);
+    mbedtls_x509_crt_free(&first);
+    return same;
+}
+#endif
 
 inline String localIp()
 {

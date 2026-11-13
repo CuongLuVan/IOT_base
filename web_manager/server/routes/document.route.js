@@ -68,6 +68,9 @@ router.route('/test_upload').post((req, res) => {
 router.route('/saveCertificateMqtt').post(isAuthenticated,  documentCtrl.saveCertificateMqtt);
 router.route('/getCertificateMqtt').post(isAuthenticated,  documentCtrl.getCertificateMqtt);
 router.route('/revokeCertificateMqtt').post(isAuthenticated,  documentCtrl.revokeCertificateMqtt);
+router.route('/renewCertificateMqtt').post(isAuthenticated,  documentCtrl.renewCertificateMqtt);
+router.route('/pkiStatusMqtt').post(isAuthenticated,  documentCtrl.pkiStatusMqtt);
+router.route('/renewPkiMqtt').post(isAuthenticated,  documentCtrl.renewPkiMqtt);
 router.route('/antiCloneStatusMqtt').post(isAuthenticated,  documentCtrl.antiCloneStatusMqtt);
 router.route('/releaseAntiCloneMqtt').post(isAuthenticated,  documentCtrl.releaseAntiCloneMqtt);
 

@@ -3,7 +3,9 @@
 // Wall clock helpers shared by every module, so all of them agree on when the
 // SNTP clock counts as valid.
 //
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
+// DeviceIOT keeps its own ESP32-only copy of this file (ESP8266 branches
+// removed); DeviceIOT8266 has the ESP8266 version. Not checked by
+// tools/check_shared_files.sh.
 
 #include <stdint.h>
 #include <time.h>

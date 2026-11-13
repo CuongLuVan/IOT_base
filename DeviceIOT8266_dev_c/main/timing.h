@@ -77,6 +77,9 @@
 // subscribe resets it.
 #define MQTT_RECONNECT_BACKOFF_MIN_MS 10000UL
 #define MQTT_RECONNECT_BACKOFF_MAX_MS 60000UL
+// Certificate renewal (com 16): failed connects with the renewed certificate
+// before the device goes back to the stored one.
+#define MQTT_CERT_RENEW_MAX_FAILURES 3
 #define MQTT_RECONNECT_JITTER_PERCENT 25
 // PINGREQ interval; a connection silent after a PINGREQ is closed.
 #define MQTT_KEEPALIVE_SECONDS 30

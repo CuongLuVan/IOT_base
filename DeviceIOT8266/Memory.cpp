@@ -11,7 +11,8 @@
 #include <EEPROM.h>
 #endif
 
-// This file is identical in DeviceIOT and DeviceIOT8266 (tools/check_shared_files.sh).
+// DeviceIOT8266 keeps the ESP8266 branches of this file; DeviceIOT has an
+// ESP32-only copy. Not checked by tools/check_shared_files.sh.
 
 namespace {
 platform_sync::Mutex eepromMutex;

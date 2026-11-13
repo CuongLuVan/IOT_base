@@ -37,6 +37,18 @@ enum CommandType : uint8_t {
     // capture, DeviceIOT (ESP32) only. value 0 = stop, no value = read state.
     // Reply {"rc":15,"rs":n,"act":0|1}.
     COMMAND_TYPE_HIGH_SPEED_CAPTURE = 15,
+    // {"com":16,"crt":"<PEM>"}: renewed client certificate for the private key
+    // already stored (web_manager certificate renewal). The device checks that
+    // it matches the key, reconnects with it and writes it to EEPROM only once
+    // the broker accepted it; after MQTT_CERT_RENEW_MAX_FAILURES failed connects
+    // it goes back to the stored certificate. Replies {"rc":16,"rs":n,"st":s}:
+    // st 1 staged (testing), 2 stored, 3 rolled back; rs 2 invalid / not
+    // matching the key, 5 mTLS off, 7 a renewal is already being tested.
+    COMMAND_TYPE_CERTIFICATE_RENEW = 16,
+    // {"com":17,"ca":"<PEM>"}: renewed CA certificate (same CA key, new validity
+    // period) from web_manager. Same checks, test and replies as com 16, with
+    // "rc":17; rs 2 also when the CA public key differs from the stored CA.
+    COMMAND_TYPE_CA_RENEW = 17,
 };
 
 // Valid "com" range on the wire; anything else is rejected with rs=2.

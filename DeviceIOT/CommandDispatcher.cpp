@@ -36,6 +36,8 @@ const CommandRoute kRoutes[] = {
     {COMMAND_TYPE_SCHEDULE_CLEAR, handleScheduleCommand},
     {COMMAND_TYPE_SCHEDULE_LIST, handleScheduleCommand},
     {COMMAND_TYPE_THRESHOLD, handleThresholdCommand},
+    {COMMAND_TYPE_CERTIFICATE_RENEW, handleCertificateCommand},
+    {COMMAND_TYPE_CA_RENEW, handleCertificateCommand},
 #if defined(ESP32)
     {COMMAND_TYPE_HIGH_SPEED_CAPTURE, handleHighSpeedCommand},
 #endif

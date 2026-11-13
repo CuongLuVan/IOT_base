@@ -6,7 +6,6 @@ const {getLanggue} = require('../utils/Validate.js');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const {execFileSync} = require('child_process');
 
 var squel = require("squel");
 const knex = require('../config/knex.js');
@@ -15,6 +14,10 @@ const WarningInfo = require("../config/warningInfo.js");
 const {returnOK,returnFalse,returnOKCustom,returnNotFound,returnInfoQuery } = require('../utils/returnResponse.js');
 const {mangerModelAdmin} = require('../models/database/managerAll.model.js');
 const brokerProvisioning = require('../services/mqtt/brokerProvisioning.js');
+const certificateAuthority = require('../services/mqtt/certificateAuthority.js');
+const certRenewal = require('../services/mqtt/certRenewal.js');
+const pkiRenewal = require('../services/mqtt/pkiRenewal.js');
+const schemaCheck = require('../services/mqtt/schemaCheck.js');
 
 var documentCtrl={};
 
@@ -542,14 +545,7 @@ documentCtrl.getRamdomContent  = async function(req,res) {
 }
 
 
-function runOpenSSL(args) {
-    return execFileSync("openssl", args, {
-        stdio: ["ignore", "pipe", "pipe"],
-        windowsHide: true,
-        timeout: 15000,
-        maxBuffer: 1024 * 1024,
-    });
-}
+const {runOpenSSL, cleanPem, signDeviceCertificate, validDays} = certificateAuthority;
 
 function getMqttIdentity(body) {
     const fallbackId = body.type == null ? "" : String(Number(body.type) + 10);
@@ -565,18 +561,6 @@ const RESERVED_CERT_NAMES = ["ca", "server", "pki"];
 // Device EEPROM regions (define_All.h: MTLS_*_MAX_LENGTH, without the '\0').
 const MTLS_LIMITS = {caCertificate: 703, certificate: 767, deviceKey: 255};
 
-// Keeps only the requested PEM block, so the files and the API response hold
-// no openssl text such as "Bag Attributes" or EC PARAMETERS.
-function cleanPem(text, label) {
-    const pattern = new RegExp("-----BEGIN " + label + "-----[\\s\\S]+?-----END " + label + "-----");
-    const block = String(text).match(pattern);
-    if (!block) {
-        throw new Error("No " + label + " PEM block found.");
-    }
-    return block[0].split(/\r?\n/).map(function(line) { return line.trim(); })
-        .filter(Boolean).join("\n") + "\n";
-}
-
 function getCertificatePaths(certDirectory, mqttId) {
     return {
         caCertificate: path.join(certDirectory, "ca.crt"),
@@ -584,8 +568,6 @@ function getCertificatePaths(certDirectory, mqttId) {
         certificate: path.join(certDirectory, mqttId + ".crt"),
         privateKey: path.join(certDirectory, mqttId + ".key"),
         deviceKey: path.join(certDirectory, mqttId + ".esp.key"),
-        csr: path.join(certDirectory, mqttId + ".csr"),
-        ext: path.join(certDirectory, mqttId + ".ext"),
     };
 }
 
@@ -634,6 +616,8 @@ documentCtrl.saveCertificateMqtt  = async function(req,res) {
     try {
         const body = req.body || {};
         const mqttId = getMqttIdentity(body);
+        // Clear message instead of an insert error when the migrations are missing.
+        await schemaCheck.assertSchema();
         if (RESERVED_CERT_NAMES.includes(mqttId.toLowerCase())) {
             throw new Error("mqtt_id is reserved: " + mqttId);
         }
@@ -671,14 +655,6 @@ documentCtrl.saveCertificateMqtt  = async function(req,res) {
             throw new Error("The previous device with this mqtt_id is still being revoked on the broker.");
         }
 
-        writePem(paths.ext, [
-            "basicConstraints=critical,CA:FALSE",
-            "keyUsage=critical,digitalSignature",
-            "extendedKeyUsage=clientAuth",
-            "subjectKeyIdentifier=hash",
-            "authorityKeyIdentifier=keyid,issuer",
-            "",
-        ].join("\n"));
         createdFiles.push(paths.privateKey);
         writePem(paths.privateKey, cleanPem(runOpenSSL([
             "genpkey", "-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:P-256",
@@ -689,17 +665,10 @@ documentCtrl.saveCertificateMqtt  = async function(req,res) {
         writePem(paths.deviceKey, cleanPem(runOpenSSL([
             "ec", "-in", paths.privateKey, "-no_public",
         ]), "EC PRIVATE KEY"), "wx");
-        runOpenSSL([
-            "req", "-new", "-key", paths.privateKey, "-out", paths.csr,
-            "-subj", "/CN=" + mqttId,
-        ]);
         createdFiles.push(paths.certificate);
-        writePem(paths.certificate, cleanPem(runOpenSSL([
-            "x509", "-req", "-in", paths.csr, "-CA", paths.caCertificate,
-            "-CAkey", paths.caPrivateKey, "-set_serial",
-            "0x" + crypto.randomBytes(16).toString("hex"),
-            "-days", "3650", "-sha256", "-extfile", paths.ext,
-        ]), "CERTIFICATE"), "wx");
+        // Validity MQTT_CERT_VALID_DAYS; certRenewal.js renews it before it expires.
+        writePem(paths.certificate, signDeviceCertificate(path.dirname(paths.certificate), mqttId,
+            paths.privateKey, validDays()), "wx");
 
         const files = readCertificateFiles(paths);
         Object.keys(MTLS_LIMITS).forEach(function(key) {
@@ -720,6 +689,9 @@ documentCtrl.saveCertificateMqtt  = async function(req,res) {
             mqtt_pass: config.mqtt_pass,
             mqtt_id: mqttId,
             message_auth_key: config.messageAuthKey,
+            cert_expires_at: new Date(new crypto.X509Certificate(files.certificate.content).validTo),
+            // The device is set up with this CA; a later CA renewal sends it com 17.
+            ca_fingerprint: new crypto.X509Certificate(files.caCertificate.content).fingerprint256,
             // Outbox: the row is committed first, then delivered to the broker.
             // If the broker is unreachable the retry worker delivers it later.
             broker_sync_status: brokerProvisioning.STATUS.PENDING,
@@ -749,12 +721,8 @@ documentCtrl.saveCertificateMqtt  = async function(req,res) {
             fs.rmSync(filePath, {force: true});
         });
         console.error("Failed to save MQTT certificate/configuration:", error.message);
-        returnFalse(res, "Unable to save MQTT certificate/configuration.", WarningInfo.ERROR_SERVER);
-    } finally {
-        if (paths) {
-            fs.rmSync(paths.csr, {force: true});
-            fs.rmSync(paths.ext, {force: true});
-        }
+        returnFalse(res, error.code === "MIGRATION_REQUIRED" ? error.message :
+            "Unable to save MQTT certificate/configuration.", WarningInfo.ERROR_SERVER);
     }
 }
 
@@ -776,10 +744,56 @@ documentCtrl.getCertificateMqtt  = async function(req,res) {
             mqtt_id: mqttId,
             brokerSynced: brokerSyncStatus === brokerProvisioning.STATUS.SYNCED,
             brokerSyncStatus,
+            // Expiry and automatic renewal (certRenewal.js).
+            renewal: row ? await certRenewal.renewalStatus(mqttId) : null,
         }, certificateResponse(files)));
     } catch (error) {
         console.error("Failed to read MQTT certificate:", error.message);
         returnFalse(res, "Unable to read MQTT certificate.", WarningInfo.ERROR_SERVER);
+    }
+}
+
+// Renews the device certificate now (same private key, new validity period)
+// instead of waiting for MQTT_CERT_RENEW_BEFORE_DAYS before expiry, and
+// sends it to the device (com 16). The renewal finishes when the device
+// confirms it stored the certificate; see "renewal" in getCertificateMqtt.
+documentCtrl.renewCertificateMqtt  = async function(req,res) {
+    try {
+        const mqttId = getMqttIdentity(req.body || {});
+        const result = await certRenewal.renewNow(mqttId);
+        console.warn("MQTT certificate renewal requested for", mqttId, "by user", req.currentUser.users_id);
+        returnOKCustom(res, Object.assign({mqtt_id: mqttId}, result));
+    } catch (error) {
+        console.error("Failed to renew MQTT certificate:", error.message);
+        returnFalse(res, "Unable to renew MQTT certificate.", WarningInfo.ERROR_SERVER);
+    }
+}
+
+// CA, broker certificate and web_manager certificate: expiry dates, CA
+// renewal progress (devices still without the current CA).
+documentCtrl.pkiStatusMqtt  = async function(req,res) {
+    try {
+        returnOKCustom(res, await pkiRenewal.status());
+    } catch (error) {
+        console.error("Failed to read MQTT PKI status:", error.message);
+        returnFalse(res, "Unable to read MQTT PKI status.", WarningInfo.ERROR_SERVER);
+    }
+}
+
+// Renews now (same key, new validity): {"target":"ca"} also sends com 17 to
+// every device, {"target":"server"} the broker certificate, {"target":"service"}
+// web_manager's own client certificate.
+documentCtrl.renewPkiMqtt  = async function(req,res) {
+    try {
+        await schemaCheck.assertSchema();
+        const target = String((req.body || {}).target || "");
+        const result = await pkiRenewal.renewNow(target);
+        console.warn("MQTT PKI renewal", target, "requested by user", req.currentUser.users_id);
+        returnOKCustom(res, result);
+    } catch (error) {
+        console.error("Failed to renew MQTT PKI certificate:", error.message);
+        returnFalse(res, error.code === "MIGRATION_REQUIRED" ? error.message :
+            "Unable to renew MQTT PKI certificate.", WarningInfo.ERROR_SERVER);
     }
 }
 

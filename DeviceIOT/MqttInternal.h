@@ -40,6 +40,11 @@ bool connected();
 void service();
 // Publishes the final wire text to the publish topic, never retained.
 bool send(const String& payload);
+// Certificate renewal (com 16 / 17): uses pem for the next connects instead
+// of the stored client certificate / CA, after closing the current session.
+// false while another renewal is being tested or the PEM cannot be loaded.
+bool stageCredential(uint8_t command, const String& pem);
+bool credentialStaged();
 }  // namespace transport
 
 // Publish pipeline: Ascon encryption (when enabled), replay metadata, HMAC
@@ -119,6 +124,7 @@ void handleOnTimerCommand(const CommandContext& context);
 void handleHandshakeCommand(const CommandContext& context);
 void handleScheduleCommand(const CommandContext& context);
 void handleThresholdCommand(const CommandContext& context);
+void handleCertificateCommand(const CommandContext& context);
 #if defined(ESP32)
 void handleHighSpeedCommand(const CommandContext& context);
 #endif

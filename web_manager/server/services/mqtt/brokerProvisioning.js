@@ -58,7 +58,12 @@ function topics(value) {
 
 function buildClient(row) {
     const certificate = fs.readFileSync(path.join(getPkiDirectory(), row.mqtt_id + '.crt'), 'utf8');
+    // A renewal in progress (certRenewal.js): the broker accepts both.
+    const nextPath = path.join(getPkiDirectory(), row.mqtt_id + '.next.crt');
+    const nextCertificate = fs.existsSync(nextPath) ? fs.readFileSync(nextPath, 'utf8') : null;
     return {
+        nextCertificate,
+        nextFingerprint256: nextCertificate ? new crypto.X509Certificate(nextCertificate).fingerprint256 : undefined,
         clientId: row.mqtt_id,
         username: row.mqtt_user,
         password: row.mqtt_pass,
@@ -158,8 +163,10 @@ async function pushRemote(client) {
         subscribe: client.subscribe,
         messageAuthKey: client.messageAuthKey,
         certificate: client.certificate,
+        nextCertificate: client.nextCertificate || undefined,
     });
-    if (String(result.fingerprint256 || '').toLowerCase() !== client.fingerprint256.toLowerCase()) {
+    if (String(result.fingerprint256 || '').toLowerCase() !== client.fingerprint256.toLowerCase() ||
+        String(result.nextFingerprint256 || '').toLowerCase() !== String(client.nextFingerprint256 || '').toLowerCase()) {
         throw new Error('Broker stored a different certificate fingerprint.');
     }
 }
@@ -245,8 +252,10 @@ function writeLocal(client) {
         upsert(settings.users.users, 'username', client.username, {
             username: client.username, password: client.password,
         });
+        // undefined removes a finished renewal (JSON.stringify drops it).
         upsert(settings.deviceCerts.devices, 'clientId', client.clientId, {
             clientId: client.clientId, fingerprint256: client.fingerprint256,
+            nextFingerprint256: client.nextFingerprint256,
         });
         upsert(settings.clientIds.clients, 'clientId', client.clientId, {
             clientId: client.clientId, username: client.username, label: client.label,
@@ -287,7 +296,7 @@ function archiveCertificates(mqttId) {
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*$/, '');
     const archiveDir = path.join(pkiDir, 'revoked', mqttId + '-' + stamp);
     let moved = 0;
-    ['.crt', '.key', '.esp.key'].forEach(function(extension) {
+    ['.crt', '.key', '.esp.key', '.next.crt'].forEach(function(extension) {
         const source = path.join(pkiDir, mqttId + extension);
         if (!fs.existsSync(source)) return;
         fs.mkdirSync(archiveDir, { recursive: true, mode: 0o700 });
@@ -321,6 +330,27 @@ async function afterDelete(row) {
     }
     const synced = await trySyncRow(Object.assign({}, row, { broker_sync_status: STATUS.REVOKE_PENDING }));
     return { revoked: true, brokerSynced: synced };
+}
+
+/** Drops the cached mTLS agent: the CA or web_manager's own certificate changed. */
+function resetAgent() {
+    if (agent) agent.destroy();
+    agent = null;
+}
+
+/** Folder of the broker's own certificates in local mode (server.crt, ca.crt). */
+function localBrokerCertsDir() {
+    return path.join(path.resolve(process.env.MQTT_BROKER_DIR || path.dirname(getPkiDirectory())), 'certs');
+}
+
+/** Local mode: fingerprint(s) of a backend service (web_manager...) in mqtt_device_certs.json. */
+function updateLocalServiceCertificate(clientId, fingerprint256, nextFingerprint256) {
+    const deviceCerts = LOCAL_FILES.filter(function(item) { return item.key === 'deviceCerts'; });
+    updateLocalFiles(deviceCerts, function(settings) {
+        upsert(settings.deviceCerts.devices, 'clientId', clientId, {
+            clientId, fingerprint256, nextFingerprint256: nextFingerprint256 || undefined,
+        });
+    });
 }
 
 /* ------------------------------ anti-clone ------------------------------- */
@@ -494,6 +524,11 @@ function startSyncWorker() {
 
 module.exports = {
     STATUS,
+    isRemote,
+    requestBroker,
+    resetAgent,
+    localBrokerCertsDir,
+    updateLocalServiceCertificate,
     getPkiDirectory,
     isManaged,
     revokeUpdateFields,

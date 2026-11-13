@@ -10,6 +10,9 @@
 #include <WiFiClientSecure.h>
 #include <esp_random.h>
 #include <mbedtls/md.h>
+#include <mbedtls/pk.h>
+#include <mbedtls/version.h>
+#include <mbedtls/x509_crt.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -41,6 +44,59 @@ inline bool hmacSha256(const char* key, size_t keyLength, const char* data, size
 inline bool stationConnected()
 {
     return WiFi.status() == WL_CONNECTED;
+}
+
+inline int mbedtlsRandom(void*, unsigned char* out, size_t length)
+{
+    esp_fill_random(out, length);
+    return 0;
+}
+
+// Certificate renewal (com 16): true when certificatePem holds the public key
+// of keyPem, so the renewed certificate works with the key stored in EEPROM.
+inline bool certificateMatchesKey(const String& certificatePem, const String& keyPem)
+{
+    mbedtls_x509_crt certificate;
+    mbedtls_pk_context key;
+    mbedtls_x509_crt_init(&certificate);
+    mbedtls_pk_init(&key);
+    // PEM parsing needs the length including the terminating '\0'.
+    bool matches = mbedtls_x509_crt_parse(&certificate, reinterpret_cast<const unsigned char*>(certificatePem.c_str()),
+                                          certificatePem.length() + 1) == 0;
+#if MBEDTLS_VERSION_NUMBER >= 0x03000000
+    matches = matches &&
+              mbedtls_pk_parse_key(&key, reinterpret_cast<const unsigned char*>(keyPem.c_str()), keyPem.length() + 1,
+                                   nullptr, 0, mbedtlsRandom, nullptr) == 0 &&
+              mbedtls_pk_check_pair(&certificate.pk, &key, mbedtlsRandom, nullptr) == 0;
+#else
+    matches = matches &&
+              mbedtls_pk_parse_key(&key, reinterpret_cast<const unsigned char*>(keyPem.c_str()), keyPem.length() + 1,
+                                   nullptr, 0) == 0 &&
+              mbedtls_pk_check_pair(&certificate.pk, &key) == 0;
+#endif
+    mbedtls_pk_free(&key);
+    mbedtls_x509_crt_free(&certificate);
+    return matches;
+}
+
+// CA renewal (com 17): true when both PEM certificates carry the same public
+// key (SubjectPublicKeyInfo), i.e. the CA was re-issued with the same key.
+inline bool samePublicKey(const String& firstPem, const String& secondPem)
+{
+    mbedtls_x509_crt first;
+    mbedtls_x509_crt second;
+    mbedtls_x509_crt_init(&first);
+    mbedtls_x509_crt_init(&second);
+    const bool same =
+        mbedtls_x509_crt_parse(&first, reinterpret_cast<const unsigned char*>(firstPem.c_str()),
+                               firstPem.length() + 1) == 0 &&
+        mbedtls_x509_crt_parse(&second, reinterpret_cast<const unsigned char*>(secondPem.c_str()),
+                               secondPem.length() + 1) == 0 &&
+        first.pk_raw.len == second.pk_raw.len && first.pk_raw.len > 0 &&
+        memcmp(first.pk_raw.p, second.pk_raw.p, first.pk_raw.len) == 0;
+    mbedtls_x509_crt_free(&second);
+    mbedtls_x509_crt_free(&first);
+    return same;
 }
 
 // Anti-clone session ticket (ENABLE_ANTI_CLONE) in its own NVS namespace,

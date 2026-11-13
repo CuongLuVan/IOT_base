@@ -308,3 +308,7 @@ Kết nối mới của thiết bị bị từ chối ngay. `MqttBroker1885.js` 
 ### Chống sao chép thiết bị
 
 Broker phát hiện thiết bị bị sao chép bằng ticket phiên xoay vòng và kiểm tra chiếm phiên. Danh tính bị nghi ngờ sẽ bị cách ly và phát cảnh báo `DEVICE_CLONE`. Chi tiết, cách gỡ cách ly và cấu hình chống đọc flash: `DeviceIOT/docs/Security.md`, mục "Chống sao chép thiết bị". Admin API cung cấp `GET /v1/clients/:id/anticlone` và `POST /v1/clients/:id/anticlone/reset`. Cấp chứng chỉ mới (fingerprint mới) cũng tự xóa trạng thái cách ly.
+
+### Gia hạn chứng chỉ thiết bị
+
+`MQTT_CERT_VALID_DAYS` (mặc định 3650) quy định thời hạn chứng chỉ. web_manager tự gia hạn trước `MQTT_CERT_RENEW_BEFORE_DAYS` (180) ngày, giữ nguyên khóa riêng, và gửi chứng chỉ mới xuống thiết bị bằng lệnh com 16. Thiết bị chỉ ghi vào EEPROM sau khi kết nối thử thành công. Trong thời gian chuyển tiếp, `mqtt_device_certs.json` có thêm `nextFingerprint256`. Broker từ chối chứng chỉ đã hết hạn. Chi tiết: `DeviceIOT/docs/Security.md`, mục "Gia hạn chứng chỉ thiết bị". Cần chạy `npx knex migrate:latest` (cột `cert_*`).

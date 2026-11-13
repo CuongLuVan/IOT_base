@@ -11,6 +11,10 @@
  *   DELETE /v1/clients/:clientId   idempotent revocation of one device
  *   GET    /v1/clients/:clientId/anticlone         clone-detection status
  *   POST   /v1/clients/:clientId/anticlone/reset   release a quarantine
+ *   GET    /v1/server-certificate                  broker certificate (public)
+ *   PUT    /v1/server-certificate                  renewed broker certificate (same key)
+ *   PUT    /v1/ca-certificate                      renewed CA certificate (same key)
+ *   PUT    /v1/service-certificates/:clientId      caller's own certificate (+ next)
  *   GET    /v1/health
  *
  * Security: HTTPS + mutual TLS. The client certificate must be signed by
@@ -56,8 +60,12 @@ const ALLOWED_CN = (process.env.BROKER_ADMIN_ALLOWED_CN || 'web_manager')
   .split(',').map(function(name) { return name.trim(); }).filter(Boolean);
 const MAX_BODY_BYTES = 16 * 1024;
 
-const CA_PEM = fs.readFileSync(path.join(CERT_DIR, 'ca.crt'));
-const CA_CERTIFICATE = new crypto.X509Certificate(CA_PEM);
+const CA_PATH = path.join(CERT_DIR, 'ca.crt');
+const SERVER_CERT_PATH = path.join(CERT_DIR, 'server.crt');
+const SERVER_KEY_PATH = path.join(CERT_DIR, 'server.key');
+// Replaced live when web_manager renews the CA (PUT /v1/ca-certificate).
+let CA_PEM = fs.readFileSync(CA_PATH);
+let CA_CERTIFICATE = new crypto.X509Certificate(CA_PEM);
 
 // Upsert order: a device is only accepted once mqtt_client_ids.json and
 // mqtt_device_certs.json list it, and by then everything else exists.
@@ -158,6 +166,9 @@ function parseClient(clientId, body) {
     publish: topicList(body.publish, 'publish'),
     subscribe: topicList(body.subscribe, 'subscribe'),
     fingerprint256: verifyDeviceCertificate(body.certificate, clientId),
+    // Certificate renewal: the renewed certificate, accepted next to the
+    // current one until web_manager promotes it (PUT without nextCertificate).
+    nextFingerprint256: body.nextCertificate ? verifyDeviceCertificate(body.nextCertificate, clientId) : undefined,
     messageAuthKey: messageAuthKey.toLowerCase(),
   };
 }
@@ -185,8 +196,9 @@ function applyClient(settings, client) {
   upsert(settings.users.users, 'username', client.username, {
     username: client.username, password: client.password,
   });
+  // undefined removes a finished renewal (JSON.stringify drops it).
   upsert(settings.deviceCerts.devices, 'clientId', client.clientId, {
-    clientId: client.clientId, fingerprint256: client.fingerprint256,
+    clientId: client.clientId, fingerprint256: client.fingerprint256, nextFingerprint256: client.nextFingerprint256,
   });
   upsert(settings.clientIds.clients, 'clientId', client.clientId, {
     clientId: client.clientId, username: client.username, label: client.label,
@@ -319,6 +331,112 @@ async function requestAntiCloneReset(clientId) {
   }
 }
 
+/* Certificates of the broker itself, renewed by web_manager (certRenewal /
+ * caRenewal). Each is checked, the previous file is kept in certs/expired/,
+ * and the TLS contexts are reloaded (MqttBroker1885.js watches certs/). */
+function publicKeyDer(keyOrCertificate) {
+  const key = keyOrCertificate.publicKey || crypto.createPublicKey(keyOrCertificate);
+  return key.export({ type: 'spki', format: 'der' });
+}
+
+function parseCertificate(pem, name) {
+  try {
+    return new crypto.X509Certificate(String(pem || ''));
+  } catch (error) {
+    throw httpError(400, name + ' is not a valid PEM certificate.');
+  }
+}
+
+function sanList(certificate) {
+  return String(certificate.subjectAltName || '').split(',').map(function(item) { return item.trim(); })
+    .filter(Boolean);
+}
+
+async function installCertificate(filePath, pem) {
+  const archiveDir = path.join(CERT_DIR, 'expired');
+  fs.mkdirSync(archiveDir, { recursive: true, mode: 0o700 });
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*$/, '');
+  if (fs.existsSync(filePath)) {
+    fs.copyFileSync(filePath, path.join(archiveDir, path.basename(filePath, '.crt') + '-' + stamp + '.crt'));
+  }
+  const tempPath = filePath + '.' + process.pid + '.' + crypto.randomBytes(6).toString('hex') + '.tmp';
+  fs.writeFileSync(tempPath, String(pem), { encoding: 'utf8', mode: 0o644 });
+  try {
+    await replaceFile(tempPath, filePath);
+  } finally {
+    fs.rmSync(tempPath, { force: true });
+  }
+}
+
+function reloadAdminTls() {
+  CA_PEM = fs.readFileSync(CA_PATH);
+  CA_CERTIFICATE = new crypto.X509Certificate(CA_PEM);
+  server.setSecureContext({
+    key: fs.readFileSync(path.resolve(BROKER_DIR, process.env.BROKER_ADMIN_KEY || SERVER_KEY_PATH)),
+    cert: fs.readFileSync(path.resolve(BROKER_DIR, process.env.BROKER_ADMIN_CERT || SERVER_CERT_PATH)),
+    ca: [CA_PEM],
+    minVersion: 'TLSv1.2',
+  });
+}
+
+// Same CA key, self-signed, a CA, still valid: devices keep trusting the
+// broker certificate (signed by that key) and get the new CA with com 17.
+async function renewCa(body) {
+  const certificate = parseCertificate(body.certificate, 'certificate');
+  if (!certificate.ca || !certificate.checkIssued(certificate) || !certificate.verify(certificate.publicKey)) {
+    throw httpError(400, 'certificate is not a self-signed CA certificate.');
+  }
+  if (!publicKeyDer(certificate).equals(publicKeyDer(CA_CERTIFICATE))) {
+    throw httpError(400, 'The renewed CA must keep the current CA key.');
+  }
+  if (Date.parse(certificate.validTo) <= Date.now()) {
+    throw httpError(400, 'certificate has expired.');
+  }
+  await installCertificate(CA_PATH, body.certificate);
+  reloadAdminTls();
+  return { fingerprint256: certificate.fingerprint256, validTo: certificate.validTo };
+}
+
+// Same server key, signed by the CA, every previous subjectAltName kept.
+async function renewServerCertificate(body) {
+  const certificate = parseCertificate(body.certificate, 'certificate');
+  const current = new crypto.X509Certificate(fs.readFileSync(SERVER_CERT_PATH));
+  const serverKey = crypto.createPrivateKey(fs.readFileSync(SERVER_KEY_PATH));
+  if (certificate.ca || !certificate.checkIssued(CA_CERTIFICATE) || !certificate.verify(CA_CERTIFICATE.publicKey)) {
+    throw httpError(400, 'certificate is not signed by the broker CA.');
+  }
+  if (!certificate.checkPrivateKey(serverKey)) {
+    throw httpError(400, 'certificate does not match server.key.');
+  }
+  const missing = sanList(current).filter(function(name) { return sanList(certificate).indexOf(name) === -1; });
+  if (missing.length) {
+    throw httpError(400, 'certificate drops subjectAltName entries: ' + missing.join(', '));
+  }
+  if (Date.parse(certificate.validTo) <= Date.parse(current.validTo)) {
+    throw httpError(400, 'certificate does not extend the current validity.');
+  }
+  await installCertificate(SERVER_CERT_PATH, body.certificate);
+  reloadAdminTls();
+  return { fingerprint256: certificate.fingerprint256, validTo: certificate.validTo };
+}
+
+// A backend service (web_manager...) renews its own client certificate: only
+// its mqtt_device_certs.json entry changes, like a device renewal.
+async function renewServiceCertificate(caller, clientId, body) {
+  if (caller !== clientId) {
+    throw httpError(403, 'A service can only renew its own certificate.');
+  }
+  const fingerprint256 = verifyDeviceCertificate(body.certificate, clientId);
+  const nextFingerprint256 = body.nextCertificate ? verifyDeviceCertificate(body.nextCertificate, clientId) : undefined;
+  const deviceCerts = FILES.filter(function(item) { return item.key === 'deviceCerts'; });
+  const changed = await updateRuleFiles(deviceCerts, function(settings) {
+    upsert(settings.deviceCerts.devices, 'clientId', clientId, {
+      clientId: clientId, fingerprint256: fingerprint256, nextFingerprint256: nextFingerprint256,
+    });
+  });
+  return { fingerprint256: fingerprint256, nextFingerprint256: nextFingerprint256 || null, changed: changed };
+}
+
 // One write at a time: requests read-modify-write the same files.
 let writeQueue = Promise.resolve();
 function enqueue(task) {
@@ -384,6 +502,36 @@ async function handle(req, res) {
     send(res, 200, { ok: true });
     return;
   }
+  if (url.pathname === '/v1/server-certificate' && req.method === 'GET') {
+    const pem = fs.readFileSync(SERVER_CERT_PATH, 'utf8');
+    const current = new crypto.X509Certificate(pem);
+    send(res, 200, { ok: true, certificate: pem, validTo: current.validTo, fingerprint256: current.fingerprint256 });
+    return;
+  }
+  if (url.pathname === '/v1/server-certificate' && req.method === 'PUT') {
+    const body = await readBody(req);
+    const result = await enqueue(function() { return renewServerCertificate(body); });
+    console.log('[broker-admin]', caller, 'renewed server.crt, valid until', result.validTo);
+    send(res, 200, Object.assign({ ok: true }, result));
+    return;
+  }
+  if (url.pathname === '/v1/ca-certificate' && req.method === 'PUT') {
+    const body = await readBody(req);
+    const result = await enqueue(function() { return renewCa(body); });
+    console.log('[broker-admin]', caller, 'renewed ca.crt, valid until', result.validTo);
+    send(res, 200, Object.assign({ ok: true }, result));
+    return;
+  }
+  const service = url.pathname.match(/^\/v1\/service-certificates\/([^/]+)$/);
+  if (service && req.method === 'PUT') {
+    const body = await readBody(req);
+    const result = await enqueue(function() {
+      return renewServiceCertificate(caller, decodeURIComponent(service[1]), body);
+    });
+    console.log('[broker-admin]', caller, 'updated its service certificate', result.nextFingerprint256 ? '(renewal pending)' : '');
+    send(res, 200, Object.assign({ ok: true }, result));
+    return;
+  }
   const match = url.pathname.match(/^\/v1\/clients\/([^/]+)(\/anticlone(?:\/reset)?)?$/);
   if (!match) {
     throw httpError(404, 'Not found.');
@@ -416,7 +564,8 @@ async function handle(req, res) {
       return updateRuleFiles(FILES, function(settings) { applyClient(settings, client); });
     });
     console.log('[broker-admin]', caller, 'upserted', clientId, describe(changed));
-    send(res, 200, { ok: true, clientId: clientId, fingerprint256: client.fingerprint256, changed: changed });
+    send(res, 200, { ok: true, clientId: clientId, fingerprint256: client.fingerprint256,
+      nextFingerprint256: client.nextFingerprint256 || null, changed: changed });
     return;
   }
   if (req.method === 'DELETE') {
