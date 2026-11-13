@@ -2,9 +2,59 @@ const knex = require('../../config/knex.js');
 const mqttService = require('./mqttService.js');
 const notificationService = require('./notificationService.js');
 
+const CLONE_REASONS = {
+  'stale-ticket': 'presented a session ticket that was already replaced (copied device)',
+  'session-takeover-flapping': 'is connected from two places that keep replacing each other',
+  'ticket-missing': 'connected without its session ticket',
+  'ticket-invalid': 'connected with an unknown session ticket',
+  'quarantined-connect': 'tried to connect while quarantined',
+};
+
+// Published by mqttBroker/antiClone.js on iot/alert/anticlone/<clientId>.
+async function ingestClone(item, event) {
+  const clientId = String(event.source_device);
+  const reason = String(event.reason || 'unknown');
+  console.error('[anti-clone] device', clientId, reason, 'action:', event.action, 'ip:', event.ip, 'previous ip:', event.previousIp);
+  const registered = await knex('mqtt_microservice')
+    .where({ mqtt_id: clientId, deleteflag: 0 })
+    .first('mqtt_microservice_id', 'content');
+  if (!registered) return;
+  const device = await knex('devices')
+    .where({ mqtt_microservice_id: registered.mqtt_microservice_id, status: 'ACTIVE', deleteflag: 0 })
+    .first('device_id', 'room_id');
+  if (!device) return;
+
+  const receivedAt = event.time && !Number.isNaN(Date.parse(event.time)) ? new Date(event.time) : new Date();
+  const details = JSON.stringify({
+    source: 'mqttBroker/antiClone.js', topic: item.topic, reason, action: event.action || null,
+    ip: event.ip || null, previousIp: event.previousIp || null, takeovers: event.takeovers || null,
+  });
+  const quarantined = event.action === 'quarantined';
+  const existing = await knex('alerts')
+    .where({ device_id: device.device_id, alert_type: 'DEVICE_CLONE', status: 'OPEN', deleteflag: 0 })
+    .first('alert_id');
+  if (existing) {
+    await knex('alerts').where({ alert_id: existing.alert_id }).update({ details, triggered_at: receivedAt, updated_at: receivedAt });
+    return;
+  }
+  const alert = {
+    room_id: device.room_id, device_id: device.device_id, sensor_id: null,
+    alert_type: 'DEVICE_CLONE', severity: quarantined ? 'CRITICAL' : 'WARNING', status: 'OPEN',
+    message: `${registered.content || clientId} ${CLONE_REASONS[reason] || reason}` +
+      (quarantined ? '; the identity is quarantined until an administrator releases it.' : '.'),
+    details, triggered_at: receivedAt,
+    created_at: receivedAt, id_created: 0, created_by: 0, created_by_type: 'system', deleteflag: 0, oldid: null,
+  };
+  await knex('alerts').insert(alert);
+  notificationService.sendAlert(alert);
+}
+
 async function ingest(item) {
   let event;
   try { event = JSON.parse(item.payload); } catch (_) { return; }
+  if (event && event.type === 'device_clone' && event.source_device && item.topic.startsWith('iot/alert/anticlone/')) {
+    return ingestClone(item, event);
+  }
   if (!event || event.status !== 'abnormal' || !event.source_device) return;
 
   const registered = await knex('mqtt_microservice')

@@ -96,6 +96,22 @@ inline bool stationConnected()
     return WiFi.status() == WL_CONNECTED;
 }
 
+// Anti-clone session ticket: needs NVS, ESP32 only (config_checks.h refuses
+// ENABLE_ANTI_CLONE here). The broker keeps such devices "not enrolled" and
+// only applies its session take-over check.
+inline bool loadCloneTicket(char* out, size_t size)
+{
+    if (size > 0) {
+        out[0] = '\0';
+    }
+    return false;
+}
+
+inline bool saveCloneTicket(const char*)
+{
+    return false;
+}
+
 inline String localIp()
 {
     return WiFi.localIP().toString();

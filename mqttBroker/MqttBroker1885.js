@@ -1,6 +1,7 @@
 var mosca = require('mosca')
 var events=require('events');
 var fs = require('fs');
+var nodePath = require('path');
 var crypto = require('crypto');
 // Mosca 2.8.3 validates its options by passing a schema ID ("/Options") to
 // jsonschema. jsonschema 1.5+ requires the schema object instead, which makes
@@ -197,7 +198,119 @@ var defaultReplayConfig = {
 };
 var replayCache = {}; // fingerprint -> timestamp
 
-function readJsonFile(path, callback) {
+// The rule files are read on every connect/publish. Keep the parsed files in
+// memory and drop an entry as soon as the file changes (web_manager or
+// BrokerAdminApi.js rewrite them with an atomic rename), so the hot path does
+// not touch the disk. JSON_CACHE_MAX_AGE_MS bounds staleness if a change
+// notification is lost (network file systems).
+var JSON_CACHE_MAX_AGE_MS = 2000;
+var jsonFileCache = {}; // absolute path -> { value, loadedAt } or { waiters }
+
+function watchJsonDirectory(directory) {
+  try {
+    fs.watch(directory, function(eventType, fileName) {
+      if (fileName) {
+        var changedPath = nodePath.resolve(directory, String(fileName));
+        delete jsonFileCache[changedPath];
+        if (revocationFiles().indexOf(changedPath) !== -1) {
+          scheduleRevocationCheck();
+        }
+        if (typeof antiClone !== 'undefined' && antiClone &&
+            (changedPath === antiClone.files.config || changedPath === antiClone.files.reset)) {
+          antiClone.onFileChanged(changedPath);
+        }
+      } else {
+        jsonFileCache = {};
+        scheduleRevocationCheck();
+      }
+    }).on('error', function(err) {
+      console.warn('Rule file watch stopped:', err.message);
+      JSON_CACHE_MAX_AGE_MS = 0;
+    });
+  } catch (err) {
+    console.warn('Rule file watch unavailable, cache disabled:', err.message);
+    JSON_CACHE_MAX_AGE_MS = 0;
+  }
+}
+watchJsonDirectory(__dirname);
+
+// Revocation (BrokerAdminApi.js DELETE, web_manager revokeCertificateMqtt)
+// removes the client from these files. New connections are refused by
+// authenticate(); this also closes the connections that are already open.
+// Runs only when the files change, never on the publish path.
+function revocationFiles() {
+  var files = [];
+  if (enableTLSCertificate) files.push(nodePath.resolve(tlsOptionsExtended.deviceCertsPath));
+  if (enableClientID) files.push(nodePath.resolve(clientIdOptions.clientIdsPath));
+  return files;
+}
+
+var revocationTimer = null;
+function scheduleRevocationCheck() {
+  if (revocationTimer) return;
+  // Debounce: one rename produces several watch events.
+  revocationTimer = setTimeout(function() {
+    revocationTimer = null;
+    disconnectRevokedClients();
+  }, 300);
+}
+
+function disconnectRevokedClients() {
+  var connected = typeof server !== 'undefined' && server && server.clients;
+  var files = revocationFiles();
+  if (!connected || !files.length) return;
+  var pending = files.length;
+  var allowedSets = [];
+  var failed = false;
+  files.forEach(function(filePath) {
+    readJsonFile(filePath, function(err, value) {
+      var list = !err && (Array.isArray(value.devices) ? value.devices : value.clients);
+      if (!Array.isArray(list)) {
+        failed = true; // unreadable/half-written file: never disconnect on doubt
+      } else {
+        allowedSets.push(list.map(function(item) { return item && item.clientId; }));
+      }
+      if (--pending !== 0 || failed) return;
+      Object.keys(server.clients).forEach(function(clientId) {
+        var client = server.clients[clientId];
+        var allowed = allowedSets.every(function(ids) { return ids.indexOf(clientId) !== -1; });
+        if (!allowed && client && typeof client.close === 'function') {
+          console.warn('Disconnecting revoked MQTT client', clientId);
+          client.close(function() {}, 'revoked');
+        }
+      });
+    });
+  });
+}
+
+function readJsonFile(filePath, callback) {
+  var key = nodePath.resolve(filePath);
+  var entry = jsonFileCache[key];
+  if (entry && entry.waiters) {
+    entry.waiters.push(callback);
+    return;
+  }
+  if (entry && Date.now() - entry.loadedAt < JSON_CACHE_MAX_AGE_MS) {
+    callback(null, entry.value);
+    return;
+  }
+
+  // Concurrent readers of the same file share one disk read.
+  var waiters = [callback];
+  jsonFileCache[key] = { waiters: waiters };
+  loadJsonFile(key, function(err, value) {
+    if (jsonFileCache[key] && jsonFileCache[key].waiters === waiters) {
+      if (err) {
+        delete jsonFileCache[key];
+      } else {
+        jsonFileCache[key] = { value: value, loadedAt: Date.now() };
+      }
+    }
+    waiters.forEach(function(waiter) { waiter(err, value); });
+  });
+}
+
+function loadJsonFile(path, callback) {
   fs.readFile(path, 'utf8', function(err, raw) {
     if (err) {
       callback(err);
@@ -236,6 +349,51 @@ function topicMatches(pattern, topic) {
 
 var server = new mosca.Server(settings);
 server.on('ready', setup);
+
+// Device clone detection (antiClone.js, mqtt_anticlone.json). Needs mTLS:
+// the rolling ticket is tied to the client certificate fingerprint.
+var enableAntiClone = true;
+var antiClone = enableAntiClone && enableTLSCertificate ? require('./antiClone').createAntiClone({
+  dir: __dirname,
+  publish: function(topic, text) {
+    server.publish({ topic: topic, payload: text, qos: 1, retain: false }, function() {});
+  },
+  disconnect: function(clientId) {
+    var connected = server.clients && server.clients[clientId];
+    if (connected && typeof connected.close === 'function') {
+      console.warn('Disconnecting suspected cloned MQTT client', clientId);
+      connected.close(function() {}, 'clone suspected');
+    }
+  }
+}) : null;
+
+function remoteAddress(client) {
+  var stream = client && client.connection && client.connection.stream;
+  return stream && stream.remoteAddress ? String(stream.remoteAddress).replace(/^::ffff:/, '') : null;
+}
+
+// Runs after the certificate identity is verified, so a client without the
+// device key cannot trigger a quarantine of somebody else's clientId.
+function checkAntiClone(client, password) {
+  if (!antiClone || !client || !client.id) {
+    return true;
+  }
+  var stream = client.connection && client.connection.stream;
+  var peer = stream && typeof stream.getPeerCertificate === 'function' ? stream.getPeerCertificate() : null;
+  var existing = server.clients && server.clients[client.id];
+  var result = antiClone.checkConnect({
+    clientId: client.id,
+    fingerprint: peer && peer.fingerprint256 ? String(peer.fingerprint256).toLowerCase() : '',
+    password: password,
+    ip: remoteAddress(client),
+    sessionAlive: Boolean(existing && existing !== client),
+    sessionIp: existing && existing !== client ? remoteAddress(existing) : null
+  });
+  if (!result.allowed) {
+    console.warn('Anti-clone rejected', client.id, '-', result.reason);
+  }
+  return result.allowed;
+}
 
 // thêm funtion check user
 
@@ -429,7 +587,7 @@ var authenticate = function(client, username, password, callback) {
       return;
     }
     verifyClientIdentity(client, username, pwd, function(authorized) {
-      finishAuthentication(authorized, bruteForceConfig);
+      finishAuthentication(authorized && checkAntiClone(client, pwd), bruteForceConfig);
     });
   }
 
@@ -684,6 +842,14 @@ var authorizePublish = function(client, topic, payload, callback) {
     });
   }
 
+  // "anticlone/<id>/ack" carries no replay metadata or signature; it only
+  // confirms, over this authenticated connection, that a ticket was stored.
+  var antiCloneDecision = antiClone && client && topic ? antiClone.authorizePublish(client.id, topic, payload) : null;
+  if (antiCloneDecision !== null) {
+    callback(null, antiCloneDecision);
+    return;
+  }
+
   if (!enableMessageAuthentication || !client || !topic) {
     authorizeReplay();
     return;
@@ -709,12 +875,31 @@ var authorizePublish = function(client, topic, payload, callback) {
 };
 
 var authorizeSubscribe = function(client, topic, callback) {
+  // Tickets go only to the device itself; nobody may subscribe to another
+  // device's "anticlone/<id>" (wildcard first levels included).
+  var antiCloneDecision = antiClone && client ? antiClone.authorizeSubscribe(client.id, topic) : null;
+  if (antiCloneDecision !== null) {
+    callback(null, antiCloneDecision);
+    return;
+  }
   authorizeTopic(client, topic, 'subscribe', callback);
 };
 
 
 server.on('clientConnected', function(client) {
    // console.log('client connected');
+});
+
+server.on('subscribed', function(topic, client) {
+  if (antiClone && client) {
+    antiClone.onSubscribed(client.id, topic);
+  }
+});
+
+server.on('clientDisconnected', function(client) {
+  if (antiClone && client) {
+    antiClone.onDisconnected(client.id);
+  }
 });
 
 // fired when a message is received

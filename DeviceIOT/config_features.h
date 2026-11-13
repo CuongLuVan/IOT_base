@@ -39,6 +39,16 @@
 #define ENABLE_MQTT_CONNECT_RATE_LIMIT 0
 #define MQTT_CONNECT_MAX_FAILURES 4              // = maxFailedAttempts - 1
 #define MQTT_CONNECT_FAILURE_WINDOW_MS 300000UL  // = windowSeconds * 1000
+// enableAntiClone (mqttBroker/antiClone.js): store the rolling session ticket
+// the broker sends on "anticlone/<clientId>" (NVS) and present it as the MQTT
+// password on CONNECT, so a copy of this device's flash is detected and
+// quarantined. Needs ENABLE_MTLS. The broker accepts devices that never
+// enrolled, so it can be switched on per firmware build.
+#define ENABLE_ANTI_CLONE 1
+// Flash wear guard: NVS writes of the ticket allowed in any 24 h (RAM
+// counter). The broker issues at most 86400 / minRotateSeconds = 24 per day
+// (mqtt_anticlone.json); 24 x 365 x 10 years is under 1 % of the NVS endurance.
+#define ANTI_CLONE_MAX_TICKET_WRITES_PER_DAY 24
 // End-to-end Ascon-AEAD128 with the server; the broker only relays it.
 #define ENABLE_ASCON_AEAD128 0
 #define ASCON_RANDOM_DIGITS 5
