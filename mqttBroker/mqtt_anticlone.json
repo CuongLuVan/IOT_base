@@ -1,0 +1,11 @@
+{
+  "enabled": true,
+  "rotateSeconds": 86400,
+  "minRotateSeconds": 3600,
+  "takeoverWindowSeconds": 600,
+  "maxTakeovers": 4,
+  "countSameIpTakeovers": false,
+  "retiredHistory": 50,
+  "alertTopicPrefix": "iot/alert/anticlone/",
+  "alertIntervalSeconds": 300
+}

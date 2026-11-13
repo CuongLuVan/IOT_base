@@ -192,8 +192,61 @@ private:
     bool polledEmpty_ = false;
 };
 
+#if ENABLE_ANTI_CLONE
+// Rolling session ticket of mqttBroker/antiClone.js. The broker sends a new
+// random ticket on "anticlone/<clientId>" after every connect and
+// periodically; the device stores it (NVS), acknowledges it and presents it
+// as the MQTT password "ac1.<hex>" on the next CONNECT. A copy of the flash
+// soon holds a ticket the broker has already replaced, which exposes it.
+constexpr size_t kTicketHexLength = 64;
+constexpr char kTicketPrefix[] = "ac1.";
+constexpr char kAntiCloneTopicPrefix[] = "anticlone/";
+
+// Flash wear guard, independent of the broker: at most
+// ANTI_CLONE_MAX_TICKET_WRITES_PER_DAY NVS writes in any 24 h. A ticket over
+// the budget is neither stored nor acknowledged; the broker then keeps
+// accepting the previous one (see handleTicket()).
+class TicketWriteBudget {
+public:
+    static constexpr uint32_t kWindowMs = 86400000UL;
+
+    bool allowed() const
+    {
+        return count_ < ANTI_CLONE_MAX_TICKET_WRITES_PER_DAY || millis() - times_[oldest_] >= kWindowMs;
+    }
+
+    void record()
+    {
+        uint8_t slot = static_cast<uint8_t>((oldest_ + count_) % ANTI_CLONE_MAX_TICKET_WRITES_PER_DAY);
+        if (count_ == ANTI_CLONE_MAX_TICKET_WRITES_PER_DAY) {
+            slot = oldest_;
+            oldest_ = static_cast<uint8_t>((oldest_ + 1) % ANTI_CLONE_MAX_TICKET_WRITES_PER_DAY);
+        } else {
+            ++count_;
+        }
+        times_[slot] = millis();
+    }
+
+private:
+    uint32_t times_[ANTI_CLONE_MAX_TICKET_WRITES_PER_DAY] = {};
+    uint8_t count_ = 0;
+    uint8_t oldest_ = 0;
+};
+
+struct AntiCloneState {
+    char ticket[kTicketHexLength + 1];
+    char password[sizeof(kTicketPrefix) + kTicketHexLength];
+    char ticketTopic[sizeof(kAntiCloneTopicPrefix) + kCredentialMaxLength];
+    char ackTopic[sizeof(kAntiCloneTopicPrefix) + kCredentialMaxLength + 4];
+    TicketWriteBudget writeBudget;
+};
+#endif
+
 struct TransportState {
     MqttSettings settings = {};
+#if ENABLE_ANTI_CLONE
+    AntiCloneState antiClone = {};
+#endif
     mqtt_platform::SecureClient secureClient;
     YieldingClient yieldingClient{secureClient};
     PubSubClient client{yieldingClient};
@@ -317,6 +370,82 @@ void dropSession(uint32_t nowMs)
     state.backoff.restart(nowMs);
 }
 
+#if ENABLE_ANTI_CLONE
+bool isTicketHex(const char* text)
+{
+    if (strlen(text) != kTicketHexLength) {
+        return false;
+    }
+    for (const char* cursor = text; *cursor != '\0'; ++cursor) {
+        if (!((*cursor >= '0' && *cursor <= '9') || (*cursor >= 'a' && *cursor <= 'f'))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void loadAntiClone()
+{
+    AntiCloneState& clone = state.antiClone;
+    snprintf(clone.ticketTopic, sizeof(clone.ticketTopic), "%s%s", kAntiCloneTopicPrefix, state.settings.clientId);
+    snprintf(clone.ackTopic, sizeof(clone.ackTopic), "%s%s/ack", kAntiCloneTopicPrefix, state.settings.clientId);
+    if (!mqtt_platform::loadCloneTicket(clone.ticket, sizeof(clone.ticket)) || !isTicketHex(clone.ticket)) {
+        // Not enrolled yet: the broker accepts the first CONNECT without a ticket.
+        clone.ticket[0] = '\0';
+    }
+}
+
+// {"t":"<64 lower-case hex>","id":<n>} from the broker. The ticket is stored
+// before the acknowledgement: the broker keeps accepting the previous ticket
+// until it receives the acknowledgement or sees the new ticket on CONNECT.
+void handleTicket(const uint8_t* payload, unsigned int length)
+{
+    JsonDocument document;
+    // const char* input: ArduinoJson copies the strings, so the PubSubClient
+    // buffer may be reused by the acknowledgement below.
+    if (deserializeJson(document, reinterpret_cast<const char*>(payload), length) || !document.is<JsonObject>()) {
+        DEVICE_LOG_WARNING("[ANTI-CLONE] Ticket message is not JSON");
+        return;
+    }
+    const char* ticket = document["t"] | "";
+    const long id = document["id"] | 0L;
+    if (!isTicketHex(ticket) || id <= 0) {
+        DEVICE_LOG_WARNING("[ANTI-CLONE] Invalid ticket message");
+        return;
+    }
+    if (!state.antiClone.writeBudget.allowed()) {
+        DEVICE_LOG_WARNING("[ANTI-CLONE] Daily NVS write budget used up; keeping the previous ticket");
+        return;
+    }
+    state.antiClone.writeBudget.record();
+    if (!mqtt_platform::saveCloneTicket(ticket)) {
+        DEVICE_LOG_ERROR("[ANTI-CLONE] Cannot store the ticket; keeping the previous one");
+        return;
+    }
+    strlcpy(state.antiClone.ticket, ticket, sizeof(state.antiClone.ticket));
+    char ack[32];
+    snprintf(ack, sizeof(ack), "{\"id\":%ld}", id);
+    if (!state.client.publish(state.antiClone.ackTopic, ack, false)) {
+        // The stored ticket is still accepted on the next CONNECT.
+        DEVICE_LOG_WARNING("[ANTI-CLONE] Ticket acknowledgement failed");
+        return;
+    }
+    DEVICE_LOG_DEBUG("[ANTI-CLONE] Session ticket rotated");
+}
+#endif
+
+// PubSubClient callback: the anti-clone ticket, otherwise a command.
+void onTransportMessage(char* topic, uint8_t* payload, unsigned int length)
+{
+#if ENABLE_ANTI_CLONE
+    if (strcmp(topic, state.antiClone.ticketTopic) == 0) {
+        handleTicket(payload, length);
+        return;
+    }
+#endif
+    onMessage(topic, payload, length);
+}
+
 // A session that just came up: replies the server may have missed.
 void announceSession()
 {
@@ -345,9 +474,12 @@ bool begin()
     if (!loadTlsCredentials() || !security::loadCredentials()) {
         return false;
     }
+#if ENABLE_ANTI_CLONE
+    loadAntiClone();
+#endif
     // The host name, not an address: PubSubClient resolves it on every connect.
     state.client.setServer(state.settings.host, state.settings.port);
-    state.client.setCallback(onMessage);
+    state.client.setCallback(onTransportMessage);
     state.client.setKeepAlive(MQTT_KEEPALIVE_SECONDS);
     state.client.setSocketTimeout(MQTT_SOCKET_TIMEOUT_SECONDS);
     if (!state.client.setBufferSize(MQTT_PACKET_SIZE)) {
@@ -383,9 +515,22 @@ bool connect()
     state.yieldingClient.newCycle();
     DEVICE_LOG_DEBUG("[MQTT] Connecting");
     // With mTLS the broker identifies the device by client id + certificate.
-    const bool connected = ENABLE_MQTT_USER_AUTH ? state.client.connect(state.settings.clientId, state.settings.user,
-                                                                        state.settings.password)
-                                                 : state.client.connect(state.settings.clientId);
+    const char* user = ENABLE_MQTT_USER_AUTH ? state.settings.user : nullptr;
+    const char* password = ENABLE_MQTT_USER_AUTH ? state.settings.password : nullptr;
+#if ENABLE_ANTI_CLONE
+    // With mTLS the broker does not check the password: it carries the ticket.
+    // MQTT sends a password only with a user name; an empty one is ignored.
+    if (state.antiClone.ticket[0] != '\0') {
+        snprintf(state.antiClone.password, sizeof(state.antiClone.password), "%s%s", kTicketPrefix,
+                 state.antiClone.ticket);
+        password = state.antiClone.password;
+        if (user == nullptr) {
+            user = "";
+        }
+    }
+#endif
+    const bool connected = user != nullptr ? state.client.connect(state.settings.clientId, user, password)
+                                           : state.client.connect(state.settings.clientId);
     if (ENABLE_MQTT_CONNECT_RATE_LIMIT) {
         state.rateLimiter.record(connected);
     }
@@ -399,6 +544,13 @@ bool connect()
         closeConnection();
         return false;
     }
+#if ENABLE_ANTI_CLONE
+    // The broker sends a ticket once this subscription exists. Other brokers
+    // (Aedes, Mosquitto) refuse it: the device then simply stays unenrolled.
+    if (!state.client.subscribe(state.antiClone.ticketTopic, 1)) {
+        DEVICE_LOG_WARNING("[ANTI-CLONE] Ticket subscription failed");
+    }
+#endif
     state.backoff.reset();
     state.sessionUp = true;
     DEVICE_LOG_INFO("[MQTT] Connected");

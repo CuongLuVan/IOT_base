@@ -14,6 +14,7 @@ const {DEFINE_DOCUMENT,uploadFileS3} = require('../models/S3UploadFile.js');
 const WarningInfo = require("../config/warningInfo.js");
 const {returnOK,returnFalse,returnOKCustom,returnNotFound,returnInfoQuery } = require('../utils/returnResponse.js');
 const {mangerModelAdmin} = require('../models/database/managerAll.model.js');
+const brokerProvisioning = require('../services/mqtt/brokerProvisioning.js');
 
 var documentCtrl={};
 
@@ -559,109 +560,6 @@ function getMqttIdentity(body) {
     return mqttId;
 }
 
-function readBrokerJson(filePath) {
-    const value = JSON.parse(fs.readFileSync(filePath, "utf8"));
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-        throw new Error("Invalid MQTT broker configuration: " + path.basename(filePath));
-    }
-    return value;
-}
-
-function upsertBrokerEntry(entries, key, id, value) {
-    const index = entries.findIndex(function(entry) { return entry[key] === id; });
-    if (index === -1) {
-        entries.push(value);
-    } else {
-        entries[index] = Object.assign({}, entries[index], value);
-    }
-}
-
-function saveBrokerSettings(brokerDir, mqttId, config) {
-    const files = {
-        acl: path.join(brokerDir, "mqtt_acl.json"),
-        clientIds: path.join(brokerDir, "mqtt_client_ids.json"),
-        deviceCerts: path.join(brokerDir, "mqtt_device_certs.json"),
-        messageAuth: path.join(brokerDir, "mqtt_message_auth.json"),
-        users: path.join(brokerDir, "mqtt_users.json"),
-    };
-    const originals = {};
-    const settings = {};
-    Object.keys(files).forEach(function(key) {
-        originals[key] = fs.readFileSync(files[key], "utf8");
-        settings[key] = readBrokerJson(files[key]);
-    });
-
-    ["rules", "clients", "devices", "users"].forEach(function(key) {
-        const configKey = key === "rules" ? "acl" :
-            key === "clients" ? "clientIds" :
-            key === "devices" ? "deviceCerts" : "users";
-        if (!Array.isArray(settings[configKey][key])) {
-            throw new Error("Invalid MQTT broker configuration array: " + key);
-        }
-    });
-    if (!settings.messageAuth.keys || typeof settings.messageAuth.keys !== "object" ||
-        Array.isArray(settings.messageAuth.keys)) {
-        throw new Error("Invalid MQTT message authentication keys configuration.");
-    }
-
-    const publishTopics = config.mqtt_pub ? [config.mqtt_pub] : [];
-    const subscribeTopics = config.mqtt_sub ? [config.mqtt_sub] : [];
-    upsertBrokerEntry(settings.acl.rules, "clientId", mqttId, {
-        clientId: mqttId,
-        publish: publishTopics,
-        subscribe: subscribeTopics,
-    });
-    upsertBrokerEntry(settings.clientIds.clients, "clientId", mqttId, {
-        clientId: mqttId,
-        username: config.mqtt_user,
-        label: config.content,
-    });
-    upsertBrokerEntry(settings.deviceCerts.devices, "clientId", mqttId, {
-        clientId: mqttId,
-        fingerprint256: config.fingerprint256,
-    });
-    upsertBrokerEntry(settings.users.users, "username", config.mqtt_user, {
-        username: config.mqtt_user,
-        password: config.mqtt_pass,
-    });
-    settings.messageAuth.keys[mqttId] = config.messageAuthKey;
-
-    const nextContents = {
-        acl: settings.acl,
-        clientIds: settings.clientIds,
-        deviceCerts: settings.deviceCerts,
-        messageAuth: settings.messageAuth,
-        users: settings.users,
-    };
-    const tempPaths = {};
-    const changed = [];
-    try {
-        Object.keys(files).forEach(function(key) {
-            tempPaths[key] = files[key] + "." + process.pid + "." +
-                crypto.randomBytes(6).toString("hex") + ".tmp";
-            fs.writeFileSync(tempPaths[key], JSON.stringify(nextContents[key], null, 2) + "\n", {
-                encoding: "utf8",
-                mode: 0o600,
-            });
-        });
-        Object.keys(files).forEach(function(key) {
-            fs.renameSync(tempPaths[key], files[key]);
-            changed.push(key);
-        });
-    } catch (error) {
-        changed.forEach(function(key) {
-            fs.writeFileSync(files[key], originals[key], {encoding: "utf8", mode: 0o600});
-        });
-        throw error;
-    } finally {
-        Object.keys(tempPaths).forEach(function(key) {
-            if (fs.existsSync(tempPaths[key])) {
-                fs.unlinkSync(tempPaths[key]);
-            }
-        });
-    }
-}
-
 // Names already used by the broker PKI in MQTT_CERTS.
 const RESERVED_CERT_NAMES = ["ca", "server", "pki"];
 // Device EEPROM regions (define_All.h: MTLS_*_MAX_LENGTH, without the '\0').
@@ -752,13 +650,9 @@ documentCtrl.saveCertificateMqtt  = async function(req,res) {
         }
         config.mqtt_id = mqttId;
 
-        const certDir = process.env.MQTT_CERTS;
-        if (!certDir) {
-            throw new Error("MQTT_CERTS is not configured.");
-        }
-        const certDirectory = path.resolve(certDir);
-        const brokerDir = path.dirname(certDirectory);
-        paths = getCertificatePaths(certDirectory, mqttId);
+        // Certificates are issued and kept on the web_manager server; the broker
+        // only receives the configuration (brokerProvisioning).
+        paths = getCertificatePaths(brokerProvisioning.getPkiDirectory(), mqttId);
 
         if ([paths.certificate, paths.privateKey, paths.deviceKey].some(fs.existsSync)) {
             throw new Error("An MQTT certificate already exists for this mqtt_id.");
@@ -768,6 +662,13 @@ documentCtrl.saveCertificateMqtt  = async function(req,res) {
             .first();
         if (existing) {
             throw new Error("An active MQTT record already exists for this mqtt_id.");
+        }
+        // A queued DELETE would otherwise remove the new device from the broker.
+        const revoking = await knex("mqtt_microservice")
+            .where({mqtt_id: mqttId, broker_sync_status: brokerProvisioning.STATUS.REVOKE_PENDING})
+            .first();
+        if (revoking) {
+            throw new Error("The previous device with this mqtt_id is still being revoked on the broker.");
         }
 
         writePem(paths.ext, [
@@ -818,25 +719,30 @@ documentCtrl.saveCertificateMqtt  = async function(req,res) {
             mqtt_user: config.mqtt_user,
             mqtt_pass: config.mqtt_pass,
             mqtt_id: mqttId,
+            message_auth_key: config.messageAuthKey,
+            // Outbox: the row is committed first, then delivered to the broker.
+            // If the broker is unreachable the retry worker delivers it later.
+            broker_sync_status: brokerProvisioning.STATUS.PENDING,
+            broker_sync_attempts: 0,
             created_at: now,
             updated_at: now,
             id_created: req.currentUser.users_id,
             id_updated: req.currentUser.users_id,
             deleteflag: 0,
         };
-        const inserted = await knex.transaction(async function(trx) {
-            const result = await trx("mqtt_microservice").insert(insertData);
-            saveBrokerSettings(brokerDir, mqttId, config);
-            return result;
-        });
+        const inserted = await knex("mqtt_microservice").insert(insertData);
         createdFiles.length = 0;
+        const brokerSynced = await brokerProvisioning.trySyncRow(
+            Object.assign({mqtt_microservice_id: inserted[0]}, insertData));
         returnOKCustom(res, Object.assign({
             mqtt_microservice_id: inserted[0],
             mqtt_id: mqttId,
             fingerprint256: config.fingerprint256,
             mqtt_message_key: config.messageAuthKey,
-            // The broker re-reads its JSON files on every connection.
+            // The broker re-reads its JSON files on change, no restart needed.
             requiresBrokerRestart: false,
+            brokerSynced,
+            brokerSyncStatus: brokerSynced ? brokerProvisioning.STATUS.SYNCED : brokerProvisioning.STATUS.PENDING,
         }, certificateResponse(files)));
     } catch (error) {
         createdFiles.forEach(function(filePath) {
@@ -855,15 +761,106 @@ documentCtrl.saveCertificateMqtt  = async function(req,res) {
 documentCtrl.getCertificateMqtt  = async function(req,res) {
     try {
         const mqttId = getMqttIdentity(req.body || {});
-        const certDir = process.env.MQTT_CERTS;
-        if (!certDir) {
-            throw new Error("MQTT_CERTS is not configured.");
+        // Read from the local PKI folder only: works while the broker is down.
+        const files = readCertificateFiles(getCertificatePaths(brokerProvisioning.getPkiDirectory(), mqttId));
+        const row = await knex("mqtt_microservice")
+            .where({mqtt_id: mqttId, deleteflag: 0})
+            .first();
+        let brokerSyncStatus = row ? row.broker_sync_status || null : null;
+        // Opening the certificate also retries a delivery that is still pending.
+        if (row && brokerSyncStatus === brokerProvisioning.STATUS.PENDING &&
+            await brokerProvisioning.trySyncRow(row)) {
+            brokerSyncStatus = brokerProvisioning.STATUS.SYNCED;
         }
-        const files = readCertificateFiles(getCertificatePaths(path.resolve(certDir), mqttId));
-        returnOKCustom(res, Object.assign({mqtt_id: mqttId}, certificateResponse(files)));
+        returnOKCustom(res, Object.assign({
+            mqtt_id: mqttId,
+            brokerSynced: brokerSyncStatus === brokerProvisioning.STATUS.SYNCED,
+            brokerSyncStatus,
+        }, certificateResponse(files)));
     } catch (error) {
         console.error("Failed to read MQTT certificate:", error.message);
         returnFalse(res, "Unable to read MQTT certificate.", WarningInfo.ERROR_SERVER);
+    }
+}
+
+// Clone detection status of a device (mqttBroker/antiClone.js):
+// { enrolled, quarantine: {reason, at, ip, previousIp, ...} | null, lastIp }.
+documentCtrl.antiCloneStatusMqtt  = async function(req,res) {
+    try {
+        const mqttId = getMqttIdentity(req.body || {});
+        returnOKCustom(res, Object.assign({mqtt_id: mqttId}, await brokerProvisioning.antiCloneStatus(mqttId)));
+    } catch (error) {
+        console.error("Failed to read MQTT anti-clone status:", error.message);
+        returnFalse(res, "Unable to read MQTT anti-clone status.", WarningInfo.ERROR_SERVER);
+    }
+}
+
+// Releases a quarantined identity. Use it only after the copy is out of
+// service (e.g. a false alarm or the genuine device was replaced); when the
+// key may have leaked, revoke and issue a new certificate instead.
+documentCtrl.releaseAntiCloneMqtt  = async function(req,res) {
+    try {
+        const mqttId = getMqttIdentity(req.body || {});
+        const row = await knex("mqtt_microservice").where({mqtt_id: mqttId, deleteflag: 0}).first("mqtt_microservice_id");
+        if (!row) {
+            return res.status(404).json({error: "No active MQTT record for this mqtt_id.", error_code: WarningInfo.ERROR_SERVER});
+        }
+        await brokerProvisioning.resetAntiClone(mqttId);
+        console.warn("MQTT anti-clone quarantine released for", mqttId, "by user", req.currentUser.users_id);
+        returnOKCustom(res, {mqtt_id: mqttId, released: true});
+    } catch (error) {
+        console.error("Failed to release MQTT anti-clone quarantine:", error.message);
+        returnFalse(res, "Unable to release MQTT anti-clone quarantine.", WarningInfo.ERROR_SERVER);
+    }
+}
+
+// Deletes the device record and revokes it on the broker: its rules are
+// removed (client is refused at once and disconnected), its certificate and
+// keys are moved to <MQTT_PKI_DIR>/revoked/. When the broker is unreachable
+// the revocation stays "revoke_pending" and the sync worker retries it.
+documentCtrl.revokeCertificateMqtt  = async function(req,res) {
+    try {
+        const mqttId = getMqttIdentity(req.body || {});
+        const row = await knex("mqtt_microservice")
+            .where({mqtt_id: mqttId, deleteflag: 0})
+            .first();
+        if (!row) {
+            // Retry of a revocation already recorded (idempotent).
+            const queued = await knex("mqtt_microservice")
+                .where({mqtt_id: mqttId, broker_sync_status: brokerProvisioning.STATUS.REVOKE_PENDING})
+                .first();
+            if (queued) {
+                const brokerSynced = await brokerProvisioning.trySyncRow(queued);
+                return returnOKCustom(res, {mqtt_id: mqttId, revoked: true, brokerSynced,
+                    brokerSyncStatus: brokerSynced ? brokerProvisioning.STATUS.REVOKED : brokerProvisioning.STATUS.REVOKE_PENDING});
+            }
+            return res.status(404).json({error: "No active MQTT record for this mqtt_id.", error_code: WarningInfo.ERROR_SERVER});
+        }
+        const updated = await knex("mqtt_microservice")
+            .where({mqtt_microservice_id: row.mqtt_microservice_id, deleteflag: 0})
+            .update(Object.assign({
+                deleteflag: 1,
+                oldid: row.mqtt_microservice_id,
+                updated_at: knex.fn.now(),
+                id_updated: req.currentUser.users_id,
+            }, brokerProvisioning.revokeUpdateFields(row)));
+        if (!updated) {
+            return res.status(409).json({error: "The MQTT record changed, try again.", error_code: WarningInfo.ERROR_SERVER});
+        }
+        const result = await brokerProvisioning.afterDelete(row);
+        returnOKCustom(res, {
+            mqtt_microservice_id: row.mqtt_microservice_id,
+            mqtt_id: mqttId,
+            deleted: true,
+            // null: the record was never provisioned on the broker by web_manager.
+            revoked: result.revoked,
+            brokerSynced: result.brokerSynced,
+            brokerSyncStatus: result.revoked === null ? null :
+                result.brokerSynced ? brokerProvisioning.STATUS.REVOKED : brokerProvisioning.STATUS.REVOKE_PENDING,
+        });
+    } catch (error) {
+        console.error("Failed to revoke MQTT certificate:", error.message);
+        returnFalse(res, "Unable to revoke MQTT certificate.", WarningInfo.ERROR_SERVER);
     }
 }
 

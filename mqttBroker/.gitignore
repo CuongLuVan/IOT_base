@@ -1,0 +1,4 @@
+.env
+mqtt_anticlone_state.json
+mqtt_anticlone_reset.json
+*.tmp

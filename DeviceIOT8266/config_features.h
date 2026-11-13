@@ -49,6 +49,9 @@
 #define ENABLE_MQTT_CONNECT_RATE_LIMIT 0
 #define MQTT_CONNECT_MAX_FAILURES 4              // = maxFailedAttempts - 1
 #define MQTT_CONNECT_FAILURE_WINDOW_MS 300000UL  // = windowSeconds * 1000
+// enableAntiClone (mqttBroker/antiClone.js): needs NVS for the rolling
+// session ticket, ESP32 (DeviceIOT) only. Must stay 0 here.
+#define ENABLE_ANTI_CLONE 0
 // End-to-end Ascon-AEAD128 with the server; the broker only relays it.
 // Encrypts every publish except the key handshake and rejects plaintext
 // commands other than the handshake request.

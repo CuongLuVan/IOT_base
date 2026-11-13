@@ -5,6 +5,7 @@ const deviceStatus = require('../services/mqtt/deviceStatusService.js');
 const deviceSchedule = require('../services/mqtt/deviceScheduleService.js');
 const { writeAudit } = require('../services/roomIotAudit.js');
 const roomController = require('./room.controller.js');
+const brokerProvisioning = require('../services/mqtt/brokerProvisioning.js');
 
 // Devices added from the Wi-Fi setup page (View/mqtt/device-wifi.ejs).
 // One active mqtt_microservice row per (account, mqtt_pub, mqtt_sub);
@@ -100,6 +101,10 @@ mqttDeviceCtrl.registerDevice = async function(req, res) {
                     deleteflag: 1,
                     oldid: existing.mqtt_microservice_id,
                 });
+                // History copies are never delivered to (or revoked on) the broker.
+                if (Object.prototype.hasOwnProperty.call(history, 'broker_sync_status')) {
+                    history.broker_sync_status = null;
+                }
                 delete history.mqtt_microservice_id;
                 await trx(TABLE).insert(history);
                 await trx(TABLE).where({mqtt_microservice_id: existing.mqtt_microservice_id}).update({
@@ -161,18 +166,24 @@ mqttDeviceCtrl.deleteDevice = async function(req, res) {
     }
     try {
         if (!(await authorizeRoomManager(req, id))) return res.status(403).json({error: 'Room manager role required.'});
-        const updated = await knex(TABLE)
-            .where({mqtt_microservice_id: id, mqtt_user: getAccountKey(req), deleteflag: 0})
-            .update({
+        const where = {mqtt_microservice_id: id, mqtt_user: getAccountKey(req), deleteflag: 0};
+        const row = await knex(TABLE).where(where).first();
+        const updated = row ? await knex(TABLE)
+            .where(where)
+            .update(Object.assign({
                 deleteflag: 1,
                 oldid: id,
                 updated_at: knex.fn.now(),
                 id_updated: req.currentUser.users_id,
-            });
+            }, brokerProvisioning.revokeUpdateFields(row))) : 0;
         if (!updated) {
             return res.status(404).json({error: "Device not found.", error_code: WarningInfo.ERROR_SERVER});
         }
-        returnOKCustom(res, {mqtt_microservice_id: id, deleted: true});
+        // Devices with a certificate issued by saveCertificateMqtt are also
+        // revoked on the broker (retried by the sync worker if it is down).
+        const revocation = await brokerProvisioning.afterDelete(row);
+        returnOKCustom(res, {mqtt_microservice_id: id, deleted: true,
+            revoked: revocation.revoked, brokerSynced: revocation.brokerSynced});
     } catch (error) {
         console.error("Failed to delete MQTT device:", error.message);
         returnFalse(res, "Unable to delete MQTT device.", WarningInfo.ERROR_SERVER);

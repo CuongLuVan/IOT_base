@@ -39,4 +39,6 @@ app.use('/change-lang/:lang', (req, res) => {
 
 app.listen(app.get('port'), app.get('host'), () => {
   console.log('Server is running at http://' + app.get('host') + ':' + app.get('port'));
+  // Retries MQTT device configurations the broker has not received yet.
+  require('./services/mqtt/brokerProvisioning.js').startSyncWorker();
 });

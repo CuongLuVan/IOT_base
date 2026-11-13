@@ -110,7 +110,7 @@ rooms.overview = async (req, res) => {
       knex('alerts').whereIn('room_id', roomScope).where({ deleteflag: 0, status: 'RESOLVED' }).whereBetween('triggered_at', [from, to]).orderBy('triggered_at', 'desc').limit(1000)
     ]);
     const alertHistory = [...alerts, ...resolvedAlerts].sort((a, b) => new Date(b.triggered_at) - new Date(a.triggered_at));
-    const isError = (device) => (device.live_status && device.live_status.rs != null && Number(device.live_status.rs) !== 0) || alerts.some((alert) => Number(alert.device_id) === Number(device.device_id) && ['DEVICE_ERROR', 'SENSOR_ERROR', 'DATA_ANOMALY'].includes(alert.alert_type));
+    const isError = (device) => (device.live_status && device.live_status.rs != null && Number(device.live_status.rs) !== 0) || alerts.some((alert) => Number(alert.device_id) === Number(device.device_id) && ['DEVICE_ERROR', 'SENSOR_ERROR', 'DATA_ANOMALY', 'DEVICE_CLONE'].includes(alert.alert_type));
     const staleCutoff = Date.now() - 15 * 60000;
     const categorized = selectedDevices.map((device) => Object.assign({}, device, {
       operational_status: isError(device) ? 'ERROR' : !device.last_online || new Date(device.last_online).getTime() < staleCutoff ? 'NO_RECENT_DATA' : device.connection_status === 'OFFLINE' ? 'OFFLINE' : 'ONLINE'

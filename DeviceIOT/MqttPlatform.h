@@ -5,12 +5,14 @@
 // MqttPlatform.h with the same names.
 
 #include <Arduino.h>
+#include <Preferences.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <esp_random.h>
 #include <mbedtls/md.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "define_All.h"
 
@@ -39,6 +41,37 @@ inline bool hmacSha256(const char* key, size_t keyLength, const char* data, size
 inline bool stationConnected()
 {
     return WiFi.status() == WL_CONNECTED;
+}
+
+// Anti-clone session ticket (ENABLE_ANTI_CLONE) in its own NVS namespace,
+// apart from the EEPROM layout. Written only when the broker rotates it
+// (each connect + every few hours), which NVS wear levelling absorbs. With
+// NVS / flash encryption enabled it cannot be read from a flash dump either.
+constexpr char kCloneTicketNamespace[] = "anticlone";
+constexpr char kCloneTicketKey[] = "ticket";
+
+inline bool loadCloneTicket(char* out, size_t size)
+{
+    out[0] = '\0';
+    Preferences preferences;
+    // Read-only open fails while the namespace does not exist yet (not enrolled).
+    if (!preferences.begin(kCloneTicketNamespace, true)) {
+        return false;
+    }
+    const size_t length = preferences.getString(kCloneTicketKey, out, size);
+    preferences.end();
+    return length > 0 && out[0] != '\0';
+}
+
+inline bool saveCloneTicket(const char* ticket)
+{
+    Preferences preferences;
+    if (!preferences.begin(kCloneTicketNamespace, false)) {
+        return false;
+    }
+    const size_t written = preferences.putString(kCloneTicketKey, ticket);
+    preferences.end();
+    return written == strlen(ticket);
 }
 
 inline String localIp()

@@ -121,7 +121,8 @@
         document.getElementById('caCertificate').value = data.caCertificate || '';
         document.getElementById('deviceKey').value = data.deviceKey || '';
         document.getElementById('result').style.display = 'block';
-        showNotice('Đã tạo certificate và lưu cấu hình. ' + (data.requiresBrokerRestart ? 'Cần khởi động lại MQTT broker để áp dụng.' : ''), false);
+        showNotice('Đã tạo certificate và lưu cấu hình. ' + (data.requiresBrokerRestart ? 'Cần khởi động lại MQTT broker để áp dụng.' : '') +
+          (data.brokerSynced === false ? 'MQTT broker chưa nhận cấu hình, hệ thống sẽ tự gửi lại.' : ''), false);
       } catch (error) {
         showNotice(error.message || 'Không thể tạo certificate.', true);
       } finally {

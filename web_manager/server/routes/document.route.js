@@ -67,6 +67,9 @@ router.route('/test_upload').post((req, res) => {
 
 router.route('/saveCertificateMqtt').post(isAuthenticated,  documentCtrl.saveCertificateMqtt);
 router.route('/getCertificateMqtt').post(isAuthenticated,  documentCtrl.getCertificateMqtt);
+router.route('/revokeCertificateMqtt').post(isAuthenticated,  documentCtrl.revokeCertificateMqtt);
+router.route('/antiCloneStatusMqtt').post(isAuthenticated,  documentCtrl.antiCloneStatusMqtt);
+router.route('/releaseAntiCloneMqtt').post(isAuthenticated,  documentCtrl.releaseAntiCloneMqtt);
 
 // Devices added from the Wi-Fi setup page; admin or customer accounts.
 router.route('/registerDeviceMqtt').post(isAuthenMutile, mqttDeviceCtrl.registerDevice);

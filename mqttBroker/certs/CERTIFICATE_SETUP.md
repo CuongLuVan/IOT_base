@@ -275,3 +275,36 @@ Các dịch vụ kết nối tới broker cũng dùng mTLS ECDSA P-256, giống 
 Tạo lại chứng chỉ của một dịch vụ bằng bước 4 với `clientId` tương ứng, rồi cập nhật fingerprint trong `mqtt_device_certs.json`. Các dịch vụ đọc `ca.crt`, `<clientId>.crt` và `<clientId>.key` trong `MQTT_CERTS` (mặc định là thư mục này), hoặc từ `MQTT_CA_CERT`/`MQTT_CLIENT_CERT`/`MQTT_CLIENT_KEY`.
 
 Các dịch vụ thêm `timestamp`/`nonce` vào mọi bản tin JSON publish (broker `enableAttack`). Khi broker bật `enableMessageAuthentication`, đặt `MQTT_HMAC_SECRET` bằng key của `clientId` đó trong `mqtt_message_auth.json`. Khi broker từ chối chứng chỉ, dịch vụ dừng hẳn thay vì thử lại, để không bị khóa vì brute-force.
+
+## web_manager và broker ở hai server khác nhau
+
+`saveCertificateMqtt` không cần chung ổ đĩa với broker nữa:
+
+- **Server web_manager** giữ CA (`ca.crt` + `ca.key`) và chứng chỉ/khóa thiết bị trong `MQTT_PKI_DIR` (mặc định `MQTT_CERTS`), cùng với `web_manager.crt`/`.key`. Bảng `mqtt_microservice` là nguồn dữ liệu gốc (`broker_sync_status` = `pending`/`synced`). `getCertificateMqtt` chỉ đọc ở server này nên vẫn chạy được khi broker tắt.
+- **Server broker** chỉ cần `ca.crt`, `server.crt`/`.key` và chạy thêm `node BrokerAdminApi.js` (`npm run admin`, cổng 8885). Đây là process riêng, không dùng chung event loop với broker. API chỉ nhận client mTLS có CN thuộc `BROKER_ADMIN_ALLOWED_CN` (mặc định `web_manager`), tự kiểm tra chứng chỉ thiết bị (do `ca.crt` ký, CN = clientId, ECDSA P-256) và tự tính fingerprint, rồi ghi 5 file JSON bằng atomic rename. Chỉ mở cổng này cho IP của web_manager.
+- **Đồng bộ:** web_manager lưu bản ghi vào DB trước, sau đó gọi `PUT /v1/clients/:clientId` (idempotent). Nếu broker không truy cập được, bản ghi giữ trạng thái `pending`: worker gửi lại mỗi `MQTT_BROKER_SYNC_INTERVAL_MS`, và việc mở `getCertificateMqtt` cũng gửi lại.
+
+Cấu hình web_manager (`.env`):
+
+```
+MQTT_BROKER_ADMIN_URL=https://<ip-broker>:8885
+MQTT_BROKER_ADMIN_SERVERNAME=<tên có trong subjectAltName của server.crt, nếu URL dùng tên khác>
+```
+
+Để trống `MQTT_BROKER_ADMIN_URL` thì quay về chế độ cũ: ghi thẳng file JSON trong `MQTT_BROKER_DIR`. Trước khi dùng, chạy `npx knex migrate:latest` để thêm các cột `broker_sync_*`/`message_auth_key`.
+
+File mẫu: `web_manager/.env.sample` (server web_manager) và `mqttBroker/.env.sample` (server broker, copy thành `mqttBroker/.env`; `BrokerAdminApi.js` tự đọc file này).
+
+### Xóa / thu hồi thiết bị
+
+Có hai cách: `POST /api/document/revokeCertificateMqtt` với body `{ "mqtt_id": "..." }`, hoặc xóa thiết bị bằng `deleteDevice` (trang thiết bị). Cả hai cách đều:
+
+1. Xóa mềm bản ghi (`deleteflag = 1`) và đặt `broker_sync_status = revoke_pending`. Chỉ áp dụng cho thiết bị có chứng chỉ do `saveCertificateMqtt` cấp.
+2. Chuyển `<id>.crt/.key/.esp.key` vào `<MQTT_PKI_DIR>/revoked/<id>-<thời gian>/`. Từ đó `getCertificateMqtt` không trả khóa nữa và `mqtt_id` có thể được cấp lại.
+3. Gọi `DELETE /v1/clients/<id>` (hoặc sửa file local). Broker xóa client khỏi `mqtt_client_ids.json`, `mqtt_device_certs.json`, `mqtt_message_auth.json`, `mqtt_acl.json`. Entry trong `mqtt_users.json` chỉ bị xóa khi không còn client nào dùng username đó. Sau đó trạng thái chuyển thành `revoked`.
+
+Kết nối mới của thiết bị bị từ chối ngay. `MqttBroker1885.js` còn ngắt các kết nối đang mở khi `mqtt_device_certs.json` thay đổi. Nếu broker không truy cập được, lệnh thu hồi giữ trạng thái `revoke_pending` và được worker gửi lại (ưu tiên trước các lệnh thêm). Trong thời gian đó không thể tạo lại cùng `mqtt_id`. API không cho thu hồi các client quản trị trong `BROKER_ADMIN_ALLOWED_CN`.
+
+### Chống sao chép thiết bị
+
+Broker phát hiện thiết bị bị sao chép bằng ticket phiên xoay vòng và kiểm tra chiếm phiên. Danh tính bị nghi ngờ sẽ bị cách ly và phát cảnh báo `DEVICE_CLONE`. Chi tiết, cách gỡ cách ly và cấu hình chống đọc flash: `DeviceIOT/docs/Security.md`, mục "Chống sao chép thiết bị". Admin API cung cấp `GET /v1/clients/:id/anticlone` và `POST /v1/clients/:id/anticlone/reset`. Cấp chứng chỉ mới (fingerprint mới) cũng tự xóa trạng thái cách ly.
